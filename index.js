@@ -4049,12 +4049,14 @@ Produk *${item.nama}* tidak memiliki stok tersedia.
     }
     
     // Tampilkan stok dengan timestamp dan tombol pilih
+    const totalPembayaran = Data.selectedStokIds.length * item.harga
     let stokText = `📦 *PILIH STOK YANG INGIN DIBELI*
 ━━━━━━━━━━━━━━━━━━━━
 🛍️ *Produk:* ${item.nama}
 💰 *Harga Satuan:* ${formatrupiah(item.harga)}
 📊 *Stok Tersedia:* ${tersediaItems.length} item
 ✅ *Dipilih:* ${Data.selectedStokIds.length} item
+💵 *Total Pembayaran:* ${formatrupiah(totalPembayaran)}
 
 ━━━━━━━━━━━━━━━━━━━━
 *DAFTAR STOK:*
@@ -4087,7 +4089,7 @@ Produk *${item.nama}* tidak memiliki stok tersedia.
     // Cek panjang pesan dan kurangi item jika terlalu panjang
     let tempText = buildStokText(itemsToShow)
     const footerText = `\n━━━━━━━━━━━━━━━━━━━━
-💡 *Cara:* Klik tombol nomor untuk memilih/batalkan pilih stok
+💡 *Cara:* Gunakan tombol increment di bawah untuk memilih jumlah stok
 ━━━━━━━━━━━━━━━━━━━━`
     
     // Jika pesan terlalu panjang, kurangi jumlah item per halaman
@@ -4118,62 +4120,19 @@ Produk *${item.nama}* tidak memiliki stok tersedia.
       stokText = stokText.substring(0, 4000) + '\n\n⚠️ *Pesan dipotong karena terlalu panjang*'
     }
     
-    // Buat tombol untuk setiap stok item
-    const keyboard = []
-    
-    // Tombol pilih stok (2 kolom)
-    for (let i = 0; i < itemsToShow.length; i += 2) {
-      const row = []
-      const stok1 = itemsToShow[i]
-      const isSelected1 = Data.selectedStokIds.includes(stok1.id)
-      const emoji1 = isSelected1 ? '✅' : '⬜'
-      row.push({ 
-        text: `${emoji1} ${startIdx + i + 1}`, 
-        callback_data: `toggle_stok:${stok1.id}` 
-      })
-      
-      if (itemsToShow[i + 1]) {
-        const stok2 = itemsToShow[i + 1]
-        const isSelected2 = Data.selectedStokIds.includes(stok2.id)
-        const emoji2 = isSelected2 ? '✅' : '⬜'
-        row.push({ 
-          text: `${emoji2} ${startIdx + i + 2}`, 
-          callback_data: `toggle_stok:${stok2.id}` 
-        })
-      }
-      keyboard.push(row)
-    }
-    
-    // Tombol navigasi halaman
-    if (tersediaItems.length > itemsPerPage) {
-      const navRow = []
-      if (currentPage > 0) {
-        navRow.push({ text: '⏪ Prev', callback_data: 'stok_page:prev' })
-      }
-      if (endIdx < tersediaItems.length) {
-        navRow.push({ text: 'Next ⏩', callback_data: 'stok_page:next' })
-      }
-      if (navRow.length > 0) keyboard.push(navRow)
-    }
-    
-    // Tombol aksi
-    keyboard.push([
-      { text: "✅ Pilih 10", callback_data: "select_stok:10" },
-      { text: "✅ Pilih 20", callback_data: "select_stok:20" }
-    ])
-    keyboard.push([
-      { text: "✅ Pilih 30", callback_data: "select_stok:30" },
-      { text: "✅ Pilih 50", callback_data: "select_stok:50" }
-    ])
-    keyboard.push([
-      { text: "🔄 Reset Pilihan", callback_data: "reset_stok" }
-    ])
-    keyboard.push([
-      { text: `✅ Konfirmasi (${Data.selectedStokIds.length})`, callback_data: "konfirmasi_stok" }
-    ])
-    keyboard.push([
-      { text: "🔙 Kembali", callback_data: "kembaliawal" }
-    ])
+    // Keyboard sesuai dengan screenshot
+    const keyboard = [
+      [
+        { text: "-1", callback_data: "select_stok:-1" },
+        { text: "+1", callback_data: "select_stok:1" },
+        { text: "-5", callback_data: "select_stok:-5" },
+        { text: "+5", callback_data: "select_stok:5" }
+      ],
+      [{ text: "Pembayaran Saldo", callback_data: "checkout_payment:saldo" }],
+      [{ text: "Pembayaran QRIS", callback_data: "checkout_payment:qris" }],
+      [{ text: "🔄 Perbarui", callback_data: "refresh_stok" }],
+      [{ text: "← Sebelumnya", callback_data: `item:${item.kode}` }]
+    ]
     
     await bot.sendMessage(query.from.id, stokText, {
       parse_mode: "Markdown",
@@ -4204,12 +4163,14 @@ async function refreshStokView(query, Data) {
   if (!Data.selectedStokIds) Data.selectedStokIds = []
   if (!Data.stokPage) Data.stokPage = 0
   
+  const totalPembayaran = Data.selectedStokIds.length * item.harga
   let stokText = `📦 *PILIH STOK YANG INGIN DIBELI*
 ━━━━━━━━━━━━━━━━━━━━
 🛍️ *Produk:* ${item.nama}
 💰 *Harga Satuan:* ${formatrupiah(item.harga)}
 📊 *Stok Tersedia:* ${tersediaItems.length} item
 ✅ *Dipilih:* ${Data.selectedStokIds.length} item
+💵 *Total Pembayaran:* ${formatrupiah(totalPembayaran)}
 
 ━━━━━━━━━━━━━━━━━━━━
 *DAFTAR STOK:*
@@ -4242,7 +4203,7 @@ async function refreshStokView(query, Data) {
   // Cek panjang pesan dan kurangi item jika terlalu panjang
   let tempText = buildStokText(itemsToShow)
   const footerText = `\n━━━━━━━━━━━━━━━━━━━━
-💡 *Cara:* Klik tombol nomor untuk memilih/batalkan pilih stok
+💡 *Cara:* Gunakan tombol increment di bawah untuk memilih jumlah stok
 ━━━━━━━━━━━━━━━━━━━━`
   
   // Jika pesan terlalu panjang, kurangi jumlah item per halaman
@@ -4273,58 +4234,18 @@ async function refreshStokView(query, Data) {
     stokText = stokText.substring(0, 4000) + '\n\n⚠️ *Pesan dipotong karena terlalu panjang*'
   }
   
-  const keyboard = []
-  
-  for (let i = 0; i < itemsToShow.length; i += 2) {
-    const row = []
-    const stok1 = itemsToShow[i]
-    const isSelected1 = Data.selectedStokIds.includes(stok1.id)
-    const emoji1 = isSelected1 ? '✅' : '⬜'
-    row.push({ 
-      text: `${emoji1} ${startIdx + i + 1}`, 
-      callback_data: `toggle_stok:${stok1.id}` 
-    })
-    
-    if (itemsToShow[i + 1]) {
-      const stok2 = itemsToShow[i + 1]
-      const isSelected2 = Data.selectedStokIds.includes(stok2.id)
-      const emoji2 = isSelected2 ? '✅' : '⬜'
-      row.push({ 
-        text: `${emoji2} ${startIdx + i + 2}`, 
-        callback_data: `toggle_stok:${stok2.id}` 
-      })
-    }
-    keyboard.push(row)
-  }
-  
-  if (tersediaItems.length > itemsPerPage) {
-    const navRow = []
-    if (currentPage > 0) {
-      navRow.push({ text: '⏪ Prev', callback_data: 'stok_page:prev' })
-    }
-    if (endIdx < tersediaItems.length) {
-      navRow.push({ text: 'Next ⏩', callback_data: 'stok_page:next' })
-    }
-    if (navRow.length > 0) keyboard.push(navRow)
-  }
-  
-  keyboard.push([
-    { text: "✅ Pilih 10", callback_data: "select_stok:10" },
-    { text: "✅ Pilih 20", callback_data: "select_stok:20" }
-  ])
-  keyboard.push([
-    { text: "✅ Pilih 30", callback_data: "select_stok:30" },
-    { text: "✅ Pilih 50", callback_data: "select_stok:50" }
-  ])
-  keyboard.push([
-    { text: "🔄 Reset Pilihan", callback_data: "reset_stok" }
-  ])
-  keyboard.push([
-    { text: `✅ Konfirmasi (${Data.selectedStokIds.length})`, callback_data: "konfirmasi_stok" }
-  ])
-  keyboard.push([
-    { text: "🔙 Kembali", callback_data: "kembaliawal" }
-  ])
+  const keyboard = [
+    [
+      { text: "-1", callback_data: "select_stok:-1" },
+      { text: "+1", callback_data: "select_stok:1" },
+      { text: "-5", callback_data: "select_stok:-5" },
+      { text: "+5", callback_data: "select_stok:5" }
+    ],
+    [{ text: "Pembayaran Saldo", callback_data: "checkout_payment:saldo" }],
+    [{ text: "Pembayaran QRIS", callback_data: "checkout_payment:qris" }],
+    [{ text: "🔄 Perbarui", callback_data: "refresh_stok" }],
+    [{ text: "← Sebelumnya", callback_data: `item:${item.kode}` }]
+  ]
   
   try {
     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
@@ -4446,6 +4367,29 @@ if (cmd.startsWith("select_stok:")) {
   if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
     let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
     
+    if (jumlah < 0) {
+      if (!Data.selectedStokIds) Data.selectedStokIds = []
+      const selectCount = Math.abs(jumlah)
+      // Ambil N item terakhir untuk dihapus (LIFO)
+      const toRemove = Data.selectedStokIds.slice(-selectCount)
+      
+      Data.selectedStokIds = Data.selectedStokIds.slice(0, -selectCount)
+      
+      if (toRemove.length > 0) {
+        releaseReservation(toRemove)
+      }
+      
+      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+      
+      await bot.answerCallbackQuery(query.id, { 
+        text: `⬜ Dibatalkan ${toRemove.length} stok`, 
+        show_alert: false 
+      })
+      
+      await refreshStokView(query, Data)
+      return
+    }
+    
     const { data: Produk } = await supabase.from("Produk").select("*")
     const item = Produk.find(i => i.kode.toLowerCase() === Data.kode.toLowerCase())
     if (!item) return
@@ -4461,6 +4405,13 @@ if (cmd.startsWith("select_stok:")) {
       !Data.selectedStokIds.includes(s.id) && 
       isStokAvailable(s.id, query.from.id)
     )
+    
+    if (belumDipilih.length === 0) {
+      return await bot.answerCallbackQuery(query.id, { 
+        text: '❌ Tidak ada stok tersedia yang bisa dipilih!', 
+        show_alert: true 
+      })
+    }
     
     // Pilih N stok pertama yang available
     const stokToSelect = belumDipilih.slice(0, jumlah)
@@ -4495,6 +4446,66 @@ if (cmd.startsWith("select_stok:")) {
       show_alert: reserved.length < stokIdsToAdd.length 
     })
     
+    await refreshStokView(query, Data)
+  }
+}
+
+// Handler untuk checkout langsung dari stok selection
+if (cmd.startsWith("checkout_payment:")) {
+  const method = cmd.split(":")[1]
+  
+  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
+    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+    
+    if (!Data.selectedStokIds || Data.selectedStokIds.length === 0) {
+      await bot.answerCallbackQuery(query.id, { 
+        text: '⚠️ Pilih minimal 1 stok!', 
+        show_alert: true 
+      })
+      return
+    }
+    
+    // Validasi stok yang dipilih masih tersedia
+    const selectedStok = await getStokItems(Data.kode.toLowerCase())
+    const tersediaIds = selectedStok
+      .filter(s => s.status === 'tersedia')
+      .map(s => s.id)
+    
+    const validIds = Data.selectedStokIds.filter(id => tersediaIds.includes(id))
+    
+    if (validIds.length !== Data.selectedStokIds.length) {
+      await bot.answerCallbackQuery(query.id, { 
+        text: `⚠️ Beberapa stok yang dipilih sudah tidak tersedia!`, 
+        show_alert: true 
+      })
+      Data.selectedStokIds = validIds
+      Data.jumlah = validIds.length
+      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+      await refreshStokView(query, Data)
+      return
+    }
+    
+    // Update jumlah sesuai dengan jumlah stok yang dipilih
+    Data.jumlah = Data.selectedStokIds.length
+    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    
+    await bot.answerCallbackQuery(query.id)
+    
+    try {
+      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    } catch (e) {}
+    
+    // Redirect langsung ke pilih_payment_method
+    query.data = "pilih_payment_method"
+    cmd = "pilih_payment_method"
+  }
+}
+
+// Handler untuk refresh stok
+if (cmd === "refresh_stok") {
+  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
+    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+    await bot.answerCallbackQuery(query.id, { text: '🔄 Stok diperbarui' })
     await refreshStokView(query, Data)
   }
 }
