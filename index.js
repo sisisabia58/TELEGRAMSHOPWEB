@@ -364,7 +364,7 @@ function getKategoriName(kategori) {
 
 let ITEMS_PER_PAGE = 4
 let USERS_PER_PAGE = 5
-let PRODUCTS_PER_PAGE = 6
+let PRODUCTS_PER_PAGE = 10
 
 async function sendPage(data, chatId, page, msgId = null, callbackId = null, filterOptions = {}) {
   const sortedData = [...data].sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal))
@@ -2786,110 +2786,56 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
 
   if (callbackId) await bot.answerCallbackQuery(callbackId)
   
-  // Header yang lebih ringkas dan informatif
-  let text = `📦 *DAFTAR PRODUK*
-━━━━━━━━━━━━━━━━━━━━
-${filterOptions.statusLabel ? `📌 Filter: *${filterOptions.statusLabel}*` : ''}
-${filterOptions.kategoriLabel ? `🏷️ Kategori: *${filterOptions.kategoriLabel}*` : ''}
-${filterOptions.searchLabel ? `🔍 ${filterOptions.searchLabel}` : ''}
-━━━━━━━━━━━━━━━━━━━━
-📊 *${totalProducts}* produk | ✅ *${produkTersedia}* tersedia | 📄 Halaman *${page+1}/${totalPages}*
-━━━━━━━━━━━━━━━━━━━━
-
-*📋 DAFTAR PRODUK:*
-`
+  // Header yang simple sesuai screenshot
+  let text = `*LIST PRODUCT*\n\n`
   
-  // Empty state yang lebih informatif
+  // Empty state jika tidak ada produk
   if (items.length === 0) {
-    text += `📭 *Tidak ada produk*
-━━━━━━━━━━━━━━━━━━━━
-${filterOptions.statusLabel ? `Tidak ada produk dengan filter "*${filterOptions.statusLabel}*"` : ''}
-${filterOptions.searchLabel ? `Tidak ada hasil untuk pencarian "*${filterOptions.searchTerm || ''}*"` : ''}
-${!filterOptions.statusLabel && !filterOptions.searchLabel ? 'Tidak ada produk pada halaman ini.' : ''}
-
-💡 *Saran:*
-• Coba filter lain
-• Cek kategori lain
-• Gunakan kata kunci berbeda untuk pencarian
-━━━━━━━━━━━━━━━━━━━━`
+    text += `📭 *Tidak ada produk*`
   } else {
-    // Tampilan produk yang lebih visual dan informatif
     items.forEach((p, idx) => {
       const itemNum = start + idx + 1
       const stokCount = getStokCount(p)
-      
-      // Status badge yang lebih jelas dengan emoji
-      let statusBadge = ""
-      let statusColor = ""
-      if (stokCount === 0) {
-        statusBadge = "❌ HABIS"
-        statusColor = "🔴"
-      } else if (stokCount <= 5) {
-        statusBadge = "⚠️ RENDAH"
-        statusColor = "🟡"
-      } else if (stokCount <= 20) {
-        statusBadge = "✅ TERSEDIA"
-        statusColor = "🟢"
-      } else {
-        statusBadge = "🟢 BANYAK"
-        statusColor = "🟢"
-      }
-      
-      // Badge bestseller dan produk baru
-      const bestSellerBadge = (p.terjual || 0) >= 10 ? "🔥 BESTSELLER" : ""
-      const newBadge = isNewProduct(p.created_at) ? "🆕 BARU" : ""
-      
-      // Kategori emoji
-      const kategoriEmoji = getKategoriEmoji(p.kategori || 'umum')
-      
-      // Format yang lebih rapi dan mudah dibaca
-      text += `${statusColor} *${itemNum}. ${p.nama}* ${bestSellerBadge} ${newBadge}
-      
-📋 *Info Produk:*
-   🔖 Kode: \`${p.kode}\`
-   💰 Harga: *${formatrupiah(p.harga || 0)}*
-   ${p.deskripsi ? `📝 ${p.deskripsi.substring(0, 50)}${p.deskripsi.length > 50 ? '...' : ''}` : ''}
-   
-📊 *Stok & Penjualan:*
-   ${statusBadge} | 📦 ${stokCount} stok | 🛒 ${p.terjual || 0} terjual
-   
-🏷️ Kategori: ${kategoriEmoji} ${p.kategori || 'Umum'}
-━━━━━━━━━━━━━━━━━━━━\n`
+      text += `[${itemNum}]. ${p.nama.toUpperCase()} ( ${stokCount} )\n`
     })
     
-    // Tambahkan tip sebelum tombol
-    text += `\n💡 *Tips:* Ketik nomor produk di chat untuk langsung membeli (contoh: ketik \`1\` untuk membeli produk nomor 1)
-━━━━━━━━━━━━━━━━━━━━\n`
+    // Informasi halaman dan waktu saat ini (WIB)
+    const momentTz = require('moment-timezone')
+    const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
+    text += `\n📄 Halaman ${page + 1} / ${totalPages}\n`
+    text += `📅 ${formattedTime}`
   }
 
   const buttons = []
   
-  // Tidak perlu tombol action untuk produk - user cukup ketik nomor produk
-  // Hapus semua tombol "Beli" dan "Detail"
   if (items.length === 0) {
-    // Tombol untuk empty state
     buttons.push([
       { text: "🔄 Reset Filter", callback_data: "daftarproduk" },
-      { text: "📂 Lihat Kategori", callback_data: "kategori_menu" }
+      { text: "🔙 Kembali", callback_data: "kembaliawal" }
     ])
+  } else {
+    // Navigation buttons (⬅️ Sebelumnya / ➡️ Selanjutnya)
+    const navButtons = []
+    if (page > 0) {
+      navButtons.push({ text: '⬅️ Sebelumnya', callback_data: `produk_prev:${page}_${filterOptions.filterKey || 'all'}` })
+    }
+    if (page < totalPages - 1) {
+      navButtons.push({ text: '➡️ Selanjutnya', callback_data: `produk_next:${page}_${filterOptions.filterKey || 'all'}` })
+    }
+    if (navButtons.length > 0) {
+      buttons.push(navButtons)
+    }
+    
+    // Popular products button
+    if (filterOptions.filterKey === 'bestseller') {
+      buttons.push([{ text: "📦 Semua Produk", callback_data: "daftarproduk" }])
+    } else {
+      buttons.push([{ text: "🔥 PRODUK POPULER", callback_data: "produk_filter_bestseller" }])
+    }
+    
+    // Back button
+    buttons.push([{ text: "🔙 Kembali", callback_data: "kembaliawal" }])
   }
-  
-  // Navigation buttons
-  const navButtons = []
-  if (page > 0) navButtons.push({ text: '⏪ Prev', callback_data: `produk_prev:${page}_${filterOptions.filterKey || 'all'}` })
-  if (page < totalPages - 1) navButtons.push({ text: 'Next ⏩', callback_data: `produk_next:${page}_${filterOptions.filterKey || 'all'}` })
-  if (navButtons.length > 0) buttons.push(navButtons)
-  
-  // Filter & Sort buttons
-  buttons.push([
-    { text: "🔍 Filter", callback_data: "produk_filter" },
-    { text: "📂 Kategori", callback_data: "kategori_menu" }
-  ])
-  buttons.push([
-    { text: "📊 Statistik", callback_data: "produk_statistik" }
-  ])
-  
-  buttons.push([{ text: "🔙 Kembali", callback_data: "kembaliawal" }])
 
   const reply_markup = { inline_keyboard: buttons }
 
@@ -4027,23 +3973,31 @@ ${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 
       const sampleData = stokItems.length > 0 ? [stokItems[0].data] : (item.data || [])
       const formatDetected = detectProductFormat(sampleData, item.format)
       
-      await bot.sendMessage(query.from.id, `📦 *${item.nama}*
-=======================
-Harga: *${formatrupiah(item.harga)}*
-Stok Tersedia: *${stokCount}*
-Stok Terjual: *${item.terjual}*
-${formatDetected.info}
-${formatDetected.example ? formatDetected.example + '\n' : ''}Deskripsi: *${item.deskripsi}*
-=======================
-Klik tombol dibawah untuk melanjutkan!`, {
-  parse_mode: "Markdown",
-  reply_markup: {
-    inline_keyboard: [
-      [{text: "➡️ Lanjut", callback_data: "lanjut"}],
-          [{text: "🔙 Kembali", callback_data: "kembaliawal"}]
-      ]
-  }
-})
+      const momentTz = require('moment-timezone')
+      const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
+
+      await bot.sendMessage(query.from.id, `tambahkan jumlah pembelian:
+
+┌──────────────────
+│ • Produk : ${item.nama.toUpperCase()}
+│ • Stok Terjual : ${item.terjual}
+│ • Desk : ${item.deskripsi}
+└──────────────────
+
+┌──────────────────
+│ Variasi, Harga - (Stok):
+│ • ${item.nama}: ${formatrupiah(item.harga)} - (${stokCount})
+└──────────────────
+
+Current Date: ${formattedTime}`, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{text: `${item.nama} (${stokCount})`, callback_data: "lanjut"}],
+            [{text: "🔙 Kembali", callback_data: "daftarproduk"}]
+          ]
+        }
+      })
     } else {
       await bot.sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, mungkin sudah dihapus!`)
     }
@@ -10772,20 +10726,28 @@ ${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 
       const sampleData = stokItems.length > 0 ? [stokItems[0].data] : (item.data || [])
       const formatDetected = detectProductFormat(sampleData, item.format)
       
-      await bot.sendMessage(msg.from.id, `📦 *${item.nama}*
-=======================
-Harga: *${formatrupiah(item.harga)}*
-Stok Tersedia: *${stokCount}*
-Stok Terjual: *${item.terjual}*
-${formatDetected.info}
-${formatDetected.example ? formatDetected.example + '\n' : ''}Deskripsi: *${item.deskripsi}*
-=======================
-Klik tombol dibawah untuk melanjutkan!`, {
+      const momentTz = require('moment-timezone')
+      const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
+
+      await bot.sendMessage(msg.from.id, `tambahkan jumlah pembelian:
+
+┌──────────────────
+│ • Produk : ${item.nama.toUpperCase()}
+│ • Stok Terjual : ${item.terjual}
+│ • Desk : ${item.deskripsi}
+└──────────────────
+
+┌──────────────────
+│ Variasi, Harga - (Stok):
+│ • ${item.nama}: ${formatrupiah(item.harga)} - (${stokCount})
+└──────────────────
+
+Current Date: ${formattedTime}`, {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{text: "➡️ Lanjut", callback_data: "lanjut"}],
-            [{text: "🔙 Kembali", callback_data: "kembaliawal"}]
+            [{text: `${item.nama} (${stokCount})`, callback_data: "lanjut"}],
+            [{text: "🔙 Kembali", callback_data: "daftarproduk"}]
           ]
         }
       })
