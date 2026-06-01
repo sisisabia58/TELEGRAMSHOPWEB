@@ -1,0 +1,186 @@
+<%
+    const currentPage = 'analitik';
+    const pageTitle = '📊 Analitik';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/js/ui-utils.js"></script>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <!-- Period Selector -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-body">
+                    <div class="filter-container">
+                        <a href="?period=daily" class="filter-chip <%= currentPeriod === 'daily' ? 'active' : '' %>">Harian</a>
+                        <a href="?period=weekly" class="filter-chip <%= currentPeriod === 'weekly' ? 'active' : '' %>">Mingguan</a>
+                        <a href="?period=monthly" class="filter-chip <%= currentPeriod === 'monthly' ? 'active' : '' %>">Bulanan</a>
+                        <a href="?period=yearly" class="filter-chip <%= currentPeriod === 'yearly' ? 'active' : '' %>">Tahunan</a>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Analytics Charts -->
+            <div class="content-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">📈 Revenue Trend</h2>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="revenueChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">📊 Top Products</h2>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="productsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
+            ↑
+        </button>
+    </div>
+    
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+        
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('sidebar');
+            const toggleBtn = document.querySelector('.sidebar-toggle');
+            
+            if (window.innerWidth <= 768 && 
+                sidebar.classList.contains('open') && 
+                !sidebar.contains(e.target) && 
+                !toggleBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        window.addEventListener('resize', () => {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth > 768) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        // Load analytics data and render charts
+        const currentPeriod = '<%= currentPeriod %>';
+
+        // Revenue chart
+        fetch(`/api/analitik/sales?period=${currentPeriod}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.data && data.data.length) {
+                    const labels = data.data.map(d => d.period);
+                    const revenues = data.data.map(d => d.revenue);
+                    new Chart(document.getElementById('revenueChart'), {
+                        type: 'line',
+                        data: {
+                            labels,
+                            datasets: [{
+                                label: 'Revenue (Rp)',
+                                data: revenues,
+                                borderColor: 'rgb(75, 192, 192)',
+                                backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                                fill: true,
+                                tension: 0.3
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: { legend: { display: true } },
+                            scales: {
+                                y: { beginAtZero: true }
+                            }
+                        }
+                    });
+                } else {
+                    document.getElementById('revenueChart').parentElement.innerHTML = '<p class="text-muted">Belum ada data penjualan untuk periode ini.</p>';
+                }
+            })
+            .catch(() => {
+                document.getElementById('revenueChart').parentElement.innerHTML = '<p class="text-danger">Gagal memuat data revenue.</p>';
+            });
+
+        // Top products chart
+        fetch('/api/analitik/products?limit=10')
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.data && data.data.length) {
+                    const labels = data.data.map(d => (d.nama || d.kode || 'Produk').substring(0, 20));
+                    const terjual = data.data.map(d => d.totalTerjual);
+                    new Chart(document.getElementById('productsChart'), {
+                        type: 'bar',
+                        data: {
+                            labels,
+                            datasets: [{
+                                label: 'Terjual',
+                                data: terjual,
+                                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                                borderColor: 'rgb(54, 162, 235)',
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            indexAxis: 'y',
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: { legend: { display: false } },
+                            scales: {
+                                x: { beginAtZero: true }
+                            }
+                        }
+                    });
+                } else {
+                    document.getElementById('productsChart').parentElement.innerHTML = '<p class="text-muted">Belum ada data produk.</p>';
+                }
+            })
+            .catch(() => {
+                document.getElementById('productsChart').parentElement.innerHTML = '<p class="text-danger">Gagal memuat data produk.</p>';
+            });
+    </script>
+    
+    <script src="/js/notifications.js"></script>
+</body>
+</html>

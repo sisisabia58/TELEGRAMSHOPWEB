@@ -1,0 +1,178 @@
+<%
+    const currentPage = 'admin-users';
+    const pageTitle = 'Manajemen Admin';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+    <style>
+        .admin-card .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .table-wrapper th,
+        .table-wrapper td { padding: 12px 10px; }
+        .table-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .table-actions form { display: inline; margin: 0; }
+        .table-actions .btn-icon,
+        .table-actions .btn-sm { font-size: 14px; padding: 6px 10px; }
+        .you-badge { font-size: 12px; color: #667eea; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <%- include('partials/sidebar') %>
+
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;">👥 <%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (typeof req !== 'undefined' && req.session && req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/admin/users/tambah" class="btn btn-success">➕ Tambah Admin</a>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+
+        <div class="container">
+            <% if (success === 'tambah') { %>
+                <div class="alert alert-success" style="margin-bottom: 20px;">✅ Admin berhasil ditambahkan!</div>
+            <% } else if (success === 'edit') { %>
+                <div class="alert alert-success" style="margin-bottom: 20px;">✅ Admin berhasil diupdate!</div>
+            <% } else if (success === 'hapus') { %>
+                <div class="alert alert-success" style="margin-bottom: 20px;">✅ Admin berhasil dihapus!</div>
+            <% } %>
+
+            <% if (error === 'notfound') { %>
+                <div class="alert alert-error" style="margin-bottom: 20px;">❌ Admin tidak ditemukan!</div>
+            <% } else if (error === 'load') { %>
+                <div class="alert alert-error" style="margin-bottom: 20px;">❌ Gagal memuat data admin!</div>
+            <% } else if (error === 'edit') { %>
+                <div class="alert alert-error" style="margin-bottom: 20px;">❌ Gagal mengupdate admin!</div>
+            <% } else if (error === 'hapus') { %>
+                <div class="alert alert-error" style="margin-bottom: 20px;">❌ Gagal menghapus admin!</div>
+            <% } else if (error === 'cannotdelete') { %>
+                <div class="alert alert-error" style="margin-bottom: 20px;">❌ Anda tidak dapat menghapus akun sendiri!</div>
+            <% } %>
+
+            <div class="card admin-card">
+                <div class="card-header">
+                    <h2 class="card-title">Daftar Admin</h2>
+                    <a href="/admin/users/tambah" class="btn btn-success">➕ Tambah Admin</a>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Last Login</th>
+                                    <th>Last Login IP</th>
+                                    <th>Created At</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (admins.length === 0) { %>
+                                    <tr>
+                                        <td colspan="7">
+                                            <div class="empty-state">
+                                                <div class="empty-state-icon">👥</div>
+                                                <div class="empty-state-title">Belum ada admin</div>
+                                                <div class="empty-state-description">Silakan tambah admin pertama Anda</div>
+                                                <a href="/admin/users/tambah" class="empty-state-action">➕ Tambah Admin</a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% } else { %>
+                                    <% admins.forEach(admin => { %>
+                                        <tr>
+                                            <td><strong><%= admin.username %></strong></td>
+                                            <td>
+                                                <% if (admin.role === 'admin') { %>
+                                                    <span class="status-badge status-success">Admin</span>
+                                                <% } else if (admin.role === 'staff') { %>
+                                                    <span class="status-badge status-warning">Staff</span>
+                                                <% } else { %>
+                                                    <span class="status-badge status-info">Viewer</span>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <% if (admin.is_active) { %>
+                                                    <span class="status-badge status-success">Aktif</span>
+                                                <% } else { %>
+                                                    <span class="status-badge status-danger">Nonaktif</span>
+                                                <% } %>
+                                            </td>
+                                            <td><%= admin.last_login ? formatTanggal(admin.last_login) : '-' %></td>
+                                            <td><%= admin.last_login_ip || '-' %></td>
+                                            <td><%= formatTanggal(admin.created_at) %></td>
+                                            <td>
+                                                <div class="table-actions">
+                                                    <a href="/admin/users/edit/<%= admin.id %>" class="btn-icon" title="Edit">✏️</a>
+                                                    <% if (typeof req !== 'undefined' && req.session && admin.id === req.session.adminId) { %>
+                                                        <span class="you-badge">(Anda)</span>
+                                                    <% } else { %>
+                                                        <form method="POST" action="/admin/users/hapus/<%= admin.id %>" style="display: inline;" onsubmit="return confirm('Yakin ingin menghapus admin ini?');">
+                                                            <button type="submit" class="btn-icon" title="Hapus" style="background: none; border: none; cursor: pointer; padding: 0; font-size: inherit;">🗑️</button>
+                                                        </form>
+                                                    <% } %>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <% }) %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">↑</button>
+    </div>
+
+    <script>
+        function toggleSidebar() {
+            var sidebar = document.getElementById('sidebar');
+            if (sidebar) {
+                sidebar.classList.toggle('collapsed');
+                sidebar.classList.toggle('open');
+            }
+        }
+        document.addEventListener('click', function(e) {
+            var sidebar = document.getElementById('sidebar');
+            var toggleBtn = document.querySelector('.sidebar-toggle');
+            if (window.innerWidth <= 768 && sidebar && sidebar.classList.contains('open') && !sidebar.contains(e.target) && toggleBtn && !toggleBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+        window.addEventListener('resize', function() {
+            var sidebar = document.getElementById('sidebar');
+            if (window.innerWidth > 768 && sidebar) sidebar.classList.remove('open');
+        });
+    </script>
+    <script src="/js/notifications.js"></script>
+</body>
+</html>

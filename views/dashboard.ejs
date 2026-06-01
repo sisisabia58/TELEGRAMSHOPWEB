@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/js/ui-utils.js"></script>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <!-- Sidebar Navigation -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>📊 <%= namaBot %></h2>
+            <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+        </div>
+        
+        <div class="nav-group">
+            <div class="nav-group-title">Main</div>
+            <a href="/" class="nav-item active">
+                <span class="nav-item-icon">📊</span>
+                <span>Dashboard</span>
+            </a>
+        </div>
+        
+        <div class="nav-group">
+            <div class="nav-group-title">Products</div>
+            <a href="/produk" class="nav-item">
+                <span class="nav-item-icon">📦</span>
+                <span>Produk</span>
+            </a>
+            <a href="/voucher" class="nav-item">
+                <span class="nav-item-icon">🎫</span>
+                <span>Voucher</span>
+            </a>
+        </div>
+        
+        <div class="nav-group">
+            <div class="nav-group-title">Transactions</div>
+            <a href="/transaksi" class="nav-item">
+                <span class="nav-item-icon">🛍️</span>
+                <span>Transaksi</span>
+            </a>
+            <a href="/deposit" class="nav-item">
+                <span class="nav-item-icon">💵</span>
+                <span>Deposit</span>
+            </a>
+            <a href="/user" class="nav-item">
+                <span class="nav-item-icon">👥</span>
+                <span>User</span>
+            </a>
+        </div>
+        
+        <div class="nav-group">
+            <div class="nav-group-title">Tools</div>
+            <a href="/bulk" class="nav-item">
+                <span class="nav-item-icon">⚡</span>
+                <span>Bulk Operations</span>
+            </a>
+            <a href="/communication/broadcast" class="nav-item">
+                <span class="nav-item-icon">📢</span>
+                <span>Communication</span>
+            </a>
+        </div>
+        
+        <div class="nav-group">
+            <div class="nav-group-title">Reports</div>
+            <a href="/analitik" class="nav-item">
+                <span class="nav-item-icon">📈</span>
+                <span>Analytics</span>
+            </a>
+            <a href="/laporan" class="nav-item">
+                <span class="nav-item-icon">📄</span>
+                <span>Reports</span>
+            </a>
+        </div>
+        
+        <div class="nav-group">
+            <div class="nav-group-title">Settings</div>
+            <a href="/settings/general" class="nav-item">
+                <span class="nav-item-icon">⚙️</span>
+                <span>General Settings</span>
+            </a>
+            <a href="/settings/notifications" class="nav-item">
+                <span class="nav-item-icon">🔔</span>
+                <span>Notifications</span>
+            </a>
+        </div>
+        
+        <% if (req.session.role === 'admin') { %>
+        <div class="nav-group">
+            <div class="nav-group-title">Admin</div>
+            <a href="/admin/users" class="nav-item">
+                <span class="nav-item-icon">👤</span>
+                <span>Admin Users</span>
+            </a>
+            <a href="/admin/login-history" class="nav-item">
+                <span class="nav-item-icon">🔐</span>
+                <span>Login History</span>
+            </a>
+            <a href="/admin/audit-log" class="nav-item">
+                <span class="nav-item-icon">📋</span>
+                <span>Audit Log</span>
+            </a>
+        </div>
+        <% } %>
+    </nav>
+    
+    <!-- Main Content -->
+    <main class="main-content" id="main-content">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;">Dashboard <%= namaBot %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <!-- Page Content -->
+        <div class="container">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">👥</div>
+                    <div class="stat-info">
+                        <h3>Total User</h3>
+                        <p class="stat-value"><%= stats.totalUsers %></p>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">🛍️</div>
+                    <div class="stat-info">
+                        <h3>Total Transaksi</h3>
+                        <p class="stat-value"><%= stats.totalTransactions %></p>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">📦</div>
+                    <div class="stat-info">
+                        <h3>Total Produk</h3>
+                        <p class="stat-value"><%= stats.totalProducts %></p>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">💰</div>
+                    <div class="stat-info">
+                        <h3>Total Revenue</h3>
+                        <p class="stat-value"><%= formatrupiah(stats.totalRevenue) %></p>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-info">
+                        <h3>Stok Tersedia</h3>
+                        <p class="stat-value"><%= stats.totalStokTersedia %></p>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">✅</div>
+                    <div class="stat-info">
+                        <h3>Stok Terjual</h3>
+                        <p class="stat-value"><%= stats.totalStokTerjual %></p>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">💵</div>
+                    <div class="stat-info">
+                        <h3>Revenue Hari Ini</h3>
+                        <p class="stat-value"><%= formatrupiah(stats.revenueToday) %></p>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">📈</div>
+                    <div class="stat-info">
+                        <h3>Revenue Bulan Ini</h3>
+                        <p class="stat-value"><%= formatrupiah(stats.revenueMonth) %></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="content-grid">
+                <div class="chart-container card">
+                    <div class="card-header">
+                        <h2 class="card-title">📈 Grafik Revenue (30 Hari Terakhir)</h2>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="revenueChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="recent-transactions card">
+                    <div class="card-header">
+                        <h2 class="card-title">🔄 Transaksi Terbaru</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Tanggal</th>
+                                        <th>Produk</th>
+                                        <th>Jumlah</th>
+                                        <th>Harga</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <% if (recentTransactions.length === 0) { %>
+                                        <tr>
+                                            <td colspan="4">
+                                                <div class="empty-state">
+                                                    <div class="empty-state-icon">📭</div>
+                                                    <div class="empty-state-title">Belum ada transaksi</div>
+                                                    <div class="empty-state-description">Transaksi akan muncul di sini setelah ada pembelian</div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <% } else { %>
+                                        <% recentTransactions.forEach(t => { %>
+                                            <tr>
+                                                <td><%= formatTanggal(t.tanggal) %></td>
+                                                <td><%= t.nama %></td>
+                                                <td><%= t.jumlah %></td>
+                                                <td><%= formatrupiah(t.harga) %></td>
+                                            </tr>
+                                        <% }) %>
+                                    <% } %>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
+            ↑
+        </button>
+    </div>
+    
+    <script>
+        // Sidebar toggle function is now in ui-utils.js
+        // Show success/error messages from query params
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const success = urlParams.get('success');
+            const error = urlParams.get('error');
+            
+            if (success) {
+                toast.success(decodeURIComponent(success), 'Berhasil');
+            }
+            if (error) {
+                toast.error(decodeURIComponent(error), 'Error');
+            }
+        });
+        
+        // Load chart data
+        fetch('/api/stats')
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const ctx = document.getElementById('revenueChart').getContext('2d');
+                    new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: data.data.map(d => d.date),
+                            datasets: [{
+                                label: 'Revenue (Rp)',
+                                data: data.data.map(d => d.revenue),
+                                borderColor: 'rgb(102, 126, 234)',
+                                backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                                tension: 0.4,
+                                fill: true
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: {
+                                        callback: function(value) {
+                                            return 'Rp ' + value.toLocaleString('id-ID');
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error loading chart:', error);
+                toast.error('Gagal memuat data grafik', 'Error');
+            });
+    </script>
+    
+    <!-- Real-time Notifications -->
+    <script src="/js/notifications.js"></script>
+</body>
+</html>

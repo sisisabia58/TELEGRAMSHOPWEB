@@ -1,0 +1,326 @@
+<%
+    const currentPage = 'admin-audit';
+    const pageTitle = '📋 Audit Log';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+    <style>
+        .details-toggle {
+            cursor: pointer;
+            color: #667eea;
+            text-decoration: underline;
+            font-size: 12px;
+        }
+        .details-toggle:hover {
+            color: #5568d3;
+        }
+        .details-content {
+            display: none;
+            margin-top: 8px;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .details-content.expanded {
+            display: block;
+        }
+        .action-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .filter-group {
+            flex: 1;
+            min-width: 200px;
+        }
+        .stats-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-summary-card {
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border-left: 4px solid #667eea;
+        }
+        .stat-summary-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        .stat-summary-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <!-- Stats Summary -->
+            <div class="stats-summary">
+                <div class="stat-summary-card">
+                    <div class="stat-summary-label">Total Log</div>
+                    <div class="stat-summary-value"><%= totalLogs || auditLogs.length %></div>
+                </div>
+                <div class="stat-summary-card" style="border-left-color: #28a745;">
+                    <div class="stat-summary-label">Halaman</div>
+                    <div class="stat-summary-value"><%= currentPage %>/<%= totalPages || 1 %></div>
+                </div>
+            </div>
+
+            <!-- Filter Card -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header">
+                    <h2 class="card-title">🔍 Filter & Pencarian</h2>
+                </div>
+                <div class="card-body">
+                    <form method="GET" action="/admin/audit-log" id="filterForm">
+                        <div class="search-container" style="margin-bottom: 20px;">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" name="search" class="search-input" placeholder="Cari berdasarkan username, action, entity type, atau IP address..." value="<%= filters && filters.search ? filters.search : '' %>">
+                        </div>
+
+                        <div class="filter-container">
+                            <div class="filter-group">
+                                <label class="form-label">Username</label>
+                                <input type="text" name="username" class="form-input" placeholder="Username" value="<%= filters && filters.username ? filters.username : '' %>">
+                            </div>
+                            <div class="filter-group">
+                                <label class="form-label">Action</label>
+                                <select name="action" class="form-select">
+                                    <option value="">Semua Action</option>
+                                    <option value="create" <%= filters && filters.action === 'create' ? 'selected' : '' %>>Create</option>
+                                    <option value="update" <%= filters && filters.action === 'update' ? 'selected' : '' %>>Update</option>
+                                    <option value="delete" <%= filters && filters.action === 'delete' ? 'selected' : '' %>>Delete</option>
+                                    <option value="login" <%= filters && filters.action === 'login' ? 'selected' : '' %>>Login</option>
+                                    <option value="logout" <%= filters && filters.action === 'logout' ? 'selected' : '' %>>Logout</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label class="form-label">Entity Type</label>
+                                <input type="text" name="entityType" class="form-input" placeholder="Entity Type" value="<%= filters && filters.entityType ? filters.entityType : '' %>">
+                            </div>
+                            <div class="filter-group">
+                                <label class="form-label">Tanggal Mulai</label>
+                                <input type="date" name="startDate" class="form-input" value="<%= filters && filters.startDate ? filters.startDate : '' %>">
+                            </div>
+                            <div class="filter-group">
+                                <label class="form-label">Tanggal Akhir</label>
+                                <input type="date" name="endDate" class="form-input" value="<%= filters && filters.endDate ? filters.endDate : '' %>">
+                            </div>
+                        </div>
+
+                        <div class="form-actions" style="display: flex; gap: 12px; flex-wrap: wrap;">
+                            <button type="submit" class="btn btn-primary">🔍 Filter</button>
+                            <a href="/admin/audit-log" class="btn" style="background: #6c757d;">🔄 Reset</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Table Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">📋 Log Aktivitas</h2>
+                    <p style="margin: 0; color: #666; font-size: 14px;">Menampilkan semua aktivitas yang dilakukan oleh admin</p>
+                </div>
+                <div class="card-body" style="padding: 0;">
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Action</th>
+                                    <th>Entity Type</th>
+                                    <th>Entity ID</th>
+                                    <th>Details</th>
+                                    <th>IP Address</th>
+                                    <th>Waktu</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (auditLogs.length === 0) { %>
+                                    <tr>
+                                        <td colspan="7" class="text-center">
+                                            <div class="empty-state">
+                                                <div class="empty-state-icon">📋</div>
+                                                <div class="empty-state-title">Belum ada log aktivitas</div>
+                                                <div class="empty-state-description">Tidak ada aktivitas yang tercatat saat ini.</div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% } else { %>
+                                    <% auditLogs.forEach((log, index) => { %>
+                                        <tr>
+                                            <td>
+                                                <strong><%= log.username %></strong>
+                                            </td>
+                                            <td>
+                                                <span class="action-badge">
+                                                    <% 
+                                                    const action = (log.action || '').toLowerCase();
+                                                    let badgeClass = 'status-info';
+                                                    if (action.includes('create') || action.includes('add')) {
+                                                        badgeClass = 'status-success';
+                                                    } else if (action.includes('update') || action.includes('edit') || action.includes('change')) {
+                                                        badgeClass = 'status-warning';
+                                                    } else if (action.includes('delete') || action.includes('remove')) {
+                                                        badgeClass = 'status-danger';
+                                                    } else if (action.includes('login')) {
+                                                        badgeClass = 'status-success';
+                                                    } else if (action.includes('logout')) {
+                                                        badgeClass = 'status-primary';
+                                                    }
+                                                    %>
+                                                    <span class="status-badge <%= badgeClass %>"><%= log.action %></span>
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <% if (log.entity_type) { %>
+                                                    <span class="badge badge-info"><%= log.entity_type %></span>
+                                                <% } else { %>
+                                                    <span style="color: #999;">-</span>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <% if (log.entity_id) { %>
+                                                    <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 12px;"><%= log.entity_id %></code>
+                                                <% } else { %>
+                                                    <span style="color: #999;">-</span>
+                                                <% } %>
+                                            </td>
+                                            <td style="max-width: 300px;">
+                                                <% if (log.details) { %>
+                                                    <% const detailsStr = typeof log.details === 'string' ? log.details : JSON.stringify(log.details, null, 2); %>
+                                                    <% if (detailsStr.length > 50) { %>
+                                                        <span class="details-toggle" onclick="toggleDetails(<%= index %>)">Lihat Details</span>
+                                                        <div class="details-content" id="details-<%= index %>"><%= detailsStr %></div>
+                                                    <% } else { %>
+                                                        <code style="font-size: 12px;"><%= detailsStr %></code>
+                                                    <% } %>
+                                                <% } else { %>
+                                                    <span style="color: #999;">-</span>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <% if (log.ip_address) { %>
+                                                    <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 12px;"><%= log.ip_address %></code>
+                                                <% } else { %>
+                                                    <span style="color: #999;">-</span>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <span style="white-space: nowrap;"><%= formatTanggal(log.created_at) %></span>
+                                            </td>
+                                        </tr>
+                                    <% }) %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            <% if (totalPages > 1) { %>
+                <div class="pagination">
+                    <div class="pagination-info">
+                        Menampilkan halaman <%= currentPage %> dari <%= totalPages %> 
+                        (<%= auditLogs.length %> dari <%= totalLogs || auditLogs.length %> log)
+                    </div>
+                    <div class="pagination-controls">
+                        <% 
+                        const filterParams = filters ? Object.keys(filters).filter(k => filters[k]).map(k => k + '=' + encodeURIComponent(filters[k])).join('&') : '';
+                        const paramPrefix = filterParams ? '&' : '?';
+                        %>
+                        <% if (currentPage > 1) { %>
+                            <a href="?page=<%= currentPage - 1 %><%= filterParams ? '&' + filterParams : '' %>" class="pagination-btn">« Sebelumnya</a>
+                        <% } %>
+                        
+                        <% 
+                        const startPage = Math.max(1, currentPage - 2);
+                        const endPage = Math.min(totalPages, currentPage + 2);
+                        for (let i = startPage; i <= endPage; i++) { %>
+                            <a href="?page=<%= i %><%= filterParams ? '&' + filterParams : '' %>" class="pagination-btn <%= i === currentPage ? 'active' : '' %>"><%= i %></a>
+                        <% } %>
+                        
+                        <% if (currentPage < totalPages) { %>
+                            <a href="?page=<%= currentPage + 1 %><%= filterParams ? '&' + filterParams : '' %>" class="pagination-btn">Selanjutnya »</a>
+                        <% } %>
+                    </div>
+                </div>
+            <% } %>
+        </div>
+    </main>
+    
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
+            ↑
+        </button>
+    </div>
+    
+    <script>
+        function toggleDetails(index) {
+            const detailsContent = document.getElementById('details-' + index);
+            const toggle = detailsContent.previousElementSibling;
+            
+            if (detailsContent.classList.contains('expanded')) {
+                detailsContent.classList.remove('expanded');
+                toggle.textContent = 'Lihat Details';
+            } else {
+                detailsContent.classList.add('expanded');
+                toggle.textContent = 'Sembunyikan Details';
+            }
+        }
+
+        // Auto-submit form on Enter key in search
+        document.querySelector('.search-input')?.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('filterForm').submit();
+            }
+        });
+    </script>
+</body>
+</html>

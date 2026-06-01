@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= typeof title !== 'undefined' ? title : 'Dashboard' %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/js/ui-utils.js"></script>
+    <% if (typeof additionalCSS !== 'undefined') { %>
+        <% additionalCSS.forEach(css => { %>
+            <link rel="stylesheet" href="<%= css %>">
+        <% }) %>
+    <% } %>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <!-- Sidebar Navigation -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>📊 <%= typeof namaBot !== 'undefined' ? namaBot : 'Dashboard' %></h2>
+            <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+        </div>
+        
+        <div class="nav-group">
+            <div class="nav-group-title">Main</div>
+            <a href="/" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'dashboard' ? 'active' : '' %>">
+                <span class="nav-item-icon">📊</span>
+                <span>Dashboard</span>
+            </a>
+        </div>
+        
+        <div class="nav-group">
+            <div class="nav-group-title">Products</div>
+            <a href="/produk" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'produk' ? 'active' : '' %>">
+                <span class="nav-item-icon">📦</span>
+                <span>Produk</span>
+            </a>
+            <a href="/voucher" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'voucher' ? 'active' : '' %>">
+                <span class="nav-item-icon">🎫</span>
+                <span>Voucher</span>
+            </a>
+        </div>
+        
+        <div class="nav-group">
+            <div class="nav-group-title">Transactions</div>
+            <a href="/transaksi" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'transaksi' ? 'active' : '' %>">
+                <span class="nav-item-icon">🛍️</span>
+                <span>Transaksi</span>
+            </a>
+            <a href="/deposit" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'deposit' ? 'active' : '' %>">
+                <span class="nav-item-icon">💵</span>
+                <span>Deposit</span>
+            </a>
+            <a href="/user" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'user' ? 'active' : '' %>">
+                <span class="nav-item-icon">👥</span>
+                <span>User</span>
+            </a>
+        </div>
+        
+        <div class="nav-group">
+            <div class="nav-group-title">Tools</div>
+            <a href="/bulk" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'bulk' ? 'active' : '' %>">
+                <span class="nav-item-icon">⚡</span>
+                <span>Bulk Operations</span>
+            </a>
+            <a href="/communication/broadcast" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'communication' ? 'active' : '' %>">
+                <span class="nav-item-icon">📢</span>
+                <span>Communication</span>
+            </a>
+        </div>
+        
+        <div class="nav-group">
+            <div class="nav-group-title">Reports</div>
+            <a href="/analitik" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'analitik' ? 'active' : '' %>">
+                <span class="nav-item-icon">📈</span>
+                <span>Analytics</span>
+            </a>
+            <a href="/laporan" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'laporan' ? 'active' : '' %>">
+                <span class="nav-item-icon">📄</span>
+                <span>Reports</span>
+            </a>
+        </div>
+        
+        <% if (typeof req !== 'undefined' && req.session && req.session.role === 'admin') { %>
+        <div class="nav-group">
+            <div class="nav-group-title">Admin</div>
+            <a href="/admin/users" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'admin-users' ? 'active' : '' %>">
+                <span class="nav-item-icon">👤</span>
+                <span>Admin Users</span>
+            </a>
+            <a href="/admin/login-history" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'admin-login' ? 'active' : '' %>">
+                <span class="nav-item-icon">🔐</span>
+                <span>Login History</span>
+            </a>
+            <a href="/admin/audit-log" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'admin-audit' ? 'active' : '' %>">
+                <span class="nav-item-icon">📋</span>
+                <span>Audit Log</span>
+            </a>
+        </div>
+        <% } %>
+    </nav>
+    
+    <!-- Main Content -->
+    <main class="main-content" id="main-content">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= typeof pageTitle !== 'undefined' ? pageTitle : 'Dashboard' %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= typeof username !== 'undefined' ? username : 'Admin' %></span>
+                    <% if (typeof req !== 'undefined' && req.session && req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <!-- Page Content -->
+        <%- body %>
+    </main>
+    
+    <!-- Quick Actions (Optional) -->
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
+            ↑
+        </button>
+    </div>
+    
+    <script>
+        // Sidebar Toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+        
+        // Close sidebar on mobile when clicking outside
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('sidebar');
+            const toggleBtn = document.querySelector('.sidebar-toggle');
+            
+            if (window.innerWidth <= 768 && 
+                sidebar.classList.contains('open') && 
+                !sidebar.contains(e.target) && 
+                !toggleBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        // Handle responsive sidebar
+        window.addEventListener('resize', () => {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth > 768) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        // Show success/error messages from query params
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const success = urlParams.get('success');
+            const error = urlParams.get('error');
+            
+            if (success) {
+                toast.success(decodeURIComponent(success), 'Berhasil');
+            }
+            if (error) {
+                toast.error(decodeURIComponent(error), 'Error');
+            }
+        });
+    </script>
+    
+    <% if (typeof additionalJS !== 'undefined') { %>
+        <% additionalJS.forEach(js => { %>
+            <script src="<%= js %>"></script>
+        <% }) %>
+    <% } %>
+    
+    <!-- Real-time Notifications -->
+    <script src="/js/notifications.js"></script>
+</body>
+</html>
+

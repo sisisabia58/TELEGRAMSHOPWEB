@@ -1,0 +1,17 @@
+{
+  "trxid": "657304C5F415",
+  "userId": 6994649045,
+  "produkData": "Email : coba1@gmail.com\nPassword : test123",
+  "produkInfo": {
+    "nama": "Netflix 1 Bulan",
+    "kode": "nx1b",
+    "snk": "Tidak Ada"
+  },
+  "jumlah": 1,
+  "harga": 10000,
+  "fee": 0,
+  "total": 10000,
+  "tanggal": "2026-02-07T03:52:29.777Z",
+  "voucher": null,
+  "metode": "saldo"
+}

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <style>
+        .form-container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .warning-box {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .warning-box h3 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        .user-info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .checkbox-group {
+            margin: 20px 0;
+        }
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .checkbox-group label:hover {
+            background: #e9ecef;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        .btn-submit {
+            padding: 12px 24px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-cancel {
+            padding: 12px 24px;
+            background: #6c757d;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <h1>🔄 Reset Data User</h1>
+                    <nav>
+                        <a href="/">Dashboard</a>
+                        <a href="/produk">Produk</a>
+                        <a href="/transaksi">Transaksi</a>
+                        <a href="/user">User</a>
+                    </nav>
+                </div>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <span style="color: #666; font-size: 14px;">
+                        👤 <%= username || 'Admin' %>
+                    </span>
+                    <a href="/logout" style="padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">
+                        Logout
+                    </a>
+                </div>
+            </div>
+        </header>
+
+        <div class="form-container">
+            <div class="warning-box">
+                <h3>⚠️ Peringatan!</h3>
+                <p>Tindakan ini akan mereset data user. Pastikan Anda yakin sebelum melanjutkan!</p>
+            </div>
+
+            <div class="user-info">
+                <p><strong>User ID:</strong> <code><%= user.id %></code></p>
+                <p><strong>Saldo Saat Ini:</strong> <%= formatrupiah(user.saldo || 0) %></p>
+                <p><strong>Pengeluaran Saat Ini:</strong> <%= formatrupiah(user.pengeluaran || 0) %></p>
+            </div>
+
+            <form method="POST" action="/user/<%= user.id %>/reset">
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" name="reset_saldo">
+                        <span><strong>Reset Saldo</strong> - Mengatur saldo menjadi 0</span>
+                    </label>
+                    <label>
+                        <input type="checkbox" name="reset_pengeluaran">
+                        <span><strong>Reset Pengeluaran</strong> - Mengatur pengeluaran menjadi 0</span>
+                    </label>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn-submit">
+                        🔄 Reset Data
+                    </button>
+                    <a href="/user/<%= user.id %>" class="btn-cancel">❌ Batal</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
+

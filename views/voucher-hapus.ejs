@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <style>
+        .confirm-container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .warning-box {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .warning-box h3 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        .voucher-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .voucher-info p {
+            margin: 5px 0;
+        }
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        .btn-delete {
+            padding: 12px 24px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-cancel {
+            padding: 12px 24px;
+            background: #6c757d;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <h1>🗑️ Hapus Voucher</h1>
+                    <nav>
+                        <a href="/">Dashboard</a>
+                        <a href="/produk">Produk</a>
+                        <a href="/transaksi">Transaksi</a>
+                        <a href="/user">User</a>
+                        <a href="/deposit">Deposit</a>
+                        <a href="/analitik">Analitik</a>
+                        <a href="/laporan">Laporan</a>
+                        <a href="/voucher">Voucher</a>
+                    </nav>
+                </div>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <span style="color: #666; font-size: 14px;">
+                        👤 <%= username || 'Admin' %>
+                    </span>
+                    <a href="/logout" style="padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">
+                        Logout
+                    </a>
+                </div>
+            </div>
+        </header>
+
+        <div class="confirm-container">
+            <div class="warning-box">
+                <h3>⚠️ Peringatan!</h3>
+                <p>Anda akan menghapus voucher ini. Tindakan ini tidak dapat dibatalkan!</p>
+            </div>
+
+            <div class="voucher-info">
+                <h3>Informasi Voucher:</h3>
+                <p><strong>Kode:</strong> <code><%= voucher.kode %></code></p>
+                <p><strong>Potongan:</strong> <%= formatrupiah(voucher.potongan) %></p>
+                <p><strong>Limit:</strong> <%= voucher.limit %></p>
+                <p><strong>Penggunaan:</strong> <%= Array.isArray(voucher.user) ? voucher.user.length : 0 %></p>
+                <p><strong>Created:</strong> <%= new Date(voucher.created_at).toLocaleDateString('id-ID') %></p>
+            </div>
+
+            <form method="POST" action="/voucher/hapus/<%= voucher.id %>">
+                <div class="form-actions">
+                    <button type="submit" class="btn-delete">
+                        🗑️ Ya, Hapus Voucher
+                    </button>
+                    <a href="/voucher" class="btn-cancel">❌ Batal</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
+

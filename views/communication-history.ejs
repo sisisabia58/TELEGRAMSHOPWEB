@@ -1,0 +1,676 @@
+<%
+    const currentPage = 'communication';
+    const pageTitle = '📜 Message History';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/communication/broadcast" class="btn-top">📢 Broadcast</a>
+                <a href="/communication/send" class="btn-top">✉️ Send</a>
+                <a href="/communication/templates" class="btn-top">📝 Templates</a>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <!-- Filter Card -->
+            <div class="card" style="margin-bottom: 24px;">
+                <div class="card-header">
+                    <h2 class="card-title">🔍 Filter History</h2>
+                </div>
+                <div class="card-body">
+                    <form method="GET" action="/communication/history" id="filterForm" class="filter-form">
+                        <div class="filter-row">
+                            <div class="filter-group">
+                                <label class="filter-label">
+                                    <span class="label-icon">📋</span>
+                                    Tipe Pesan
+                                </label>
+                                <select name="type" class="form-select">
+                                    <option value="all" <%= filters.type === 'all' ? 'selected' : '' %>>Semua Tipe</option>
+                                    <option value="broadcast" <%= filters.type === 'broadcast' ? 'selected' : '' %>>📢 Broadcast</option>
+                                    <option value="single" <%= filters.type === 'single' ? 'selected' : '' %>>✉️ Single</option>
+                                    <option value="template" <%= filters.type === 'template' ? 'selected' : '' %>>📝 Template</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label class="filter-label">
+                                    <span class="label-icon">📊</span>
+                                    Status
+                                </label>
+                                <select name="status" class="form-select">
+                                    <option value="all" <%= filters.status === 'all' ? 'selected' : '' %>>Semua Status</option>
+                                    <option value="completed" <%= filters.status === 'completed' ? 'selected' : '' %>>✅ Completed</option>
+                                    <option value="partial" <%= filters.status === 'partial' ? 'selected' : '' %>>⚠️ Partial</option>
+                                    <option value="failed" <%= filters.status === 'failed' ? 'selected' : '' %>>❌ Failed</option>
+                                    <option value="sending" <%= filters.status === 'sending' ? 'selected' : '' %>>⏳ Sending</option>
+                                    <option value="pending" <%= filters.status === 'pending' ? 'selected' : '' %>>⏸️ Pending</option>
+                                </select>
+                            </div>
+                            <div class="filter-group filter-actions">
+                                <button type="submit" class="btn btn-primary">
+                                    <span class="btn-icon">🔍</span>
+                                    <span>Filter</span>
+                                </button>
+                                <a href="/communication/history" class="btn btn-secondary">
+                                    <span class="btn-icon">🔄</span>
+                                    <span>Reset</span>
+                                </a>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Stats Cards -->
+            <% if (messages.length > 0) { %>
+                <div class="stats-grid" style="margin-bottom: 24px;">
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">📜</div>
+                        <div class="stat-content">
+                            <div class="stat-value"><%= messages.length %></div>
+                            <div class="stat-label">Total History</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">✅</div>
+                        <div class="stat-content">
+                            <div class="stat-value"><%= messages.filter(m => m.status === 'completed').length %></div>
+                            <div class="stat-label">Completed</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);">⚠️</div>
+                        <div class="stat-content">
+                            <div class="stat-value"><%= messages.filter(m => m.status === 'partial').length %></div>
+                            <div class="stat-label">Partial</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">❌</div>
+                        <div class="stat-content">
+                            <div class="stat-value"><%= messages.filter(m => m.status === 'failed').length %></div>
+                            <div class="stat-label">Failed</div>
+                        </div>
+                    </div>
+                </div>
+            <% } %>
+
+            <!-- Messages Table -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">📜 Daftar History Pesan</h2>
+                    <div class="card-header-actions">
+                        <span class="badge badge-info"><%= messages.length %> pesan</span>
+                    </div>
+                </div>
+                <div class="card-body" style="padding: 0;">
+                    <% if (messages.length === 0) { %>
+                        <div class="empty-state">
+                            <div class="empty-icon">📭</div>
+                            <h3>Belum Ada History</h3>
+                            <p>Tidak ada history pesan yang ditemukan dengan filter yang dipilih.</p>
+                            <a href="/communication/broadcast" class="btn btn-primary">
+                                <span class="btn-icon">📢</span>
+                                <span>Kirim Broadcast</span>
+                            </a>
+                        </div>
+                    <% } else { %>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Tanggal</th>
+                                        <th>Tipe</th>
+                                        <th>Penerima</th>
+                                        <th>Pesan</th>
+                                        <th>Status</th>
+                                        <th>Hasil</th>
+                                        <th>Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <% messages.forEach(m => { %>
+                                        <tr class="table-row">
+                                            <td>
+                                                <div class="date-cell">
+                                                    <span class="date-main"><%= formatTanggal(m.created_at) %></span>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <% if (m.message_type === 'broadcast') { %>
+                                                    <span class="badge badge-warning">
+                                                        <span class="badge-icon">📢</span>
+                                                        <span>BROADCAST</span>
+                                                    </span>
+                                                <% } else if (m.message_type === 'single') { %>
+                                                    <span class="badge badge-info">
+                                                        <span class="badge-icon">✉️</span>
+                                                        <span>SINGLE</span>
+                                                    </span>
+                                                <% } else { %>
+                                                    <span class="badge badge-secondary">
+                                                        <span class="badge-icon">📝</span>
+                                                        <span>TEMPLATE</span>
+                                                    </span>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <% if (m.recipient_type === 'all') { %>
+                                                    <div class="recipient-cell">
+                                                        <span class="recipient-icon">👥</span>
+                                                        <div>
+                                                            <strong>Semua User</strong>
+                                                            <small><%= m.recipient_count || 0 %> user</small>
+                                                        </div>
+                                                    </div>
+                                                <% } else { %>
+                                                    <div class="recipient-cell">
+                                                        <span class="recipient-icon">👤</span>
+                                                        <div>
+                                                            <strong>User ID:</strong> <%= m.recipient_id %>
+                                                        </div>
+                                                    </div>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <div class="message-preview-cell">
+                                                    <div class="message-text" title="<%= m.message_text %>">
+                                                        <%= m.message_text.substring(0, 60) %><%= m.message_text.length > 60 ? '...' : '' %>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <% if (m.status === 'completed') { %>
+                                                    <span class="status-badge status-success">
+                                                        <span class="status-icon">✅</span>
+                                                        <span>Completed</span>
+                                                    </span>
+                                                <% } else if (m.status === 'partial') { %>
+                                                    <span class="status-badge status-warning">
+                                                        <span class="status-icon">⚠️</span>
+                                                        <span>Partial</span>
+                                                    </span>
+                                                <% } else if (m.status === 'failed') { %>
+                                                    <span class="status-badge status-danger">
+                                                        <span class="status-icon">❌</span>
+                                                        <span>Failed</span>
+                                                    </span>
+                                                <% } else if (m.status === 'sending') { %>
+                                                    <span class="status-badge status-info">
+                                                        <span class="status-icon">⏳</span>
+                                                        <span>Sending</span>
+                                                    </span>
+                                                <% } else { %>
+                                                    <span class="status-badge status-secondary">
+                                                        <span class="status-icon">⏸️</span>
+                                                        <span>Pending</span>
+                                                    </span>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <% if (m.recipient_type === 'all') { %>
+                                                    <div class="result-cell">
+                                                        <span class="result-success">✅ <%= m.success_count || 0 %></span>
+                                                        <span class="result-failed">❌ <%= m.failed_count || 0 %></span>
+                                                    </div>
+                                                <% } else { %>
+                                                    <div class="result-cell">
+                                                        <%= m.success_count > 0 ? '<span class="result-success">✅</span>' : '<span class="result-failed">❌</span>' %>
+                                                    </div>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <a href="/communication/history/<%= m.id %>" class="btn btn-sm btn-primary">
+                                                    <span class="btn-icon">👁️</span>
+                                                    <span>Detail</span>
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    <% }) %>
+                                </tbody>
+                            </table>
+                        </div>
+                    <% } %>
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            <% if (totalPages > 1) { %>
+                <div class="pagination-wrapper">
+                    <div class="pagination">
+                        <% 
+                        const filterParams = [];
+                        if (filters.type && filters.type !== 'all') filterParams.push('type=' + encodeURIComponent(filters.type));
+                        if (filters.status && filters.status !== 'all') filterParams.push('status=' + encodeURIComponent(filters.status));
+                        const queryString = filterParams.length > 0 ? '&' + filterParams.join('&') : '';
+                        %>
+                        <% if (currentPage > 1) { %>
+                            <a href="?page=<%= currentPage - 1 %><%= queryString %>" class="pagination-btn pagination-prev">
+                                <span class="pagination-icon">←</span>
+                                <span>Sebelumnya</span>
+                            </a>
+                        <% } %>
+                        
+                        <div class="pagination-info">
+                            <span class="pagination-current">Halaman <%= currentPage %></span>
+                            <span class="pagination-separator">dari</span>
+                            <span class="pagination-total"><%= totalPages %></span>
+                        </div>
+                        
+                        <% if (currentPage < totalPages) { %>
+                            <a href="?page=<%= currentPage + 1 %><%= queryString %>" class="pagination-btn pagination-next">
+                                <span>Selanjutnya</span>
+                                <span class="pagination-icon">→</span>
+                            </a>
+                        <% } %>
+                    </div>
+                </div>
+            <% } %>
+        </div>
+    </main>
+
+    <style>
+        .filter-form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .filter-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 16px;
+            align-items: end;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .filter-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 600;
+            font-size: 13px;
+            color: #555;
+        }
+
+        .label-icon {
+            font-size: 16px;
+        }
+
+        .filter-actions {
+            flex-direction: row;
+            gap: 8px;
+        }
+
+        .form-select {
+            padding: 10px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s;
+            background: white;
+        }
+
+        .form-select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        }
+
+        .stat-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+
+        .stat-content {
+            flex: 1;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #333;
+            line-height: 1;
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .data-table thead {
+            background: #f8f9fa;
+        }
+
+        .data-table th {
+            padding: 16px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .data-table td {
+            padding: 16px;
+            border-bottom: 1px solid #f0f0f0;
+            vertical-align: middle;
+        }
+
+        .table-row:hover {
+            background: #f8f9fa;
+        }
+
+        .date-cell {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .date-main {
+            font-size: 13px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-icon {
+            font-size: 12px;
+        }
+
+        .badge-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .badge-info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .badge-secondary {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+
+        .recipient-cell {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .recipient-icon {
+            font-size: 20px;
+        }
+
+        .recipient-cell strong {
+            display: block;
+            font-size: 13px;
+            color: #333;
+        }
+
+        .recipient-cell small {
+            display: block;
+            font-size: 11px;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .message-preview-cell {
+            max-width: 300px;
+        }
+
+        .message-text {
+            font-size: 13px;
+            color: #555;
+            line-height: 1.5;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-icon {
+            font-size: 14px;
+        }
+
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-danger {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .status-secondary {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+
+        .result-cell {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .result-success {
+            color: #28a745;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .result-failed {
+            color: #dc3545;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .btn-sm {
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .empty-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+
+        .empty-state h3 {
+            font-size: 20px;
+            color: #333;
+            margin: 0 0 8px 0;
+        }
+
+        .empty-state p {
+            color: #666;
+            margin: 0 0 24px 0;
+        }
+
+        .pagination-wrapper {
+            margin-top: 24px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .pagination {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .pagination-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 20px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            color: #333;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .pagination-btn:hover {
+            border-color: #667eea;
+            color: #667eea;
+            transform: translateY(-1px);
+        }
+
+        .pagination-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .pagination-current {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .pagination-separator {
+            color: #999;
+        }
+
+        .pagination-total {
+            color: #666;
+        }
+
+        @media (max-width: 768px) {
+            .filter-row {
+                grid-template-columns: 1fr;
+            }
+
+            .filter-actions {
+                flex-direction: column;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .data-table {
+                font-size: 12px;
+            }
+
+            .data-table th,
+            .data-table td {
+                padding: 12px 8px;
+            }
+
+            .pagination {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+</body>
+</html>

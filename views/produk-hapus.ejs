@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <style>
+        .confirm-container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .warning-box {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .warning-box h3 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        .product-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .product-info p {
+            margin: 5px 0;
+        }
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        .btn-delete {
+            padding: 12px 24px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-delete:hover {
+            background: #c82333;
+        }
+        .btn-cancel {
+            padding: 12px 24px;
+            background: #6c757d;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <h1>🗑️ Hapus Produk</h1>
+                    <nav>
+                        <a href="/">Dashboard</a>
+                        <a href="/produk">Produk</a>
+                        <a href="/transaksi">Transaksi</a>
+                        <a href="/user">User</a>
+                    </nav>
+                </div>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <span style="color: #666; font-size: 14px;">
+                        👤 <%= username || 'Admin' %>
+                    </span>
+                    <a href="/logout" style="padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">
+                        Logout
+                    </a>
+                </div>
+            </div>
+        </header>
+
+        <div class="confirm-container">
+            <div class="warning-box">
+                <h3>⚠️ Peringatan!</h3>
+                <p>Anda akan menghapus produk ini. Tindakan ini tidak dapat dibatalkan!</p>
+            </div>
+
+            <div class="product-info">
+                <h3>Informasi Produk:</h3>
+                <p><strong>Nama:</strong> <%= produk.nama %></p>
+                <p><strong>Kode:</strong> <code><%= produk.kode %></code></p>
+                <p><strong>Harga:</strong> <%= formatrupiah(produk.harga) %></p>
+                <p><strong>Stok Tersedia:</strong> <%= Array.isArray(produk.data) ? produk.data.length : 0 %></p>
+                <p><strong>Terjual:</strong> <%= produk.terjual || 0 %></p>
+            </div>
+
+            <form method="POST" action="/produk/hapus/<%= produk.id %>">
+                <div class="form-actions">
+                    <button type="submit" class="btn-delete">
+                        🗑️ Ya, Hapus Produk
+                    </button>
+                    <a href="/produk" class="btn-cancel">❌ Batal</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
+

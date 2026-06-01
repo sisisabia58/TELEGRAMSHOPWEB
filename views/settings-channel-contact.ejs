@@ -1,0 +1,136 @@
+<%
+    const currentPage = 'settings-channel-contact';
+    const pageTitle = 'Channel & Contact';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+    <style>
+        .settings-section { margin-bottom: 30px; }
+        .setting-item {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .setting-item:last-child { border-bottom: none; }
+        .setting-label { font-weight: 600; color: #333; margin-bottom: 5px; }
+        .setting-description { font-size: 13px; color: #666; margin-bottom: 8px; }
+        .setting-input {
+            width: 100%;
+            max-width: 500px;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .setting-input:focus {
+            border-color: #667eea;
+            outline: none;
+        }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <form id="channelContactForm">
+                <div class="card settings-section">
+                    <div class="card-header">
+                        <h2 class="card-title">📢 Channel & Contact</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="setting-item">
+                            <label class="setting-label">CHANNEL_LOG</label>
+                            <div class="setting-description">Username atau link channel Telegram untuk mengirim log (deposit, transaksi selesai, rating). Contoh: @your_channel_log atau https://t.me/your_channel_log</div>
+                            <input type="text" name="channelLog" class="setting-input"
+                                value="<%= settings.channelLog %>"
+                                placeholder="@your_channel_log atau https://t.me/your_channel_log">
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label class="setting-label">CHANNEL_STORE</label>
+                            <div class="setting-description">Link channel/store yang ditampilkan di tombol bot (tombol "Channel"). Contoh: https://t.me/your_channel</div>
+                            <input type="text" name="channelStore" class="setting-input"
+                                value="<%= settings.channelStore %>"
+                                placeholder="https://t.me/your_channel">
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label class="setting-label">CS (Customer Service)</label>
+                            <div class="setting-description">Link Customer Service untuk tombol "Hubungi CS" di bot. Contoh: https://t.me/your_cs</div>
+                            <input type="text" name="cs" class="setting-input"
+                                value="<%= settings.cs %>"
+                                placeholder="https://t.me/your_cs">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-body">
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">💾 Simpan Settings</button>
+                            <a href="/" class="btn btn-secondary">Batal</a>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </main>
+    
+    <script>
+        document.getElementById('channelContactForm').addEventListener('submit', async (e) => {
+            e.preventDefault()
+            const formData = new FormData(e.target)
+            const data = {
+                channelLog: formData.get('channelLog') || '',
+                channelStore: formData.get('channelStore') || '',
+                cs: formData.get('cs') || ''
+            }
+            try {
+                const response = await fetch('/api/settings/channel-contact', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                })
+                const result = await response.json()
+                if (result.success) {
+                    toast.success(result.message || 'Settings berhasil disimpan!', 'Berhasil')
+                    setTimeout(() => window.location.reload(), 1500)
+                } else {
+                    toast.error(result.error || 'Gagal menyimpan settings', 'Error')
+                }
+            } catch (err) {
+                console.error(err)
+                toast.error('Terjadi kesalahan saat menyimpan settings', 'Error')
+            }
+        })
+    </script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "trxid": "C8A3173A74A2",
+  "userId": 6994649045,
+  "produkData": "test:test55\n",
+  "produkInfo": {
+    "nama": "Discord Account 1 Bulan+",
+    "kode": "dc1b",
+    "snk": "Akun Personal + Untuk Claim Promotion Discord"
+  },
+  "jumlah": 1,
+  "harga": 4000,
+  "fee": 0,
+  "total": 4000,
+  "tanggal": "2025-12-26T18:53:48.444Z",
+  "voucher": null,
+  "metode": "saldo"
+}

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <h1><%= action === 'tambah' ? '➕ Tambah Template' : '✏️ Edit Template' %></h1>
+                    <nav>
+                        <a href="/">Dashboard</a>
+                        <a href="/communication/templates">📝 Templates</a>
+                        <a href="/communication/broadcast">📢 Broadcast</a>
+                        <a href="/communication/send">✉️ Send</a>
+                        <a href="/communication/history">📜 History</a>
+                    </nav>
+                </div>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <span style="color: #666; font-size: 14px;">👤 <%= username %></span>
+                    <a href="/logout" style="padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 6px;">Logout</a>
+                </div>
+            </div>
+        </header>
+
+        <% if (error) { %>
+            <div class="alert alert-error">
+                ❌ <%= error %>
+            </div>
+        <% } %>
+
+        <div style="max-width: 800px; margin: 20px auto;">
+            <div style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                <form method="POST" action="<%= action === 'tambah' ? '/communication/templates/tambah' : '/communication/templates/edit/' + template.id %>">
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold;">Nama Template <span style="color: red;">*</span></label>
+                        <input type="text" name="name" value="<%= template ? template.name : '' %>" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;" placeholder="Contoh: Deposit Berhasil">
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold;">Kategori <span style="color: red;">*</span></label>
+                        <select name="category" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                            <option value="general" <%= template && template.category === 'general' ? 'selected' : '' %>>General</option>
+                            <option value="promo" <%= template && template.category === 'promo' ? 'selected' : '' %>>Promo</option>
+                            <option value="notification" <%= template && template.category === 'notification' ? 'selected' : '' %>>Notification</option>
+                            <option value="announcement" <%= template && template.category === 'announcement' ? 'selected' : '' %>>Announcement</option>
+                            <option value="custom" <%= template && template.category === 'custom' ? 'selected' : '' %>>Custom</option>
+                        </select>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold;">Subject (Opsional)</label>
+                        <input type="text" name="subject" value="<%= template ? template.subject : '' %>" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;" placeholder="Judul/subject template">
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold;">Pesan Template <span style="color: red;">*</span></label>
+                        <textarea name="message_text" rows="10" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; font-family: monospace;" placeholder="Masukkan template pesan...&#10;&#10;Gunakan {variabel} untuk variabel dinamis.&#10;Contoh: Saldo Anda: {saldo}"><%= template ? template.message_text : '' %></textarea>
+                        <small style="color: #666; font-size: 12px;">Gunakan {variabel} untuk variabel yang akan diganti. Contoh: {amount}, {saldo}, {produk}</small>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold;">Variabel (JSON Array)</label>
+                        <textarea name="variables" rows="3" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-family: monospace; font-size: 12px;" placeholder='["amount", "saldo", "produk"]'><%= template && template.variables ? JSON.stringify(template.variables) : '[]' %></textarea>
+                        <small style="color: #666; font-size: 12px;">Daftar variabel yang digunakan dalam template (format JSON array)</small>
+                    </div>
+
+                    <% if (action === 'edit') { %>
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: flex; align-items: center; gap: 10px;">
+                                <input type="checkbox" name="is_active" <%= template && template.is_active ? 'checked' : '' %>>
+                                <span>Template Aktif</span>
+                            </label>
+                        </div>
+                    <% } %>
+
+                    <div style="display: flex; gap: 10px;">
+                        <button type="submit" style="flex: 1; padding: 12px 24px; background: #28a745; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer;">
+                            <%= action === 'tambah' ? '➕ Simpan Template' : '💾 Update Template' %>
+                        </button>
+                        <a href="/communication/templates" style="padding: 12px 24px; background: #6c757d; color: white; text-decoration: none; border-radius: 6px; font-size: 16px;">
+                            ❌ Batal
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+

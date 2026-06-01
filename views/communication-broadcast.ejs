@@ -1,0 +1,660 @@
+<%
+    const currentPage = 'communication';
+    const pageTitle = '📢 Broadcast Message';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/communication/history" class="btn-top">📜 History</a>
+                <a href="/communication/templates" class="btn-top">📝 Templates</a>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <% if (error) { %>
+                <div class="alert alert-error">
+                    <span class="alert-icon">❌</span>
+                    <div class="alert-content">
+                        <strong>Error:</strong> <%= error %>
+                    </div>
+                </div>
+            <% } %>
+
+            <% if (success) { %>
+                <div class="alert alert-success">
+                    <span class="alert-icon">✅</span>
+                    <div class="alert-content">
+                        <%= success %>
+                    </div>
+                </div>
+            <% } %>
+
+            <div class="content-card">
+                <div class="form-section">
+                    <div class="form-header">
+                        <h2>Kirim Pesan ke Semua User</h2>
+                        <p class="form-description">Kirim pesan broadcast ke semua user yang terdaftar dalam sistem</p>
+                    </div>
+
+                    <form method="POST" action="/communication/broadcast" id="broadcastForm" onsubmit="return confirmBroadcast(event)">
+                        <!-- Template Selection -->
+                        <div class="form-group">
+                            <label for="template_id" class="form-label">
+                                <span class="label-icon">📝</span>
+                                Pilih Template (Opsional)
+                            </label>
+                            <select name="template_id" id="template_id" class="form-select" onchange="loadTemplate()">
+                                <option value="none">-- Tidak menggunakan template --</option>
+                                <% templates.forEach(t => { %>
+                                    <option value="<%= t.id %>" data-category="<%= t.category %>"><%= t.name %> (<%= t.category %>)</option>
+                                <% }) %>
+                            </select>
+                            <small class="form-hint">Pilih template untuk menggunakan pesan yang sudah dibuat sebelumnya</small>
+                        </div>
+
+                        <!-- Template Variables -->
+                        <div id="template_variables" class="form-group" style="display: none;">
+                            <label for="template_variables_input" class="form-label">
+                                <span class="label-icon">🔧</span>
+                                Variabel Template (JSON)
+                            </label>
+                            <div class="variables-container">
+                                <div id="variables_inputs" class="variables-inputs"></div>
+                                <textarea name="template_variables" id="template_variables_input" rows="3" class="form-textarea" style="font-family: monospace; font-size: 12px;" placeholder='{"amount": "Rp 50.000", "saldo": "Rp 100.000"}'></textarea>
+                            </div>
+                            <small class="form-hint">Masukkan variabel dalam format JSON. Contoh: {"amount": "Rp 50.000", "saldo": "Rp 100.000"}</small>
+                        </div>
+
+                        <!-- Template Preview -->
+                        <div id="template_preview" class="form-group" style="display: none;">
+                            <label class="form-label">
+                                <span class="label-icon">👁️</span>
+                                Preview Template
+                            </label>
+                            <div class="preview-box">
+                                <div id="preview_content" class="preview-content"></div>
+                            </div>
+                        </div>
+
+                        <!-- Message Input -->
+                        <div class="form-group">
+                            <label for="message" class="form-label">
+                                <span class="label-icon">💬</span>
+                                Pesan <span class="required">*</span>
+                            </label>
+                            <div class="textarea-wrapper">
+                                <textarea name="message" id="message" rows="12" required class="form-textarea" placeholder="Masukkan pesan yang akan dikirim ke semua user...&#10;&#10;Anda bisa menggunakan Markdown:&#10;*teks tebal*&#10;_teks miring_&#10;\`kode\`&#10;[link](url)" oninput="updateCharCount()"></textarea>
+                                <div class="textarea-footer">
+                                    <small class="form-hint">Gunakan Markdown untuk formatting</small>
+                                    <span id="char_count" class="char-count">0 karakter</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Message Preview -->
+                        <div class="form-group">
+                            <label class="form-label">
+                                <span class="label-icon">👁️</span>
+                                Preview Pesan
+                            </label>
+                            <div class="preview-box">
+                                <div id="message_preview" class="preview-content">Pesan akan muncul di sini...</div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
+                                <span class="btn-icon">📢</span>
+                                <span>Kirim Broadcast</span>
+                            </button>
+                            <a href="/communication/history" class="btn btn-secondary btn-lg">
+                                <span class="btn-icon">📜</span>
+                                <span>Lihat History</span>
+                            </a>
+                            <a href="/communication/templates" class="btn btn-outline btn-lg">
+                                <span class="btn-icon">📝</span>
+                                <span>Kelola Template</span>
+                            </a>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Warning Box -->
+                <div class="warning-box">
+                    <div class="warning-header">
+                        <span class="warning-icon">⚠️</span>
+                        <strong>Peringatan Penting</strong>
+                    </div>
+                    <ul class="warning-list">
+                        <li>Pesan akan dikirim ke <strong>semua user</strong> yang terdaftar dalam sistem</li>
+                        <li>Proses broadcast mungkin memakan waktu beberapa menit tergantung jumlah user</li>
+                        <li>Pastikan pesan sudah benar sebelum mengirim - tidak dapat dibatalkan setelah dikirim</li>
+                        <li>Gunakan template untuk pesan yang sering digunakan agar lebih efisien</li>
+                        <li>Rate limiting Telegram API dapat memperlambat pengiriman jika user terlalu banyak</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <style>
+        .content-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+
+        .form-section {
+            padding: 32px;
+        }
+
+        .form-header {
+            margin-bottom: 32px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .form-header h2 {
+            font-size: 28px;
+            color: #333;
+            margin: 0 0 8px 0;
+            font-weight: 600;
+        }
+
+        .form-description {
+            color: #666;
+            font-size: 14px;
+            margin: 0;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 15px;
+        }
+
+        .label-icon {
+            font-size: 18px;
+        }
+
+        .required {
+            color: #dc3545;
+        }
+
+        .form-select,
+        .form-textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s;
+            font-family: inherit;
+        }
+
+        .form-select:focus,
+        .form-textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-textarea {
+            resize: vertical;
+            min-height: 200px;
+            line-height: 1.6;
+        }
+
+        .textarea-wrapper {
+            position: relative;
+        }
+
+        .textarea-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 8px;
+        }
+
+        .char-count {
+            color: #666;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .form-hint {
+            color: #666;
+            font-size: 12px;
+            display: block;
+            margin-top: 6px;
+        }
+
+        .variables-container {
+            margin-bottom: 12px;
+        }
+
+        .variables-inputs {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .variable-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .variable-input-group label {
+            font-size: 12px;
+            font-weight: 500;
+            color: #666;
+        }
+
+        .variable-input-group input {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .preview-box {
+            background: #f8f9fa;
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 100px;
+        }
+
+        .preview-content {
+            color: #333;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .preview-content strong {
+            font-weight: 600;
+        }
+
+        .preview-content em {
+            font-style: italic;
+        }
+
+        .preview-content code {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 32px;
+            padding-top: 24px;
+            border-top: 2px solid #f0f0f0;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 28px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+
+        .btn-lg {
+            padding: 14px 32px;
+            font-size: 16px;
+        }
+
+        .btn-icon {
+            font-size: 18px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .btn-outline {
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+
+        .btn-outline:hover {
+            background: #f0f4ff;
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .warning-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 24px 32px 32px 32px;
+        }
+
+        .warning-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+            font-size: 16px;
+            color: #856404;
+        }
+
+        .warning-icon {
+            font-size: 20px;
+        }
+
+        .warning-list {
+            margin: 0;
+            padding-left: 24px;
+            color: #856404;
+            line-height: 1.8;
+        }
+
+        .warning-list li {
+            margin-bottom: 8px;
+        }
+
+        .warning-list strong {
+            font-weight: 600;
+        }
+
+        @media (max-width: 768px) {
+            .form-section {
+                padding: 20px;
+            }
+
+            .form-header h2 {
+                font-size: 24px;
+            }
+
+            .form-actions {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .variables-inputs {
+                grid-template-columns: 1fr;
+            }
+
+            .warning-box {
+                margin: 24px 20px 20px 20px;
+            }
+        }
+    </style>
+
+    <script>
+        let currentTemplate = null;
+        let templateVariables = {};
+
+        // Load template when selected
+        async function loadTemplate() {
+            const select = document.getElementById('template_id');
+            const templateId = select.value;
+            const variablesDiv = document.getElementById('template_variables');
+            const previewDiv = document.getElementById('template_preview');
+            const messageTextarea = document.getElementById('message');
+            const variablesInputs = document.getElementById('variables_inputs');
+            const variablesTextarea = document.getElementById('template_variables_input');
+            
+            if (templateId === 'none') {
+                variablesDiv.style.display = 'none';
+                previewDiv.style.display = 'none';
+                messageTextarea.value = '';
+                currentTemplate = null;
+                templateVariables = {};
+                updateMessagePreview();
+                return;
+            }
+
+            try {
+                // Show loading
+                variablesDiv.style.display = 'block';
+                previewDiv.style.display = 'block';
+                document.getElementById('preview_content').textContent = 'Memuat template...';
+
+                // Fetch template data
+                const response = await fetch(`/api/communication/template/${templateId}`);
+                const data = await response.json();
+
+                if (!data.success || !data.template) {
+                    throw new Error('Template tidak ditemukan');
+                }
+
+                currentTemplate = data.template;
+                
+                // Create variable inputs
+                const variables = currentTemplate.variables || [];
+                if (variables.length > 0) {
+                    variablesInputs.innerHTML = '';
+                    variables.forEach(variable => {
+                        const group = document.createElement('div');
+                        group.className = 'variable-input-group';
+                        group.innerHTML = `
+                            <label for="var_${variable}">${variable}</label>
+                            <input type="text" id="var_${variable}" 
+                                   placeholder="Masukkan nilai ${variable}" 
+                                   oninput="updateTemplateVariables()">
+                        `;
+                        variablesInputs.appendChild(group);
+                    });
+                    variablesInputs.style.display = 'grid';
+                } else {
+                    variablesInputs.style.display = 'none';
+                }
+
+                // Update preview
+                updateTemplatePreview();
+                updateMessagePreview();
+
+            } catch (error) {
+                console.error('Error loading template:', error);
+                alert('Error memuat template: ' + error.message);
+                select.value = 'none';
+                variablesDiv.style.display = 'none';
+                previewDiv.style.display = 'none';
+            }
+        }
+
+        // Update template variables from inputs
+        function updateTemplateVariables() {
+            if (!currentTemplate) return;
+
+            const variables = currentTemplate.variables || [];
+            templateVariables = {};
+            
+            variables.forEach(variable => {
+                const input = document.getElementById(`var_${variable}`);
+                if (input) {
+                    templateVariables[variable] = input.value || '';
+                }
+            });
+
+            // Update JSON textarea
+            const variablesTextarea = document.getElementById('template_variables_input');
+            variablesTextarea.value = JSON.stringify(templateVariables, null, 2);
+
+            // Update previews
+            updateTemplatePreview();
+            updateMessagePreview();
+        }
+
+        // Update template preview
+        function updateTemplatePreview() {
+            if (!currentTemplate) return;
+
+            let preview = currentTemplate.message_text || '';
+            
+            // Replace variables with actual values or placeholders
+            Object.keys(templateVariables).forEach(key => {
+                const value = templateVariables[key] || `{${key}}`;
+                preview = preview.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+            });
+
+            // Replace remaining variables with placeholders
+            const remainingVars = preview.match(/\\{[^}]+\\}/g) || [];
+            remainingVars.forEach(variable => {
+                preview = preview.replace(variable, `<span style="background: #fff3cd; padding: 2px 4px; border-radius: 3px;">${variable}</span>`);
+            });
+
+            document.getElementById('preview_content').innerHTML = preview;
+        }
+
+        // Update message preview
+        function updateMessagePreview() {
+            const messageTextarea = document.getElementById('message');
+            const previewDiv = document.getElementById('message_preview');
+            let message = messageTextarea.value;
+
+            // If using template, process it
+            if (currentTemplate && messageTextarea.value === '') {
+                let processedMessage = currentTemplate.message_text || '';
+                Object.keys(templateVariables).forEach(key => {
+                    const value = templateVariables[key] || `{${key}}`;
+                    processedMessage = processedMessage.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+                });
+                message = processedMessage;
+            }
+
+            // Simple markdown rendering
+            if (message) {
+                let html = message
+                    .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
+                    .replace(/\\*(.+?)\\*/g, '<strong>$1</strong>')
+                    .replace(/_(.+?)_/g, '<em>$1</em>')
+                    .replace(/`(.+?)`/g, '<code>$1</code>')
+                    .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank">$1</a>')
+                    .replace(/\\n/g, '<br>');
+                
+                previewDiv.innerHTML = html || 'Pesan akan muncul di sini...';
+            } else {
+                previewDiv.textContent = 'Pesan akan muncul di sini...';
+            }
+        }
+
+        // Update character count
+        function updateCharCount() {
+            const messageTextarea = document.getElementById('message');
+            const charCount = document.getElementById('char_count');
+            const count = messageTextarea.value.length;
+            charCount.textContent = `${count.toLocaleString('id-ID')} karakter`;
+            
+            // Update preview
+            updateMessagePreview();
+        }
+
+        // Confirm before sending broadcast
+        function confirmBroadcast(event) {
+            const message = document.getElementById('message').value.trim();
+            
+            if (!message) {
+                event.preventDefault();
+                alert('Pesan tidak boleh kosong!');
+                return false;
+            }
+
+            const confirmed = confirm(
+                '⚠️ PERINGATAN\\n\\n' +
+                'Anda akan mengirim pesan broadcast ke SEMUA user yang terdaftar.\\n\\n' +
+                'Tindakan ini tidak dapat dibatalkan setelah dikirim.\\n\\n' +
+                'Apakah Anda yakin ingin melanjutkan?'
+            );
+
+            if (confirmed) {
+                const submitBtn = document.getElementById('submitBtn');
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="btn-icon">⏳</span><span>Mengirim...</span>';
+                return true;
+            }
+
+            event.preventDefault();
+            return false;
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            const messageTextarea = document.getElementById('message');
+            messageTextarea.addEventListener('input', updateCharCount);
+            updateCharCount();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,361 @@
+<%
+    const currentPage = 'settings-general';
+    const pageTitle = '⚙️ General Settings';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+    <style>
+        .settings-section {
+            margin-bottom: 30px;
+        }
+        .setting-item {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .setting-item:last-child {
+            border-bottom: none;
+        }
+        .setting-label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        .setting-description {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        .setting-input {
+            width: 100%;
+            max-width: 400px;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .setting-select {
+            width: 100%;
+            max-width: 400px;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+        }
+        .currency-settings {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .toggle-slider {
+            background-color: #667eea;
+        }
+        input:checked + .toggle-slider:before {
+            transform: translateX(26px);
+        }
+        .toggle-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .toggle-item:last-child {
+            border-bottom: none;
+        }
+        .toggle-info {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <form id="generalSettingsForm">
+                <!-- Bot Settings -->
+                <div class="card settings-section">
+                    <div class="card-header">
+                        <h2 class="card-title">🤖 Bot Settings</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="setting-item">
+                            <label class="setting-label">Nama Bot</label>
+                            <div class="setting-description">Sinkron dengan nama bot Telegram (BotFather). Ubah di file .env (NAMA_BOT) lalu restart aplikasi.</div>
+                            <input type="text" class="setting-input" 
+                                value="<%= settings.botName %>" readonly 
+                                style="background: #f5f5f5; cursor: not-allowed;">
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label class="setting-label">Bot Logo URL</label>
+                            <div class="setting-description">URL logo bot (opsional, bisa dari CDN atau upload)</div>
+                            <input type="url" name="botLogo" class="setting-input" 
+                                value="<%= settings.botLogo %>" 
+                                placeholder="https://example.com/logo.png">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Currency Settings -->
+                <div class="card settings-section">
+                    <div class="card-header">
+                        <h2 class="card-title">💰 Currency Settings</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="currency-settings">
+                            <div class="setting-item">
+                                <label class="setting-label">Currency Symbol</label>
+                                <input type="text" name="currencySymbol" class="setting-input" 
+                                    value="<%= settings.currency.symbol %>" required>
+                            </div>
+                            
+                            <div class="setting-item">
+                                <label class="setting-label">Currency Code</label>
+                                <input type="text" name="currencyCode" class="setting-input" 
+                                    value="<%= settings.currency.code %>" required>
+                            </div>
+                            
+                            <div class="setting-item">
+                                <label class="setting-label">Symbol Position</label>
+                                <select name="currencyPosition" class="setting-select">
+                                    <option value="before" <%= settings.currency.position === 'before' ? 'selected' : '' %>>Before (Rp 100.000)</option>
+                                    <option value="after" <%= settings.currency.position === 'after' ? 'selected' : '' %>>After (100.000 Rp)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Localization Settings -->
+                <div class="card settings-section">
+                    <div class="card-header">
+                        <h2 class="card-title">🌍 Localization Settings</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="setting-item">
+                            <label class="setting-label">Timezone</label>
+                            <div class="setting-description">Timezone untuk menampilkan waktu di dashboard</div>
+                            <select name="timezone" class="setting-select">
+                                <% timezones.forEach(tz => { %>
+                                    <option value="<%= tz.value %>" <%= settings.timezone === tz.value ? 'selected' : '' %>>
+                                        <%= tz.label %>
+                                    </option>
+                                <% }) %>
+                            </select>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label class="setting-label">Date Format</label>
+                            <div class="setting-description">Format tanggal yang digunakan di dashboard</div>
+                            <select name="dateFormat" class="setting-select">
+                                <% dateFormats.forEach(df => { %>
+                                    <option value="<%= df.value %>" <%= settings.dateFormat === df.value ? 'selected' : '' %>>
+                                        <%= df.label %>
+                                    </option>
+                                <% }) %>
+                            </select>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label class="setting-label">Time Format</label>
+                            <div class="setting-description">Format waktu (12 jam atau 24 jam)</div>
+                            <select name="timeFormat" class="setting-select">
+                                <option value="24h" <%= settings.timeFormat === '24h' ? 'selected' : '' %>>24 Hour (14:30)</option>
+                                <option value="12h" <%= settings.timeFormat === '12h' ? 'selected' : '' %>>12 Hour (2:30 PM)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label class="setting-label">Language</label>
+                            <div class="setting-description">Bahasa default untuk dashboard</div>
+                            <select name="language" class="setting-select">
+                                <% languages.forEach(lang => { %>
+                                    <option value="<%= lang.value %>" <%= settings.language === lang.value ? 'selected' : '' %>>
+                                        <%= lang.label %>
+                                    </option>
+                                <% }) %>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Display Settings -->
+                <div class="card settings-section">
+                    <div class="card-header">
+                        <h2 class="card-title">🎨 Display Settings</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="setting-item">
+                            <label class="setting-label">Items Per Page</label>
+                            <div class="setting-description">Jumlah item yang ditampilkan per halaman</div>
+                            <input type="number" name="itemsPerPage" class="setting-input" 
+                                value="<%= settings.itemsPerPage %>" min="10" max="100" step="10" required>
+                        </div>
+                        
+                        <div class="toggle-item">
+                            <div class="toggle-info">
+                                <div class="setting-label">Dashboard Theme</div>
+                                <div class="setting-description">Pilih tema untuk dashboard (light atau dark)</div>
+                            </div>
+                            <select name="dashboardTheme" class="setting-select" style="max-width: 150px;">
+                                <option value="light" <%= settings.dashboardTheme === 'light' ? 'selected' : '' %>>Light</option>
+                                <option value="dark" <%= settings.dashboardTheme === 'dark' ? 'selected' : '' %>>Dark</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Auto Refresh Settings -->
+                <div class="card settings-section">
+                    <div class="card-header">
+                        <h2 class="card-title">🔄 Auto Refresh Settings</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="toggle-item">
+                            <div class="toggle-info">
+                                <div class="setting-label">Enable Auto Refresh</div>
+                                <div class="setting-description">Otomatis refresh dashboard setiap beberapa detik</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" name="autoRefreshEnabled" 
+                                    <%= settings.autoRefresh.enabled ? 'checked' : '' %>>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label class="setting-label">Refresh Interval (seconds)</label>
+                            <div class="setting-description">Interval refresh dalam detik (minimal 10 detik)</div>
+                            <input type="number" name="autoRefreshInterval" class="setting-input" 
+                                value="<%= settings.autoRefresh.interval %>" min="10" max="300" step="10" required>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Form Actions -->
+                <div class="card">
+                    <div class="card-body">
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">
+                                💾 Simpan Settings
+                            </button>
+                            <a href="/" class="btn btn-secondary">Batal</a>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </main>
+    
+    <script>
+        document.getElementById('generalSettingsForm').addEventListener('submit', async (e) => {
+            e.preventDefault()
+            
+            const formData = new FormData(e.target)
+            const data = {
+                botName: formData.get('botName'),
+                botLogo: formData.get('botLogo') || '',
+                currencySymbol: formData.get('currencySymbol'),
+                currencyCode: formData.get('currencyCode'),
+                currencyPosition: formData.get('currencyPosition'),
+                timezone: formData.get('timezone'),
+                dateFormat: formData.get('dateFormat'),
+                timeFormat: formData.get('timeFormat'),
+                language: formData.get('language'),
+                itemsPerPage: formData.get('itemsPerPage'),
+                autoRefreshEnabled: formData.get('autoRefreshEnabled') ? 'true' : 'false',
+                autoRefreshInterval: formData.get('autoRefreshInterval'),
+                dashboardTheme: formData.get('dashboardTheme')
+            }
+            
+            try {
+                const response = await fetch('/api/settings/general', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                })
+                
+                const result = await response.json()
+                
+                if (result.success) {
+                    toast.success(result.message || 'Settings berhasil disimpan!', 'Berhasil')
+                    setTimeout(() => {
+                        window.location.reload()
+                    }, 1500)
+                } else {
+                    toast.error(result.error || 'Gagal menyimpan settings', 'Error')
+                }
+            } catch (error) {
+                console.error('Error saving settings:', error)
+                toast.error('Terjadi kesalahan saat menyimpan settings', 'Error')
+            }
+        })
+    </script>
+</body>
+</html>
+

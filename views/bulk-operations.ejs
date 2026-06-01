@@ -1,0 +1,791 @@
+<%
+    const currentPage = 'bulk';
+    const pageTitle = '⚡ Bulk Operations';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+    <style>
+        .bulk-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        .bulk-section h2 {
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #17a2b8;
+        }
+        .upload-area {
+            border: 2px dashed #17a2b8;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            background: #f8f9fa;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .upload-area:hover {
+            background: #e9ecef;
+            border-color: #138496;
+        }
+        .upload-area.dragover {
+            background: #d1ecf1;
+            border-color: #138496;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e9ecef;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 20px 0;
+            display: none;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #28a745;
+            width: 0%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        .results-container {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: none;
+        }
+        .result-item {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+        .result-success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .result-failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .result-skipped {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .checkbox-list {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .checkbox-item {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        .checkbox-item:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <!-- Bulk Import Produk -->
+            <div class="card" style="margin-bottom: 30px;">
+                <div class="card-header">
+                    <h2 class="card-title">📥 Bulk Import Produk</h2>
+                </div>
+                <div class="card-body">
+                    <p style="color: #666; margin-bottom: 20px;">
+                        Import produk dari file CSV atau Excel. <a href="/bulk/produk/template" style="color: #17a2b8;">Download template</a>
+                    </p>
+            
+            <form id="importForm" enctype="multipart/form-data">
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="fileInput" name="file" accept=".csv,.xlsx,.xls" style="display: none;" required>
+                    <p style="font-size: 18px; margin-bottom: 10px;">📁 Klik atau drag & drop file di sini</p>
+                    <p style="color: #666; font-size: 14px;">Format: CSV atau Excel (.xlsx, .xls)</p>
+                </div>
+                
+                <div class="progress-bar" id="progressBar">
+                    <div class="progress-fill" id="progressFill">0%</div>
+                </div>
+                
+                    <button type="submit" id="importBtn" class="btn btn-success" style="margin-top: 20px;">
+                        📥 Import Produk
+                    </button>
+            </form>
+            
+                    <div class="results-container" id="importResults"></div>
+                </div>
+            </div>
+
+            <!-- Bulk Update Harga -->
+            <div class="card" style="margin-bottom: 30px;">
+                <div class="card-header">
+                    <h2 class="card-title">💰 Bulk Update Harga Produk</h2>
+                </div>
+                <div class="card-body">
+                    <p style="color: #666; margin-bottom: 20px;">
+                        Update harga untuk multiple produk sekaligus
+                    </p>
+            
+            <form id="updateHargaForm">
+                    <div class="form-group">
+                        <label class="form-label">Pilih Produk <span class="required">*</span></label>
+                        <div id="produkList" class="checkbox-list">
+                            <p style="text-align: center; color: #999;">Loading produk...</p>
+                        </div>
+                        <div style="margin-top: 10px;">
+                            <button type="button" onclick="selectAllProduk()" class="btn" style="background: #6c757d; padding: 5px 15px; margin-right: 10px;">
+                                Pilih Semua
+                            </button>
+                            <button type="button" onclick="deselectAllProduk()" class="btn" style="background: #6c757d; padding: 5px 15px;">
+                                Batal Pilih
+                            </button>
+                        </div>
+                    </div>
+                
+                    <div class="form-group">
+                        <label class="form-label">Tipe Update <span class="required">*</span></label>
+                        <select name="update_type" id="update_type" class="form-select" required>
+                            <option value="percentage">Percentage (%)</option>
+                            <option value="fixed">Fixed Amount (Rp)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Nilai <span class="required">*</span></label>
+                        <input type="number" name="value" id="value" class="form-input" step="0.01" required>
+                        <div class="form-help">Untuk percentage: masukkan angka (contoh: 10 untuk +10%, -5 untuk -5%)<br>
+                        Untuk fixed: masukkan jumlah dalam rupiah (contoh: 5000 untuk +Rp 5.000, -3000 untuk -Rp 3.000)</div>
+                    </div>
+                
+                    <button type="submit" class="btn btn-primary">💰 Update Harga</button>
+            </form>
+            
+                    <div class="results-container" id="updateHargaResults"></div>
+                </div>
+            </div>
+
+            <!-- Bulk Tambah Stok -->
+            <div class="card" style="margin-bottom: 30px;">
+                <div class="card-header">
+                    <h2 class="card-title">📦 Bulk Tambah Stok</h2>
+                </div>
+                <div class="card-body">
+                    <p style="color: #666; margin-bottom: 20px;">
+                        Tambah stok untuk produk tertentu (multiple items sekaligus)
+                    </p>
+            
+            <form id="bulkStokForm">
+                    <div class="form-group">
+                        <label class="form-label">Pilih Produk <span class="required">*</span></label>
+                        <select name="produk_id" id="produk_id_stok" class="form-select" required>
+                            <option value="">-- Pilih Produk --</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Data Stok <span class="required">*</span></label>
+                        <textarea name="data_stok" id="data_stok" class="form-textarea" rows="10" required placeholder="Masukkan data stok, satu per baris atau dipisah koma:&#10;email1:pass1&#10;email2:pass2&#10;email3:pass3"></textarea>
+                        <div class="form-help">Satu item per baris, atau dipisah dengan koma</div>
+                    </div>
+                
+                    <button type="submit" class="btn btn-warning">📦 Tambah Stok</button>
+            </form>
+            
+                    <div class="results-container" id="bulkStokResults"></div>
+                </div>
+            </div>
+
+            <!-- Bulk Approve/Reject Deposit -->
+            <div class="card" style="margin-bottom: 30px;">
+                <div class="card-header">
+                    <h2 class="card-title">💵 Bulk Approve/Reject Deposit</h2>
+                </div>
+                <div class="card-body">
+                    <p style="color: #666; margin-bottom: 20px;">
+                        Approve atau reject multiple deposit sekaligus
+                    </p>
+            
+                    <div style="margin-bottom: 20px;">
+                        <button type="button" onclick="loadPendingDeposits()" class="btn btn-primary">
+                            🔄 Load Pending Deposits
+                        </button>
+                    </div>
+            
+            <form id="bulkDepositForm" style="display: none;">
+                    <div class="form-group">
+                        <label class="form-label">Pilih Deposit <span class="required">*</span></label>
+                        <div id="depositList" class="checkbox-list">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+                        <div style="margin-top: 10px;">
+                            <button type="button" onclick="selectAllDeposit()" class="btn" style="background: #6c757d; padding: 5px 15px; margin-right: 10px;">
+                                Pilih Semua
+                            </button>
+                            <button type="button" onclick="deselectAllDeposit()" class="btn" style="background: #6c757d; padding: 5px 15px;">
+                                Batal Pilih
+                            </button>
+                        </div>
+                    </div>
+                
+                    <div class="form-group">
+                        <label class="form-label">Alasan (untuk reject)</label>
+                        <textarea name="alasan" id="alasan" class="form-textarea" rows="3" placeholder="Opsional, hanya untuk reject"></textarea>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" onclick="bulkApproveDeposit()" class="btn btn-success" style="flex: 1;">
+                            ✅ Approve Selected
+                        </button>
+                        <button type="button" onclick="bulkRejectDeposit()" class="btn btn-danger" style="flex: 1;">
+                            ❌ Reject Selected
+                        </button>
+                    </div>
+            </form>
+            
+                    <div class="results-container" id="bulkDepositResults"></div>
+                </div>
+            </div>
+
+            <!-- Bulk Export -->
+            <div class="card" style="margin-bottom: 30px;">
+                <div class="card-header">
+                    <h2 class="card-title">📤 Bulk Export Data</h2>
+                </div>
+                <div class="card-body">
+                    <p style="color: #666; margin-bottom: 20px;">
+                        Export data dalam berbagai format
+                    </p>
+            
+            <form id="exportForm">
+                    <div class="form-group">
+                        <label class="form-label">Tipe Data <span class="required">*</span></label>
+                        <select name="export_type" id="export_type" class="form-select" required>
+                            <option value="produk">Produk</option>
+                            <option value="user">User</option>
+                            <option value="transaksi">Transaksi</option>
+                            <option value="deposit">Deposit</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Format <span class="required">*</span></label>
+                        <select name="format" id="format" class="form-select" required>
+                            <option value="csv">CSV</option>
+                            <option value="excel">Excel (.xlsx)</option>
+                            <option value="json">JSON</option>
+                        </select>
+                    </div>
+                
+                    <button type="submit" class="btn" style="background: #6c757d;">📤 Export Data</button>
+                </form>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Format rupiah helper
+        function formatRupiah(nominal) {
+            return new Intl.NumberFormat('id', {
+                style: 'currency',
+                currency: 'IDR',
+                maximumFractionDigits: 0
+            }).format(nominal)
+        }
+
+        // Load produk list
+        async function loadProdukList() {
+            try {
+                const response = await fetch('/api/produk/list')
+                const data = await response.json()
+                
+                if (data.success) {
+                    const container = document.getElementById('produkList')
+                    container.innerHTML = ''
+                    
+                    data.products.forEach(produk => {
+                        const div = document.createElement('div')
+                        div.className = 'checkbox-item'
+                        div.innerHTML = `
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" name="produk_ids[]" value="${produk.id}" style="margin-right: 10px;">
+                                <span><strong>${produk.nama}</strong> (${produk.kode}) - ${formatRupiah(produk.harga)}</span>
+                            </label>
+                        `
+                        container.appendChild(div)
+                    })
+                }
+            } catch (error) {
+                console.error('Error loading produk:', error)
+                document.getElementById('produkList').innerHTML = '<p style="color: #dc3545;">Error loading produk: ' + error.message + '</p>'
+            }
+        }
+
+        // Load produk untuk dropdown
+        async function loadProdukDropdown() {
+            try {
+                const response = await fetch('/api/produk/list')
+                const data = await response.json()
+                
+                if (data.success) {
+                    const select = document.getElementById('produk_id_stok')
+                    select.innerHTML = '<option value="">-- Pilih Produk --</option>'
+                    
+                    data.products.forEach(produk => {
+                        const option = document.createElement('option')
+                        option.value = produk.id
+                        option.textContent = `${produk.nama} (${produk.kode})`
+                        select.appendChild(option)
+                    })
+                }
+            } catch (error) {
+                console.error('Error loading produk:', error)
+            }
+        }
+
+        // File upload handling
+        const uploadArea = document.getElementById('uploadArea')
+        const fileInput = document.getElementById('fileInput')
+
+        uploadArea.addEventListener('click', () => fileInput.click())
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault()
+            uploadArea.classList.add('dragover')
+        })
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover')
+        })
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault()
+            uploadArea.classList.remove('dragover')
+            if (e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files
+                uploadArea.innerHTML = `
+                    <p style="font-size: 18px; margin-bottom: 10px;">✅ File dipilih: ${e.dataTransfer.files[0].name}</p>
+                    <p style="color: #666; font-size: 14px;">Klik untuk memilih file lain</p>
+                `
+            }
+        })
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                uploadArea.innerHTML = `
+                    <p style="font-size: 18px; margin-bottom: 10px;">✅ File dipilih: ${e.target.files[0].name}</p>
+                    <p style="color: #666; font-size: 14px;">Klik untuk memilih file lain</p>
+                `
+            }
+        })
+
+        // Import form submit
+        document.getElementById('importForm').addEventListener('submit', async (e) => {
+            e.preventDefault()
+            
+            const formData = new FormData()
+            formData.append('file', fileInput.files[0])
+            
+            const progressBar = document.getElementById('progressBar')
+            const progressFill = document.getElementById('progressFill')
+            const importBtn = document.getElementById('importBtn')
+            const resultsContainer = document.getElementById('importResults')
+            
+            progressBar.style.display = 'block'
+            importBtn.disabled = true
+            resultsContainer.style.display = 'none'
+            
+            try {
+                const response = await fetch('/bulk/produk/import', {
+                    method: 'POST',
+                    body: formData
+                })
+                
+                const data = await response.json()
+                
+                progressBar.style.display = 'none'
+                importBtn.disabled = false
+                
+                if (data.success) {
+                    resultsContainer.style.display = 'block'
+                    resultsContainer.innerHTML = `
+                        <h3>Hasil Import</h3>
+                        <p><strong>Total:</strong> ${data.results.total} | 
+                        <strong>Berhasil:</strong> <span style="color: #28a745;">${data.results.success}</span> | 
+                        <strong>Gagal:</strong> <span style="color: #dc3545;">${data.results.failed}</span> | 
+                        <strong>Dilewati:</strong> <span style="color: #ffc107;">${data.results.skipped}</span></p>
+                        
+                        ${data.results.details.failed.length > 0 ? `
+                            <h4>Gagal:</h4>
+                            ${data.results.details.failed.map(f => `
+                                <div class="result-item result-failed">
+                                    Row ${f.row}: ${f.error}
+                                </div>
+                            `).join('')}
+                        ` : ''}
+                        
+                        ${data.results.details.skipped.length > 0 ? `
+                            <h4>Dilewati:</h4>
+                            ${data.results.details.skipped.map(s => `
+                                <div class="result-item result-skipped">
+                                    Row ${s.row}: ${s.reason}
+                                </div>
+                            `).join('')}
+                        ` : ''}
+                    `
+                    
+                    if (data.results.success > 0) {
+                        setTimeout(() => {
+                            window.location.href = '/produk?success=bulk_import'
+                        }, 2000)
+                    }
+                } else {
+                    alert('Error: ' + data.error)
+                }
+            } catch (error) {
+                progressBar.style.display = 'none'
+                importBtn.disabled = false
+                alert('Error: ' + error.message)
+            }
+        })
+
+        // Update harga form
+        document.getElementById('updateHargaForm').addEventListener('submit', async (e) => {
+            e.preventDefault()
+            
+            const formData = new FormData(e.target)
+            const produkIds = Array.from(document.querySelectorAll('input[name="produk_ids[]"]:checked')).map(cb => cb.value)
+            
+            if (produkIds.length === 0) {
+                alert('Pilih minimal 1 produk')
+                return
+            }
+            
+            const data = {
+                produk_ids: produkIds,
+                update_type: formData.get('update_type'),
+                value: formData.get('value')
+            }
+            
+            const resultsContainer = document.getElementById('updateHargaResults')
+            resultsContainer.style.display = 'block'
+            resultsContainer.innerHTML = '<p>Processing...</p>'
+            
+            try {
+                const response = await fetch('/bulk/produk/update-harga', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                })
+                
+                const result = await response.json()
+                
+                if (result.success) {
+                    resultsContainer.innerHTML = `
+                        <h3>Hasil Update</h3>
+                        <p><strong>Total:</strong> ${result.results.total} | 
+                        <strong>Berhasil:</strong> <span style="color: #28a745;">${result.results.success}</span> | 
+                        <strong>Gagal:</strong> <span style="color: #dc3545;">${result.results.failed}</span></p>
+                        
+                        ${result.results.details.success.length > 0 ? `
+                            <h4>Berhasil:</h4>
+                            ${result.results.details.success.map(s => `
+                                <div class="result-item result-success">
+                                    ${s.nama} (${s.kode}): ${formatRupiah(s.harga_lama)} → ${formatRupiah(s.harga_baru)}
+                                </div>
+                            `).join('')}
+                        ` : ''}
+                    `
+                    
+                    setTimeout(() => {
+                        window.location.href = '/produk?success=bulk_update'
+                    }, 2000)
+                } else {
+                    alert('Error: ' + result.error)
+                }
+            } catch (error) {
+                alert('Error: ' + error.message)
+            }
+        })
+
+        // Bulk stok form
+        document.getElementById('bulkStokForm').addEventListener('submit', async (e) => {
+            e.preventDefault()
+            
+            const formData = new FormData(e.target)
+            const data = {
+                produk_id: formData.get('produk_id'),
+                data_stok: formData.get('data_stok')
+            }
+            
+            const resultsContainer = document.getElementById('bulkStokResults')
+            resultsContainer.style.display = 'block'
+            resultsContainer.innerHTML = '<p>Processing...</p>'
+            
+            try {
+                const response = await fetch('/bulk/stok/tambah', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                })
+                
+                const result = await response.json()
+                
+                if (result.success) {
+                    resultsContainer.innerHTML = `
+                        <h3>Hasil Tambah Stok</h3>
+                        <p><strong>Total:</strong> ${result.results.total} | 
+                        <strong>Berhasil:</strong> <span style="color: #28a745;">${result.results.success}</span> | 
+                        <strong>Gagal:</strong> <span style="color: #dc3545;">${result.results.failed}</span></p>
+                    `
+                    
+                    setTimeout(() => {
+                        window.location.reload()
+                    }, 2000)
+                } else {
+                    alert('Error: ' + result.error)
+                }
+            } catch (error) {
+                alert('Error: ' + error.message)
+            }
+        })
+
+        // Load pending deposits
+        async function loadPendingDeposits() {
+            try {
+                const response = await fetch('/api/deposit/pending')
+                const data = await response.json()
+                
+                if (data.success) {
+                    const container = document.getElementById('depositList')
+                    const form = document.getElementById('bulkDepositForm')
+                    
+                    container.innerHTML = ''
+                    
+                    if (data.deposits.length === 0) {
+                        container.innerHTML = '<p style="text-align: center; color: #999;">Tidak ada deposit pending</p>'
+                        form.style.display = 'none'
+                        return
+                    }
+                    
+                    form.style.display = 'block'
+                    
+                    data.deposits.forEach(deposit => {
+                        const div = document.createElement('div')
+                        div.className = 'checkbox-item'
+                        div.innerHTML = `
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" name="deposit_ids[]" value="${deposit.id}" style="margin-right: 10px;">
+                                <span><strong>User ID ${deposit.user_id}</strong> - ${formatRupiah(deposit.jumlah)} (${deposit.metode}) - ${new Date(deposit.tanggal).toLocaleString('id-ID')}</span>
+                            </label>
+                        `
+                        container.appendChild(div)
+                    })
+                }
+            } catch (error) {
+                console.error('Error loading deposits:', error)
+                alert('Error loading deposits: ' + error.message)
+            }
+        }
+
+        // Bulk approve/reject deposit
+        async function bulkApproveDeposit() {
+            const depositIds = Array.from(document.querySelectorAll('input[name="deposit_ids[]"]:checked')).map(cb => cb.value)
+            
+            if (depositIds.length === 0) {
+                alert('Pilih minimal 1 deposit')
+                return
+            }
+            
+            if (!confirm(`Yakin ingin approve ${depositIds.length} deposit?`)) {
+                return
+            }
+            
+            const resultsContainer = document.getElementById('bulkDepositResults')
+            resultsContainer.style.display = 'block'
+            resultsContainer.innerHTML = '<p>Processing...</p>'
+            
+            try {
+                const response = await fetch('/bulk/deposit/approve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deposit_ids: depositIds })
+                })
+                
+                const result = await response.json()
+                
+                if (result.success) {
+                    resultsContainer.innerHTML = `
+                        <h3>Hasil Approve</h3>
+                        <p><strong>Total:</strong> ${result.results.total} | 
+                        <strong>Berhasil:</strong> <span style="color: #28a745;">${result.results.success}</span> | 
+                        <strong>Gagal:</strong> <span style="color: #dc3545;">${result.results.failed}</span></p>
+                    `
+                    
+                    setTimeout(() => {
+                        window.location.href = '/deposit?success=bulk_approve'
+                    }, 2000)
+                } else {
+                    alert('Error: ' + result.error)
+                }
+            } catch (error) {
+                alert('Error: ' + error.message)
+            }
+        }
+
+        async function bulkRejectDeposit() {
+            const depositIds = Array.from(document.querySelectorAll('input[name="deposit_ids[]"]:checked')).map(cb => cb.value)
+            const alasan = document.getElementById('alasan').value
+            
+            if (depositIds.length === 0) {
+                alert('Pilih minimal 1 deposit')
+                return
+            }
+            
+            if (!confirm(`Yakin ingin reject ${depositIds.length} deposit?`)) {
+                return
+            }
+            
+            const resultsContainer = document.getElementById('bulkDepositResults')
+            resultsContainer.style.display = 'block'
+            resultsContainer.innerHTML = '<p>Processing...</p>'
+            
+            try {
+                const response = await fetch('/bulk/deposit/reject', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deposit_ids: depositIds, alasan: alasan })
+                })
+                
+                const result = await response.json()
+                
+                if (result.success) {
+                    resultsContainer.innerHTML = `
+                        <h3>Hasil Reject</h3>
+                        <p><strong>Total:</strong> ${result.results.total} | 
+                        <strong>Berhasil:</strong> <span style="color: #28a745;">${result.results.success}</span> | 
+                        <strong>Gagal:</strong> <span style="color: #dc3545;">${result.results.failed}</span></p>
+                    `
+                    
+                    setTimeout(() => {
+                        window.location.href = '/deposit?success=bulk_reject'
+                    }, 2000)
+                } else {
+                    alert('Error: ' + result.error)
+                }
+            } catch (error) {
+                alert('Error: ' + error.message)
+            }
+        }
+
+        // Export form
+        document.getElementById('exportForm').addEventListener('submit', async (e) => {
+            e.preventDefault()
+            
+            const formData = new FormData(e.target)
+            const exportType = formData.get('export_type')
+            const format = formData.get('format')
+            
+            // Build query string untuk GET request
+            const params = new URLSearchParams({
+                export_type: exportType,
+                format: format
+            })
+            
+            // Open in new window untuk download
+            window.open(`/bulk/export?${params.toString()}`, '_blank')
+        })
+
+        // Helper functions
+        function selectAllProduk() {
+            document.querySelectorAll('input[name="produk_ids[]"]').forEach(cb => cb.checked = true)
+        }
+
+        function deselectAllProduk() {
+            document.querySelectorAll('input[name="produk_ids[]"]').forEach(cb => cb.checked = false)
+        }
+
+        function selectAllDeposit() {
+            document.querySelectorAll('input[name="deposit_ids[]"]').forEach(cb => cb.checked = true)
+        }
+
+        function deselectAllDeposit() {
+            document.querySelectorAll('input[name="deposit_ids[]"]').forEach(cb => cb.checked = false)
+        }
+
+        // Initialize
+        loadProdukList()
+        loadProdukDropdown()
+        
+        // Sidebar toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+        
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('sidebar');
+            const toggleBtn = document.querySelector('.sidebar-toggle');
+            
+            if (window.innerWidth <= 768 && 
+                sidebar.classList.contains('open') && 
+                !sidebar.contains(e.target) && 
+                !toggleBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        window.addEventListener('resize', () => {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth > 768) {
+                sidebar.classList.remove('open');
+            }
+        });
+    </script>
+    
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
+            ↑
+        </button>
+    </div>
+    
+    <script src="/js/notifications.js"></script>
+</body>
+</html>
+

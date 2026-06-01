@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <h1>📝 Message Templates</h1>
+                    <nav>
+                        <a href="/">Dashboard</a>
+                        <a href="/produk">Produk</a>
+                        <a href="/transaksi">Transaksi</a>
+                        <a href="/user">User</a>
+                        <a href="/deposit">Deposit</a>
+                        <a href="/communication/broadcast">📢 Broadcast</a>
+                        <a href="/communication/send">✉️ Send</a>
+                        <a href="/communication/templates" class="active">📝 Templates</a>
+                        <a href="/communication/history">📜 History</a>
+                        <% if (req.session.role === 'admin') { %>
+                            <a href="/admin/users">Admin</a>
+                        <% } %>
+                    </nav>
+                </div>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <a href="/communication/templates/tambah" style="padding: 10px 20px; background: #28a745; color: white; text-decoration: none; border-radius: 6px;">
+                        ➕ Tambah Template
+                    </a>
+                    <span style="color: #666; font-size: 14px;">👤 <%= username %></span>
+                    <a href="/logout" style="padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 6px;">Logout</a>
+                </div>
+            </div>
+        </header>
+
+        <% if (success === 'tambah') { %>
+            <div class="alert alert-success">✅ Template berhasil ditambahkan!</div>
+        <% } else if (success === 'edit') { %>
+            <div class="alert alert-success">✅ Template berhasil diupdate!</div>
+        <% } else if (success === 'hapus') { %>
+            <div class="alert alert-success">✅ Template berhasil dihapus!</div>
+        <% } %>
+
+        <% if (error) { %>
+            <div class="alert alert-error">❌ Error: <%= error %></div>
+        <% } %>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nama</th>
+                        <th>Kategori</th>
+                        <th>Subject</th>
+                        <th>Variabel</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% if (templates.length === 0) { %>
+                        <tr>
+                            <td colspan="7" class="text-center">Belum ada template. <a href="/communication/templates/tambah">Tambah template baru</a></td>
+                        </tr>
+                    <% } else { %>
+                        <% templates.forEach(t => { %>
+                            <tr>
+                                <td><strong><%= t.name %></strong></td>
+                                <td>
+                                    <span style="padding: 4px 8px; background: #17a2b8; color: white; border-radius: 4px; font-size: 12px;">
+                                        <%= t.category %>
+                                    </span>
+                                </td>
+                                <td><%= t.subject || '-' %></td>
+                                <td>
+                                    <% if (t.variables && Array.isArray(t.variables) && t.variables.length > 0) { %>
+                                        <code style="font-size: 11px;"><%= t.variables.join(', ') %></code>
+                                    <% } else { %>
+                                        <span style="color: #999;">-</span>
+                                    <% } %>
+                                </td>
+                                <td>
+                                    <% if (t.is_active) { %>
+                                        <span style="color: #28a745;">✅ Aktif</span>
+                                    <% } else { %>
+                                        <span style="color: #dc3545;">❌ Nonaktif</span>
+                                    <% } %>
+                                </td>
+                                <td><%= formatTanggal(t.created_at) %></td>
+                                <td>
+                                    <a href="/communication/templates/edit/<%= t.id %>" style="padding: 5px 10px; background: #17a2b8; color: white; text-decoration: none; border-radius: 4px; font-size: 12px; margin-right: 5px;">
+                                        ✏️ Edit
+                                    </a>
+                                    <form method="POST" action="/communication/templates/hapus/<%= t.id %>" style="display: inline;" onsubmit="return confirm('Yakin ingin menghapus template ini?')">
+                                        <button type="submit" style="padding: 5px 10px; background: #dc3545; color: white; border: none; border-radius: 4px; font-size: 12px; cursor: pointer;">
+                                            🗑️ Hapus
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <% }) %>
+                    <% } %>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>
+

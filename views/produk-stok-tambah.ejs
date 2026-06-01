@@ -1,0 +1,128 @@
+<%
+    const currentPage = 'produk';
+    const pageTitle = `➕ Tambah Stok - ${produk.nama}`;
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (typeof req !== 'undefined' && req.session && req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <div class="card" style="max-width: 900px; margin: 0 auto;">
+                <div class="card-header">
+                    <h2 class="card-title">➕ Tambah Stok Baru</h2>
+                </div>
+                <div class="card-body">
+                    <!-- Product Info -->
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 30px; border-left: 4px solid #667eea;">
+                        <p style="margin: 0 0 8px 0;"><strong>Produk:</strong> <%= produk.nama %></p>
+                        <p style="margin: 0;"><strong>Kode:</strong> <code><%= produk.kode %></code></p>
+                    </div>
+
+                    <% if (error) { %>
+                        <div class="alert alert-error">
+                            ❌ <%= error %>
+                        </div>
+                    <% } %>
+
+                    <form method="POST" action="/produk/<%= produk.id %>/stok/tambah">
+                        <div class="form-group">
+                            <label class="form-label">
+                                Data Stok (Satu Item Per Baris) <span class="required">*</span>
+                            </label>
+                            <textarea 
+                                id="data_stok" 
+                                name="data_stok" 
+                                class="form-textarea"
+                                required
+                                placeholder="email1:password1&#10;email2:password2&#10;email3:password3"
+                                autofocus
+                                style="min-height: 250px; font-family: 'Courier New', monospace; font-size: 13px;"
+                            ></textarea>
+                            <div class="form-help">
+                                💡 Masukkan data stok, satu item per baris. Contoh: email:password atau data lainnya sesuai format produk.
+                            </div>
+                        </div>
+
+                        <div class="form-actions" style="display: flex; gap: 12px; margin-top: 30px;">
+                            <button type="submit" class="btn btn-success" style="flex: 1;">
+                                💾 Tambah Stok
+                            </button>
+                            <a href="/produk/<%= produk.id %>/stok" class="btn" style="background: #6c757d; flex: 1; text-align: center;">
+                                ❌ Batal
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
+            ↑
+        </button>
+    </div>
+    
+    <script>
+        // Sidebar Toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+        
+        // Close sidebar on mobile when clicking outside
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('sidebar');
+            const toggleBtn = document.querySelector('.sidebar-toggle');
+            
+            if (window.innerWidth <= 768 && 
+                sidebar.classList.contains('open') && 
+                !sidebar.contains(e.target) && 
+                !toggleBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        // Handle responsive sidebar
+        window.addEventListener('resize', () => {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth > 768) {
+                sidebar.classList.remove('open');
+            }
+        });
+    </script>
+    
+    <!-- Real-time Notifications -->
+    <script src="/js/notifications.js"></script>
+</body>
+</html>

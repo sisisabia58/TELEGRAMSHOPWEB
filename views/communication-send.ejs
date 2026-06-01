@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <h1>✉️ Send Message</h1>
+                    <nav>
+                        <a href="/">Dashboard</a>
+                        <a href="/produk">Produk</a>
+                        <a href="/transaksi">Transaksi</a>
+                        <a href="/user">User</a>
+                        <a href="/deposit">Deposit</a>
+                        <a href="/communication/broadcast">📢 Broadcast</a>
+                        <a href="/communication/send" class="active">✉️ Send</a>
+                        <a href="/communication/templates">📝 Templates</a>
+                        <a href="/communication/history">📜 History</a>
+                        <% if (req.session.role === 'admin') { %>
+                            <a href="/admin/users">Admin</a>
+                        <% } %>
+                    </nav>
+                </div>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <span style="color: #666; font-size: 14px;">👤 <%= username %></span>
+                    <a href="/logout" style="padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 6px;">Logout</a>
+                </div>
+            </div>
+        </header>
+
+        <% if (error) { %>
+            <div class="alert alert-error">
+                ❌ Error: <%= error %>
+            </div>
+        <% } %>
+
+        <% if (success) { %>
+            <div class="alert alert-success">
+                ✅ <%= success %>
+            </div>
+        <% } %>
+
+        <div style="max-width: 800px; margin: 20px auto;">
+            <div style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                <h2 style="margin-bottom: 20px;">Kirim Pesan ke User Tertentu</h2>
+                
+                <form method="POST" action="/communication/send">
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold;">User ID <span style="color: red;">*</span></label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="number" name="user_id" id="user_id" value="<%= user ? user.id : '' %>" required style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;" placeholder="Masukkan Telegram User ID">
+                            <a href="/user" style="padding: 10px 20px; background: #17a2b8; color: white; text-decoration: none; border-radius: 6px; white-space: nowrap;">
+                                🔍 Cari User
+                            </a>
+                        </div>
+                        <% if (user) { %>
+                            <div style="margin-top: 10px; padding: 10px; background: #d4edda; border-radius: 6px;">
+                                <strong>✅ User ditemukan:</strong> ID <%= user.id %> | Saldo: Rp <%= user.saldo ? user.saldo.toLocaleString('id-ID') : '0' %>
+                            </div>
+                        <% } else { %>
+                            <small style="color: #666; font-size: 12px;">Masukkan Telegram User ID. Anda bisa mencari user di halaman <a href="/user">User</a>.</small>
+                        <% } %>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold;">Pilih Template (Opsional)</label>
+                        <select name="template_id" id="template_id" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;" onchange="loadTemplate()">
+                            <option value="none">-- Tidak menggunakan template --</option>
+                            <% templates.forEach(t => { %>
+                                <option value="<%= t.id %>"><%= t.name %> (<%= t.category %>)</option>
+                            <% }) %>
+                        </select>
+                    </div>
+
+                    <div id="template_variables" style="display: none; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold;">Variabel Template (JSON)</label>
+                        <textarea name="template_variables" id="template_variables_input" rows="3" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-family: monospace; font-size: 12px;" placeholder='{"amount": "Rp 50.000", "saldo": "Rp 100.000"}'></textarea>
+                        <small style="color: #666; font-size: 12px;">Masukkan variabel dalam format JSON.</small>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold;">Pesan <span style="color: red;">*</span></label>
+                        <textarea name="message" id="message" rows="10" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; font-family: monospace;" placeholder="Masukkan pesan yang akan dikirim ke user..."></textarea>
+                        <small style="color: #666; font-size: 12px;">Gunakan Markdown untuk formatting.</small>
+                    </div>
+
+                    <div style="display: flex; gap: 10px;">
+                        <button type="submit" style="flex: 1; padding: 12px 24px; background: #28a745; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer;">
+                            ✉️ Kirim Pesan
+                        </button>
+                        <a href="/communication/history" style="padding: 12px 24px; background: #6c757d; color: white; text-decoration: none; border-radius: 6px; font-size: 16px;">
+                            📜 History
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function loadTemplate() {
+            const select = document.getElementById('template_id');
+            const templateId = select.value;
+            const variablesDiv = document.getElementById('template_variables');
+            
+            if (templateId === 'none') {
+                variablesDiv.style.display = 'none';
+                return;
+            }
+            
+            variablesDiv.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,184 @@
+<%
+    const currentPage = 'voucher';
+    const pageTitle = '🎟️ Manajemen Voucher';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/voucher/tambah" class="btn btn-success">➕ Tambah Voucher</a>
+                <a href="/voucher/export" class="btn btn-primary">📥 Export CSV</a>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <!-- Search -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-body">
+                    <div class="search-container">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="searchInput" class="search-input" placeholder="Cari voucher (kode, nama)...">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Vouchers Table -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Daftar Voucher</h2>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Kode</th>
+                                    <th>Nama</th>
+                                    <th>Diskon</th>
+                                    <th>Min. Pembelian</th>
+                                    <th>Maks. Diskon</th>
+                                    <th>Status</th>
+                                    <th>Digunakan</th>
+                                    <th>Expired</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="vouchersTableBody">
+                                <% if (vouchers.length === 0) { %>
+                                    <tr>
+                                        <td colspan="9">
+                                            <div class="empty-state">
+                                                <div class="empty-state-icon">🎟️</div>
+                                                <div class="empty-state-title">Belum ada voucher</div>
+                                                <div class="empty-state-description">Mulai dengan menambahkan voucher pertama Anda</div>
+                                                <a href="/voucher/tambah" class="empty-state-action">➕ Tambah Voucher</a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% } else { %>
+                                    <% vouchers.forEach(v => { %>
+                                        <tr>
+                                            <td><code><%= v.kode %></code></td>
+                                            <td><strong><%= v.nama %></strong></td>
+                                            <td><%= v.tipe === 'percentage' ? v.nilai + '%' : formatrupiah(v.nilai) %></td>
+                                            <td><%= formatrupiah(v.min_pembelian || 0) %></td>
+                                            <td><%= v.maks_diskon ? formatrupiah(v.maks_diskon) : '-' %></td>
+                                            <td>
+                                                <% if (v.status === 'baru') { %>
+                                                    <span class="badge badge-success">Baru</span>
+                                                <% } else if (v.status === 'aktif') { %>
+                                                    <span class="badge badge-warning">Aktif</span>
+                                                <% } else { %>
+                                                    <span class="badge badge-danger">Habis</span>
+                                                <% } %>
+                                            </td>
+                                            <td><%= v.digunakan || 0 %> / <%= v.max_usage || '∞' %></td>
+                                            <td><%= v.expired_at ? new Date(v.expired_at).toLocaleDateString('id-ID') : '-' %></td>
+                                            <td>
+                                                <div class="table-actions">
+                                                    <a href="/voucher/<%= v.id %>" class="btn-icon" title="Detail">👁️</a>
+                                                    <a href="/voucher/edit/<%= v.id %>" class="btn-icon" title="Edit">✏️</a>
+                                                    <a href="/voucher/hapus/<%= v.id %>" class="btn-icon" title="Hapus">🗑️</a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <% }) %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
+            ↑
+        </button>
+    </div>
+    
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+        
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('sidebar');
+            const toggleBtn = document.querySelector('.sidebar-toggle');
+            
+            if (window.innerWidth <= 768 && 
+                sidebar.classList.contains('open') && 
+                !sidebar.contains(e.target) && 
+                !toggleBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        window.addEventListener('resize', () => {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth > 768) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            const searchInput = document.getElementById('searchInput');
+            const tableBody = document.getElementById('vouchersTableBody');
+            
+            if (searchInput && tableBody) {
+                SearchHelper.init(searchInput, tableBody, [0, 1]);
+            }
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const success = urlParams.get('success');
+            const error = urlParams.get('error');
+            
+            if (success) {
+                const messages = {
+                    'tambah': 'Voucher berhasil ditambahkan!',
+                    'edit': 'Voucher berhasil diupdate!',
+                    'hapus': 'Voucher berhasil dihapus!'
+                };
+                toast.success(messages[success] || 'Operasi berhasil!', 'Berhasil');
+            }
+            if (error) {
+                const messages = {
+                    'notfound': 'Voucher tidak ditemukan!',
+                    'hapus': 'Gagal menghapus voucher!'
+                };
+                toast.error(messages[error] || 'Terjadi kesalahan!', 'Error');
+            }
+        });
+    </script>
+    
+    <script src="/js/notifications.js"></script>
+</body>
+</html>

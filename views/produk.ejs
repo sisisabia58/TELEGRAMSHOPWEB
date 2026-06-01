@@ -1,0 +1,184 @@
+<%
+    const currentPage = 'produk';
+    const pageTitle = '📦 Daftar Produk';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/produk/tambah" class="btn btn-success">➕ Tambah Produk</a>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <!-- Search & Filter -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-body">
+                    <div class="search-container">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="searchInput" class="search-input" placeholder="Cari produk (nama, kode)...">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Products Table -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Daftar Produk</h2>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Nama</th>
+                                    <th>Kode</th>
+                                    <th>Harga</th>
+                                    <th>Stok</th>
+                                    <th>Terjual</th>
+                                    <th>Created</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="productsTableBody">
+                                <% if (products.length === 0) { %>
+                                    <tr>
+                                        <td colspan="7">
+                                            <div class="empty-state">
+                                                <div class="empty-state-icon">📦</div>
+                                                <div class="empty-state-title">Belum ada produk</div>
+                                                <div class="empty-state-description">Mulai dengan menambahkan produk pertama Anda</div>
+                                                <a href="/produk/tambah" class="empty-state-action">➕ Tambah Produk</a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% } else { %>
+                                    <% products.forEach(p => { %>
+                                        <tr>
+                                            <td><strong><%= p.nama %></strong></td>
+                                            <td><code><%= p.kode %></code></td>
+                                            <td><%= formatrupiah(p.harga) %></td>
+                                            <td>
+                                                <% 
+                                                    const stokCount = p.stok_count !== undefined ? p.stok_count : 0;
+                                                    const badgeClass = stokCount === 0 ? 'badge-danger' : (stokCount < 10 ? 'badge-warning' : 'badge-success');
+                                                %>
+                                                <span class="badge <%= badgeClass %>">
+                                                    <%= stokCount %>
+                                                </span>
+                                            </td>
+                                            <td><%= p.terjual || 0 %></td>
+                                            <td><%= new Date(p.created_at).toLocaleDateString('id-ID') %></td>
+                                            <td>
+                                                <div class="table-actions">
+                                                    <a href="/produk/<%= p.id %>/stok" class="btn-icon" title="Stok">📦</a>
+                                                    <a href="/produk/edit/<%= p.id %>" class="btn-icon" title="Edit">✏️</a>
+                                                    <a href="/produk/hapus/<%= p.id %>" class="btn-icon" title="Hapus">🗑️</a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <% }) %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
+            ↑
+        </button>
+    </div>
+    
+    <script>
+        // Sidebar Toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+        
+        // Close sidebar on mobile when clicking outside
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('sidebar');
+            const toggleBtn = document.querySelector('.sidebar-toggle');
+            
+            if (window.innerWidth <= 768 && 
+                sidebar.classList.contains('open') && 
+                !sidebar.contains(e.target) && 
+                !toggleBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        // Handle responsive sidebar
+        window.addEventListener('resize', () => {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth > 768) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        // Search functionality
+        document.addEventListener('DOMContentLoaded', () => {
+            const searchInput = document.getElementById('searchInput');
+            const tableBody = document.getElementById('productsTableBody');
+            
+            if (searchInput && tableBody) {
+                SearchHelper.init(searchInput, tableBody, [0, 1]);
+            }
+            
+            // Show success/error messages from query params
+            const urlParams = new URLSearchParams(window.location.search);
+            const success = urlParams.get('success');
+            const error = urlParams.get('error');
+            
+            if (success) {
+                const messages = {
+                    'tambah': 'Produk berhasil ditambahkan!',
+                    'edit': 'Produk berhasil diupdate!',
+                    'hapus': 'Produk berhasil dihapus!'
+                };
+                toast.success(messages[success] || 'Operasi berhasil!', 'Berhasil');
+            }
+            if (error) {
+                const messages = {
+                    'notfound': 'Produk tidak ditemukan!',
+                    'hapus': 'Gagal menghapus produk!'
+                };
+                toast.error(messages[error] || 'Terjadi kesalahan!', 'Error');
+            }
+        });
+    </script>
+    
+    <script src="/js/notifications.js"></script>
+</body>
+</html>

@@ -1,0 +1,232 @@
+<%
+    const currentPage = 'user';
+    const pageTitle = 'Detail User';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+    <style>
+        .user-detail-page .card { margin-bottom: 20px; }
+        .detail-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .detail-stat {
+            background: linear-gradient(135deg, #f8f9fa 0%, #eee 100%);
+            padding: 20px;
+            border-radius: 12px;
+            border-left: 4px solid #667eea;
+        }
+        .detail-stat .label { font-size: 13px; color: #666; margin-bottom: 6px; }
+        .detail-stat .value { font-size: 20px; font-weight: 700; color: #333; }
+        .detail-stat .value.saldo { color: #28a745; }
+        .detail-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
+        .table-wrapper th,
+        .table-wrapper td { padding: 12px 10px; }
+        .table-wrapper td code { font-size: 13px; }
+        .status-success { color: #28a745; font-weight: 600; }
+        .status-pending { color: #ffc107; font-weight: 600; }
+        .status-failed { color: #dc3545; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <%- include('partials/sidebar') %>
+
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;">👤 Detail User</h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (typeof req !== 'undefined' && req.session && req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/user" class="btn-top">← User</a>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+
+        <div class="container user-detail-page">
+            <% if (query && query.success) { %>
+                <div class="alert alert-success" style="margin-bottom: 20px;">
+                    ✅ <%= query.success === 'topup' ? 'Saldo berhasil ditambahkan!' : query.success === 'kurangi' ? 'Saldo berhasil dikurangi!' : query.success === 'reset' ? 'Data berhasil direset!' : 'Operasi berhasil!' %>
+                </div>
+            <% } %>
+            <% if (query && query.error) { %>
+                <div class="alert alert-error" style="margin-bottom: 20px;">
+                    ❌ <%= query.error === 'topup' ? 'Gagal menambahkan saldo!' : query.error === 'kurangi' ? 'Gagal mengurangi saldo!' : query.error === 'reset' ? 'Gagal reset data!' : query.error === 'noselection' ? 'Pilih minimal satu opsi untuk direset!' : 'Terjadi kesalahan!' %>
+                </div>
+            <% } %>
+
+            <!-- Stats & Actions -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">User ID <code><%= user.id %></code></h2>
+                </div>
+                <div class="card-body">
+                    <div class="detail-stats">
+                        <div class="detail-stat">
+                            <div class="label">Jumlah Transaksi</div>
+                            <div class="value"><%= user.jumlahtransaksi || 0 %></div>
+                        </div>
+                        <div class="detail-stat">
+                            <div class="label">Total Pengeluaran</div>
+                            <div class="value"><%= formatrupiah(user.pengeluaran || 0) %></div>
+                        </div>
+                        <div class="detail-stat">
+                            <div class="label">Saldo</div>
+                            <div class="value saldo"><%= formatrupiah(user.saldo || 0) %></div>
+                        </div>
+                        <div class="detail-stat">
+                            <div class="label">Member Since</div>
+                            <div class="value" style="font-size: 16px;"><%= new Date(user.created_at).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) %></div>
+                        </div>
+                    </div>
+                    <div class="detail-actions">
+                        <a href="/user/<%= user.id %>/topup" class="btn btn-success">💰 Top Up Saldo</a>
+                        <a href="/user/<%= user.id %>/kurangi" class="btn btn-warning">➖ Kurangi Saldo</a>
+                        <a href="/user/<%= user.id %>/reset" class="btn btn-primary">🔄 Reset Data</a>
+                        <a href="/user" class="btn btn-secondary">← Kembali ke Daftar</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Riwayat Transaksi -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">📋 Riwayat Transaksi (20 Terbaru)</h2>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Tanggal</th>
+                                    <th>Produk</th>
+                                    <th>Jumlah</th>
+                                    <th>Harga</th>
+                                    <th>Trx ID</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (transactions.length === 0) { %>
+                                    <tr>
+                                        <td colspan="5">
+                                            <div class="empty-state" style="padding: 24px;">
+                                                <div class="empty-state-description">Belum ada transaksi</div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% } else { %>
+                                    <% transactions.forEach(t => { %>
+                                        <tr>
+                                            <td><%= formatTanggal(t.tanggal) %></td>
+                                            <td><%= t.nama %></td>
+                                            <td><%= t.jumlah %></td>
+                                            <td><%= formatrupiah(t.harga) %></td>
+                                            <td><code><%= t.trxid || '-' %></code></td>
+                                        </tr>
+                                    <% }) %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Riwayat Deposit -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">💵 Riwayat Deposit (20 Terbaru)</h2>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Tanggal</th>
+                                    <th>Jumlah</th>
+                                    <th>Fee</th>
+                                    <th>Total</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (deposits.length === 0) { %>
+                                    <tr>
+                                        <td colspan="5">
+                                            <div class="empty-state" style="padding: 24px;">
+                                                <div class="empty-state-description">Belum ada deposit</div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% } else { %>
+                                    <% deposits.forEach(d => { %>
+                                        <tr>
+                                            <td><%= formatTanggal(d.tanggal) %></td>
+                                            <td><%= formatrupiah(d.jumlah) %></td>
+                                            <td><%= formatrupiah(d.fee || 0) %></td>
+                                            <td><%= formatrupiah(d.total) %></td>
+                                            <td>
+                                                <% if (d.status === 'success') { %>
+                                                    <span class="status-success">✅ Success</span>
+                                                <% } else if (d.status === 'pending') { %>
+                                                    <span class="status-pending">⏳ Pending</span>
+                                                <% } else if (d.status === 'failed') { %>
+                                                    <span class="status-failed">❌ Failed</span>
+                                                <% } else { %>
+                                                    <span style="color: #6c757d;"><%= d.status %></span>
+                                                <% } %>
+                                            </td>
+                                        </tr>
+                                    <% }) %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">↑</button>
+    </div>
+
+    <script>
+        function toggleSidebar() {
+            var sidebar = document.getElementById('sidebar');
+            if (sidebar) {
+                sidebar.classList.toggle('collapsed');
+                sidebar.classList.toggle('open');
+            }
+        }
+        document.addEventListener('click', function(e) {
+            var sidebar = document.getElementById('sidebar');
+            var toggleBtn = document.querySelector('.sidebar-toggle');
+            if (window.innerWidth <= 768 && sidebar && sidebar.classList.contains('open') && !sidebar.contains(e.target) && toggleBtn && !toggleBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+        window.addEventListener('resize', function() {
+            var sidebar = document.getElementById('sidebar');
+            if (window.innerWidth > 768 && sidebar) sidebar.classList.remove('open');
+        });
+    </script>
+    <script src="/js/notifications.js"></script>
+</body>
+</html>

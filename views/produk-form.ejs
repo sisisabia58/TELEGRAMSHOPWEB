@@ -1,0 +1,186 @@
+<%
+    const currentPage = 'produk';
+    const pageTitle = action === 'tambah' ? '➕ Tambah Produk' : '✏️ Edit Produk';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/produk" class="btn-top">← Kembali</a>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <div class="form-container">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title"><%= action === 'tambah' ? 'Tambah Produk Baru' : 'Edit Produk' %></h2>
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" action="<%= action === 'tambah' ? '/produk/tambah' : '/produk/edit/' + produk.id %>" data-loading>
+                            <div class="form-group">
+                                <label class="form-label">
+                                    Nama Produk <span class="required">*</span>
+                                </label>
+                                <input 
+                                    type="text" 
+                                    name="nama" 
+                                    class="form-input" 
+                                    value="<%= produk ? produk.nama : '' %>"
+                                    required 
+                                    placeholder="Contoh: Netflix Premium 1 Bulan"
+                                >
+                                <div class="form-help">Nama produk yang akan ditampilkan ke customer</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">
+                                    Kode Produk <span class="required">*</span>
+                                </label>
+                                <input 
+                                    type="text" 
+                                    name="kode" 
+                                    class="form-input" 
+                                    value="<%= produk ? produk.kode : '' %>"
+                                    required 
+                                    placeholder="Contoh: netflix-1bulan"
+                                    pattern="[a-z0-9-]+"
+                                    title="Hanya huruf kecil, angka, dan tanda hubung"
+                                >
+                                <div class="form-help">Kode akan otomatis diubah ke huruf kecil. Harus unik.</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">
+                                    Harga (Rp) <span class="required">*</span>
+                                </label>
+                                <input 
+                                    type="number" 
+                                    name="harga" 
+                                    class="form-input" 
+                                    value="<%= produk ? produk.harga : '' %>"
+                                    required 
+                                    min="0"
+                                    placeholder="Contoh: 25000"
+                                >
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">
+                                    Deskripsi <span class="required">*</span>
+                                </label>
+                                <textarea 
+                                    name="deskripsi" 
+                                    class="form-textarea" 
+                                    rows="5" 
+                                    required
+                                    placeholder="Deskripsi produk yang akan ditampilkan ke customer"
+                                ><%= produk ? produk.deskripsi : '' %></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">
+                                    Syarat & Ketentuan <span class="required">*</span>
+                                </label>
+                                <textarea 
+                                    name="snk" 
+                                    class="form-textarea" 
+                                    rows="5" 
+                                    required
+                                    placeholder="Syarat dan ketentuan produk"
+                                ><%= produk ? produk.snk : '' %></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Format Produk (Opsional)</label>
+                                <input 
+                                    type="text" 
+                                    name="format" 
+                                    class="form-input" 
+                                    value="<%= produk ? (produk.format || '') : '' %>"
+                                    placeholder="Contoh: Email:Password atau Email:Password|email@example.com:*****"
+                                >
+                                <div class="form-help">Format manual produk. Jika kosong, akan auto-detect dari data stok. Gunakan | untuk memisahkan format dan contoh.</div>
+                            </div>
+
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">
+                                    <%= action === 'tambah' ? '💾 Simpan Produk' : '💾 Update Produk' %>
+                                </button>
+                                <a href="/produk" class="btn" style="background: #6c757d;">❌ Batal</a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
+            ↑
+        </button>
+    </div>
+    
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+        
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('sidebar');
+            const toggleBtn = document.querySelector('.sidebar-toggle');
+            
+            if (window.innerWidth <= 768 && 
+                sidebar.classList.contains('open') && 
+                !sidebar.contains(e.target) && 
+                !toggleBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        window.addEventListener('resize', () => {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth > 768) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        // Form validation
+        document.querySelector('form').addEventListener('submit', (e) => {
+            if (!FormValidator.validate(e.target)) {
+                e.preventDefault();
+            }
+        });
+    </script>
+    
+    <script src="/js/notifications.js"></script>
+</body>
+</html>

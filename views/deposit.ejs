@@ -1,0 +1,311 @@
+<%
+    const currentPage = 'deposit';
+    const pageTitle = '💰 Manajemen Deposit';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <% 
+                    const exportParams = []
+                    if (filters.status && filters.status !== 'all') exportParams.push('status=' + filters.status)
+                    if (filters.startDate) exportParams.push('startDate=' + filters.startDate)
+                    if (filters.endDate) exportParams.push('endDate=' + filters.endDate)
+                    if (filters.user) exportParams.push('user=' + filters.user)
+                    if (filters.metode && filters.metode !== 'all') exportParams.push('metode=' + filters.metode)
+                    if (filters.search) exportParams.push('search=' + encodeURIComponent(filters.search))
+                    const exportQuery = exportParams.length > 0 ? '?' + exportParams.join('&') : ''
+                %>
+                <a href="/deposit/export<%= exportQuery %>" class="btn btn-success">📥 Export CSV</a>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <!-- Stats -->
+            <div class="stats-grid" style="margin-bottom: 20px;">
+                <div class="stat-card">
+                    <div class="stat-icon">💰</div>
+                    <div class="stat-info">
+                        <h3>Total Deposit</h3>
+                        <p class="stat-value"><%= stats.total %></p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⏳</div>
+                    <div class="stat-info">
+                        <h3>Pending</h3>
+                        <p class="stat-value" style="color: #ffc107;"><%= stats.pending %></p>
+                        <small style="color: #666;"><%= formatrupiah(stats.totalPending) %></small>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">✅</div>
+                    <div class="stat-info">
+                        <h3>Success</h3>
+                        <p class="stat-value" style="color: #28a745;"><%= stats.success %></p>
+                        <small style="color: #666;"><%= formatrupiah(stats.totalSuccess) %></small>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">❌</div>
+                    <div class="stat-info">
+                        <h3>Failed</h3>
+                        <p class="stat-value" style="color: #dc3545;"><%= stats.failed %></p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⏰</div>
+                    <div class="stat-info">
+                        <h3>Expired</h3>
+                        <p class="stat-value" style="color: #6c757d;"><%= stats.expired %></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filter Card -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header">
+                    <h2 class="card-title">Filter Deposit</h2>
+                </div>
+                <div class="card-body">
+                    <form method="GET" action="/deposit">
+                        <div class="filter-container">
+                            <div class="filter-group">
+                                <label class="form-label">Status</label>
+                                <select name="status" class="form-select">
+                                    <option value="all" <%= filters.status === 'all' ? 'selected' : '' %>>Semua</option>
+                                    <option value="pending" <%= filters.status === 'pending' ? 'selected' : '' %>>Pending</option>
+                                    <option value="success" <%= filters.status === 'success' ? 'selected' : '' %>>Success</option>
+                                    <option value="failed" <%= filters.status === 'failed' ? 'selected' : '' %>>Failed</option>
+                                    <option value="expired" <%= filters.status === 'expired' ? 'selected' : '' %>>Expired</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label class="form-label">Metode</label>
+                                <select name="metode" class="form-select">
+                                    <option value="all" <%= filters.metode === 'all' ? 'selected' : '' %>>Semua</option>
+                                    <option value="qris" <%= filters.metode === 'qris' ? 'selected' : '' %>>QRIS</option>
+                                    <option value="manual" <%= filters.metode === 'manual' ? 'selected' : '' %>>Manual</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label class="form-label">Tanggal Mulai</label>
+                                <input type="date" name="startDate" class="form-input" value="<%= filters.startDate || '' %>">
+                            </div>
+                            <div class="filter-group">
+                                <label class="form-label">Tanggal Akhir</label>
+                                <input type="date" name="endDate" class="form-input" value="<%= filters.endDate || '' %>">
+                            </div>
+                            <div class="filter-group">
+                                <label class="form-label">User ID</label>
+                                <input type="number" name="user" class="form-input" placeholder="User ID" value="<%= filters.user || '' %>">
+                            </div>
+                            <div class="filter-group">
+                                <label class="form-label">Search</label>
+                                <input type="text" name="search" class="form-input" placeholder="Kode Deposit atau User ID" value="<%= filters.search || '' %>">
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">🔍 Filter</button>
+                            <a href="/deposit" class="btn" style="background: #6c757d;">🔄 Reset</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination">
+                <% if (currentPageNum > 1) { %>
+                    <% 
+                        const prevParams = []
+                        if (filters.status && filters.status !== 'all') prevParams.push('status=' + filters.status)
+                        if (filters.startDate) prevParams.push('startDate=' + filters.startDate)
+                        if (filters.endDate) prevParams.push('endDate=' + filters.endDate)
+                        if (filters.user) prevParams.push('user=' + filters.user)
+                        if (filters.metode && filters.metode !== 'all') prevParams.push('metode=' + filters.metode)
+                        if (filters.search) prevParams.push('search=' + encodeURIComponent(filters.search))
+                        prevParams.push('page=' + (currentPageNum - 1))
+                        const prevQuery = prevParams.length > 0 ? '?' + prevParams.join('&') : '?page=' + (currentPageNum - 1)
+                    %>
+                    <a href="<%= prevQuery %>" class="pagination-btn">← Sebelumnya</a>
+                <% } else { %>
+                    <span class="pagination-btn" style="opacity: 0.5; cursor: not-allowed;">← Sebelumnya</span>
+                <% } %>
+                <span class="pagination-info">Halaman <%= currentPageNum %> dari <%= totalPages %></span>
+                <% if (currentPageNum < totalPages) { %>
+                    <% 
+                        const nextParams = []
+                        if (filters.status && filters.status !== 'all') nextParams.push('status=' + filters.status)
+                        if (filters.startDate) nextParams.push('startDate=' + filters.startDate)
+                        if (filters.endDate) nextParams.push('endDate=' + filters.endDate)
+                        if (filters.user) nextParams.push('user=' + filters.user)
+                        if (filters.metode && filters.metode !== 'all') nextParams.push('metode=' + filters.metode)
+                        if (filters.search) nextParams.push('search=' + encodeURIComponent(filters.search))
+                        nextParams.push('page=' + (currentPageNum + 1))
+                        const nextQuery = nextParams.length > 0 ? '?' + nextParams.join('&') : '?page=' + (currentPageNum + 1)
+                    %>
+                    <a href="<%= nextQuery %>" class="pagination-btn">Selanjutnya →</a>
+                <% } else { %>
+                    <span class="pagination-btn" style="opacity: 0.5; cursor: not-allowed;">Selanjutnya →</span>
+                <% } %>
+            </div>
+
+            <!-- Deposits Table -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Daftar Deposit</h2>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Tanggal</th>
+                                    <th>User ID</th>
+                                    <th>Kode Deposit</th>
+                                    <th>Jumlah</th>
+                                    <th>Fee</th>
+                                    <th>Total</th>
+                                    <th>Status</th>
+                                    <th>Metode</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (deposits.length === 0) { %>
+                                    <tr>
+                                        <td colspan="9">
+                                            <div class="empty-state">
+                                                <div class="empty-state-icon">💰</div>
+                                                <div class="empty-state-title">Belum ada deposit</div>
+                                                <div class="empty-state-description">Deposit akan muncul di sini setelah user melakukan deposit</div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% } else { %>
+                                    <% deposits.forEach(d => { %>
+                                        <tr>
+                                            <td><%= formatTanggal(d.tanggal) %></td>
+                                            <td><code><%= d.user_id %></code></td>
+                                            <td><code><%= d.kode_deposit %></code></td>
+                                            <td><%= formatrupiah(d.jumlah) %></td>
+                                            <td><%= formatrupiah(d.fee) %></td>
+                                            <td><strong><%= formatrupiah(d.total) %></strong></td>
+                                            <td>
+                                                <% if (d.status === 'pending') { %>
+                                                    <span class="badge badge-warning">⏳ Pending</span>
+                                                <% } else if (d.status === 'success') { %>
+                                                    <span class="badge badge-success">✅ Success</span>
+                                                <% } else if (d.status === 'failed') { %>
+                                                    <span class="badge badge-danger">❌ Failed</span>
+                                                <% } else { %>
+                                                    <span class="badge badge-info">⏰ Expired</span>
+                                                <% } %>
+                                            </td>
+                                            <td><%= d.metode === 'qris' ? '💳 QRIS' : '👤 Manual' %></td>
+                                            <td>
+                                                <div class="table-actions">
+                                                    <a href="/deposit/<%= d.id %>" class="btn-icon" title="Detail">👁️</a>
+                                                    <% if (d.status === 'pending') { %>
+                                                        <form method="POST" action="/deposit/<%= d.id %>/approve" style="display: inline;" onsubmit="return confirm('Yakin approve deposit ini?')">
+                                                            <button type="submit" class="btn-icon" title="Approve" style="color: #28a745;">✅</button>
+                                                        </form>
+                                                        <form method="POST" action="/deposit/<%= d.id %>/reject" style="display: inline;" onsubmit="return confirm('Yakin reject deposit ini?')">
+                                                            <button type="submit" class="btn-icon" title="Reject" style="color: #dc3545;">❌</button>
+                                                        </form>
+                                                    <% } %>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <% }) %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
+            ↑
+        </button>
+    </div>
+    
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+        
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('sidebar');
+            const toggleBtn = document.querySelector('.sidebar-toggle');
+            
+            if (window.innerWidth <= 768 && 
+                sidebar.classList.contains('open') && 
+                !sidebar.contains(e.target) && 
+                !toggleBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        window.addEventListener('resize', () => {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth > 768) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const success = urlParams.get('success');
+            const error = urlParams.get('error');
+            
+            if (success) {
+                const messages = {
+                    'approve': 'Deposit berhasil di-approve!',
+                    'reject': 'Deposit berhasil di-reject!'
+                };
+                toast.success(messages[success] || 'Operasi berhasil!', 'Berhasil');
+            }
+            if (error) {
+                const messages = {
+                    'notfound': 'Deposit tidak ditemukan!',
+                    'alreadyprocessed': 'Deposit sudah diproses sebelumnya!'
+                };
+                toast.error(messages[error] || 'Terjadi kesalahan!', 'Error');
+            }
+        });
+    </script>
+    
+    <script src="/js/notifications.js"></script>
+</body>
+</html>

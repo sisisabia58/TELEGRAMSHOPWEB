@@ -1,0 +1,295 @@
+<%
+    const currentPage = 'produk';
+    const pageTitle = `📦 Stok: ${produk.nama}`;
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session && req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <!-- Success Messages -->
+            <% if (req.query && req.query.success === 'tambah') { %>
+                <div class="alert alert-success">
+                    ✅ Stok berhasil ditambahkan!
+                </div>
+            <% } else if (req.query && req.query.success === 'edit') { %>
+                <div class="alert alert-success">
+                    ✅ Stok berhasil diupdate!
+                </div>
+            <% } else if (req.query && req.query.success === 'hapus') { %>
+                <div class="alert alert-success">
+                    ✅ Stok berhasil dihapus!
+                </div>
+            <% } %>
+
+            <!-- Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-info">
+                        <h3>Total Stok</h3>
+                        <div class="stat-value"><%= stats.total %></div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon" style="color: #28a745;">✅</div>
+                    <div class="stat-info">
+                        <h3>Tersedia</h3>
+                        <div class="stat-value" style="color: #28a745;"><%= stats.tersedia %></div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon" style="color: #17a2b8;">💰</div>
+                    <div class="stat-info">
+                        <h3>Terjual</h3>
+                        <div class="stat-value" style="color: #17a2b8;"><%= stats.terjual %></div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon" style="color: #ffc107;">⏰</div>
+                    <div class="stat-info">
+                        <h3>Expired</h3>
+                        <div class="stat-value" style="color: #ffc107;"><%= stats.expired %></div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon" style="color: #dc3545;">🗑️</div>
+                    <div class="stat-info">
+                        <h3>Dihapus</h3>
+                        <div class="stat-value" style="color: #dc3545;"><%= stats.dihapus %></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Bar -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-body">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                        <div style="flex: 1; min-width: 200px;">
+                            <h3 style="margin: 0 0 10px 0; color: #333; font-size: 18px;">Produk: <strong><%= produk.nama %></strong></h3>
+                            <p style="margin: 0; color: #666; font-size: 14px;">Kode: <code><%= produk.kode %></code></p>
+                        </div>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <a href="/produk/<%= produk.id %>/stok/tambah" class="btn btn-success">
+                                ➕ Tambah Stok
+                            </a>
+                            <a href="/produk/<%= produk.id %>/stok/export<%= currentStatus !== 'all' ? '?status=' + currentStatus : '' %>" class="btn btn-primary" style="background: #17a2b8;">
+                                📥 Export CSV
+                            </a>
+                            <a href="/produk" class="btn" style="background: #6c757d;">
+                                ← Kembali
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filter Tabs -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-body">
+                    <div class="filter-container">
+                        <a href="/produk/<%= produk.id %>/stok" class="filter-chip <%= currentStatus === 'all' ? 'active' : '' %>">
+                            Semua (<%= stats.total %>)
+                        </a>
+                        <a href="/produk/<%= produk.id %>/stok?status=tersedia" class="filter-chip <%= currentStatus === 'tersedia' ? 'active' : '' %>">
+                            ✅ Tersedia (<%= stats.tersedia %>)
+                        </a>
+                        <a href="/produk/<%= produk.id %>/stok?status=terjual" class="filter-chip <%= currentStatus === 'terjual' ? 'active' : '' %>">
+                            💰 Terjual (<%= stats.terjual %>)
+                        </a>
+                        <a href="/produk/<%= produk.id %>/stok?status=expired" class="filter-chip <%= currentStatus === 'expired' ? 'active' : '' %>">
+                            ⏰ Expired (<%= stats.expired %>)
+                        </a>
+                        <a href="/produk/<%= produk.id %>/stok?status=dihapus" class="filter-chip <%= currentStatus === 'dihapus' ? 'active' : '' %>">
+                            🗑️ Dihapus (<%= stats.dihapus %>)
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            <% if (totalPages > 1) { %>
+                <div class="pagination">
+                    <div class="pagination-info">
+                        Halaman <%= currentPage %> dari <%= totalPages %> (<%= stats.total %> total item)
+                    </div>
+                    <div class="pagination-controls">
+                        <% if (currentPage > 1) { %>
+                            <a href="?<%= currentStatus !== 'all' ? 'status=' + currentStatus + '&' : '' %>page=<%= currentPage - 1 %>" class="pagination-btn">
+                                ← Sebelumnya
+                            </a>
+                        <% } else { %>
+                            <span class="pagination-btn" style="opacity: 0.5; cursor: not-allowed;">← Sebelumnya</span>
+                        <% } %>
+                        
+                        <% for (let i = Math.max(1, currentPage - 2); i <= Math.min(totalPages, currentPage + 2); i++) { %>
+                            <a href="?<%= currentStatus !== 'all' ? 'status=' + currentStatus + '&' : '' %>page=<%= i %>" class="pagination-btn <%= i === currentPage ? 'active' : '' %>">
+                                <%= i %>
+                            </a>
+                        <% } %>
+                        
+                        <% if (currentPage < totalPages) { %>
+                            <a href="?<%= currentStatus !== 'all' ? 'status=' + currentStatus + '&' : '' %>page=<%= currentPage + 1 %>" class="pagination-btn">
+                                Selanjutnya →
+                            </a>
+                        <% } else { %>
+                            <span class="pagination-btn" style="opacity: 0.5; cursor: not-allowed;">Selanjutnya →</span>
+                        <% } %>
+                    </div>
+                </div>
+            <% } %>
+
+            <!-- Stock Table -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Daftar Stok</h2>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width: 60px;">No</th>
+                                    <th>Data Stok</th>
+                                    <th style="width: 120px;">Status</th>
+                                    <th style="width: 150px;">Terjual At</th>
+                                    <th style="width: 120px;">Trx ID</th>
+                                    <th style="width: 150px;">Created</th>
+                                    <th style="width: 120px;">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (stokItems.length === 0) { %>
+                                    <tr>
+                                        <td colspan="7" class="text-center">
+                                            <div class="empty-state">
+                                                <div class="empty-state-icon">📦</div>
+                                                <div class="empty-state-title">Belum ada stok</div>
+                                                <div class="empty-state-description">Mulai dengan menambahkan stok pertama</div>
+                                                <a href="/produk/<%= produk.id %>/stok/tambah" class="empty-state-action">➕ Tambah Stok</a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% } else { %>
+                                    <% stokItems.forEach((s, index) => { %>
+                                        <tr>
+                                            <td><%= (currentPage - 1) * 50 + index + 1 %></td>
+                                            <td>
+                                                <code style="font-size: 12px; background: #f8f9fa; padding: 4px 8px; border-radius: 4px; display: inline-block; max-width: 100%; word-break: break-all;"><%= s.data %></code>
+                                            </td>
+                                            <td>
+                                                <% if (s.status === 'tersedia') { %>
+                                                    <span class="badge badge-success">✅ Tersedia</span>
+                                                <% } else if (s.status === 'terjual') { %>
+                                                    <span class="badge badge-info">💰 Terjual</span>
+                                                <% } else if (s.status === 'expired') { %>
+                                                    <span class="badge badge-warning">⏰ Expired</span>
+                                                <% } else { %>
+                                                    <span class="badge badge-danger">🗑️ Dihapus</span>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <% if (s.terjual_at) { %>
+                                                    <%= formatTanggal(s.terjual_at) %>
+                                                <% } else { %>
+                                                    <span style="color: #999;">-</span>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <% if (s.trx_id) { %>
+                                                    <code style="font-size: 11px; background: #f0f0f0; padding: 2px 6px; border-radius: 3px;"><%= s.trx_id %></code>
+                                                <% } else { %>
+                                                    <span style="color: #999;">-</span>
+                                                <% } %>
+                                            </td>
+                                            <td><%= formatTanggal(s.created_at) %></td>
+                                            <td>
+                                                <div class="table-actions">
+                                                    <a href="/produk/<%= produk.id %>/stok/edit/<%= s.id %>" class="btn-icon" title="Edit">
+                                                        ✏️
+                                                    </a>
+                                                    <a href="/produk/<%= produk.id %>/stok/hapus/<%= s.id %>" class="btn-icon" title="Hapus" style="color: #dc3545;">
+                                                        🗑️
+                                                    </a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <% }) %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
+            ↑
+        </button>
+    </div>
+    
+    <script>
+        // Sidebar Toggle
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+        
+        // Close sidebar on mobile when clicking outside
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('sidebar');
+            const toggleBtn = document.querySelector('.sidebar-toggle');
+            
+            if (window.innerWidth <= 768 && 
+                sidebar.classList.contains('open') && 
+                !sidebar.contains(e.target) && 
+                !toggleBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        // Handle responsive sidebar
+        window.addEventListener('resize', () => {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth > 768) {
+                sidebar.classList.remove('open');
+            }
+        });
+    </script>
+    
+    <!-- Real-time Notifications -->
+    <script src="/js/notifications.js"></script>
+</body>
+</html>

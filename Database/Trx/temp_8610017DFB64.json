@@ -1,0 +1,17 @@
+{
+  "trxid": "8610017DFB64",
+  "userId": 6994649045,
+  "produkData": "Email : youba@gmail.com\nPassword : test123",
+  "produkInfo": {
+    "nama": "Youtube Premium 1 Bulan",
+    "kode": "yp1b",
+    "snk": "Tidak Ada"
+  },
+  "jumlah": 1,
+  "harga": 1000,
+  "fee": 0,
+  "total": 1000,
+  "tanggal": "2026-02-07T04:14:23.997Z",
+  "voucher": null,
+  "metode": "saldo"
+}

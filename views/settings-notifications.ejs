@@ -1,0 +1,537 @@
+<%
+    const currentPage = 'settings-notifications';
+    const pageTitle = '🔔 Notification Settings';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+    <style>
+        .settings-section {
+            margin-bottom: 30px;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .toggle-slider {
+            background-color: #667eea;
+        }
+        input:checked + .toggle-slider:before {
+            transform: translateX(26px);
+        }
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .setting-item:last-child {
+            border-bottom: none;
+        }
+        .setting-info {
+            flex: 1;
+        }
+        .setting-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        .setting-description {
+            font-size: 13px;
+            color: #666;
+        }
+        .threshold-input {
+            width: 150px;
+            padding: 8px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .product-threshold-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .product-threshold-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+        .product-threshold-item:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <form id="notificationSettingsForm">
+                <!-- Global Notification Controls -->
+                <div class="card settings-section">
+                    <div class="card-header">
+                        <h2 class="card-title">🔔 Global Notification Controls</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-title">Deposit Notifications</div>
+                                <div class="setting-description">Notifikasi saat ada deposit baru yang pending</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" name="depositNotificationEnabled" 
+                                    <%= settings.depositNotificationEnabled ? 'checked' : '' %>>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-title">Low Stock Notifications</div>
+                                <div class="setting-description">Notifikasi saat stok produk menipis</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" name="stockNotificationEnabled" 
+                                    <%= settings.stockNotificationEnabled ? 'checked' : '' %>>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-title">Large Transaction Notifications</div>
+                                <div class="setting-description">Notifikasi untuk transaksi besar</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" name="transactionNotificationEnabled" 
+                                    <%= settings.transactionNotificationEnabled ? 'checked' : '' %>>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Threshold Settings -->
+                <div class="card settings-section">
+                    <div class="card-header">
+                        <h2 class="card-title">📊 Threshold Settings</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-title">Low Stock Threshold</div>
+                                <div class="setting-description">Jumlah minimum stok untuk trigger alert (default: 10)</div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" name="lowStockEnabled" 
+                                        <%= settings.lowStockEnabled ? 'checked' : '' %>>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                                <input type="number" name="lowStockThreshold" class="threshold-input" 
+                                    value="<%= settings.lowStockThreshold %>" min="0" 
+                                    <%= !settings.lowStockEnabled ? 'disabled' : '' %>>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-title">Large Transaction Threshold</div>
+                                <div class="setting-description">Minimum jumlah transaksi untuk trigger alert (Rp)</div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" name="largeTransactionEnabled" 
+                                        <%= settings.largeTransactionEnabled ? 'checked' : '' %>>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                                <input type="number" name="largeTransactionThreshold" class="threshold-input" 
+                                    value="<%= settings.largeTransactionThreshold %>" min="0" 
+                                    <%= !settings.largeTransactionEnabled ? 'disabled' : '' %>>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Notification Preferences -->
+                <div class="card settings-section">
+                    <div class="card-header">
+                        <h2 class="card-title">⚙️ Notification Preferences</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-title">Sound Notifications</div>
+                                <div class="setting-description">Putar suara saat ada notifikasi baru</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" name="soundEnabled" id="soundEnabled"
+                                    <%= settings.soundEnabled ? 'checked' : '' %>>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-title">Browser Notifications</div>
+                                <div class="setting-description">Tampilkan popup notifikasi di browser</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" name="browserNotificationsEnabled" id="browserNotificationsEnabled"
+                                    <%= settings.browserNotificationsEnabled ? 'checked' : '' %>>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-title">Auto Mark as Read</div>
+                                <div class="setting-description">Otomatis mark notifikasi sebagai read setelah beberapa detik</div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" name="autoMarkReadEnabled" id="autoMarkReadEnabled"
+                                        <%= settings.autoMarkReadEnabled ? 'checked' : '' %>>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                                <input type="number" name="autoMarkReadSeconds" class="threshold-input" 
+                                    value="<%= settings.autoMarkReadSeconds || 30 %>" min="5" max="300" step="5" 
+                                    <%= !settings.autoMarkReadEnabled ? 'disabled' : '' %>>
+                                <span style="color: #666; font-size: 13px;">detik</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Quiet Hours -->
+                <div class="card settings-section">
+                    <div class="card-header">
+                        <h2 class="card-title">🌙 Quiet Hours</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-title">Enable Quiet Hours</div>
+                                <div class="setting-description">Nonaktifkan notifikasi pada jam tertentu</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" name="quietHoursEnabled" id="quietHoursEnabled"
+                                    <%= settings.quietHoursEnabled ? 'checked' : '' %>>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div id="quietHoursSettings" style="display: <%= settings.quietHoursEnabled ? 'block' : 'none' %>; margin-top: 15px;">
+                            <div class="filter-container">
+                                <div class="filter-group">
+                                    <label class="form-label">Start Time</label>
+                                    <input type="time" name="quietHoursStart" class="form-input" 
+                                        value="<%= settings.quietHoursStart || '22:00' %>">
+                                </div>
+                                <div class="filter-group">
+                                    <label class="form-label">End Time</label>
+                                    <input type="time" name="quietHoursEnd" class="form-input" 
+                                        value="<%= settings.quietHoursEnd || '08:00' %>">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Per-Product Threshold Settings -->
+                <div class="card settings-section">
+                    <div class="card-header">
+                        <h2 class="card-title">📦 Per-Product Threshold Settings</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="product-threshold-list">
+                            <% if (products.length === 0) { %>
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">📦</div>
+                                    <div class="empty-state-title">Belum ada produk</div>
+                                </div>
+                            <% } else { %>
+                                <% products.forEach(p => { %>
+                                    <div class="product-threshold-item">
+                                        <div style="flex: 1;">
+                                            <strong><%= p.nama %></strong>
+                                            <div style="font-size: 12px; color: #666;"><code><%= p.kode %></code></div>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 10px;">
+                                            <input type="number" 
+                                                class="form-input" 
+                                                style="width: 100px;" 
+                                                data-produk-id="<%= p.id %>"
+                                                value="<%= productThresholds[p.id]?.threshold || settings.lowStockThreshold %>"
+                                                min="0"
+                                                placeholder="Threshold">
+                                            <button type="button" 
+                                                class="btn btn-primary" 
+                                                onclick="saveProductThreshold('<%= p.id %>')">
+                                                💾 Save
+                                            </button>
+                                            <% if (productThresholds[p.id]) { %>
+                                                <button type="button" 
+                                                    class="btn btn-danger" 
+                                                    onclick="deleteProductThreshold('<%= p.id %>')">
+                                                    🗑️
+                                                </button>
+                                            <% } %>
+                                        </div>
+                                    </div>
+                                <% }) %>
+                            <% } %>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Form Actions -->
+                <div class="card">
+                    <div class="card-body">
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">💾 Save All Settings</button>
+                            <button type="button" class="btn" style="background: #6c757d;" onclick="resetToDefaults()">🔄 Reset to Defaults</button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </main>
+    
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
+            ↑
+        </button>
+    </div>
+    
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+        
+        // Toggle quiet hours settings
+        document.getElementById('quietHoursEnabled').addEventListener('change', function() {
+            document.getElementById('quietHoursSettings').style.display = this.checked ? 'block' : 'none';
+        });
+        
+        // Toggle auto mark read seconds
+        document.getElementById('autoMarkReadEnabled').addEventListener('change', function() {
+            document.querySelector('input[name="autoMarkReadSeconds"]').disabled = !this.checked;
+        });
+        
+        // Enable/disable threshold inputs based on toggle
+        document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            if (checkbox.name === 'lowStockEnabled' || checkbox.name === 'largeTransactionEnabled') {
+                checkbox.addEventListener('change', function() {
+                    const settingItem = this.closest('.setting-item');
+                    const thresholdInput = settingItem.querySelector('input[type="number"]');
+                    if (thresholdInput) {
+                        thresholdInput.disabled = !this.checked;
+                    }
+                });
+            }
+        });
+        
+        // Save product threshold
+        async function saveProductThreshold(produkId) {
+            const input = document.querySelector(`input[data-produk-id="${produkId}"]`);
+            const threshold = parseInt(input.value);
+            
+            if (isNaN(threshold) || threshold < 0) {
+                toast.error('Threshold harus berupa angka positif!', 'Error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/settings/notifications/product-threshold', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        produk_id: produkId,
+                        threshold: threshold,
+                        is_active: true
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    toast.success('Product threshold berhasil disimpan!', 'Berhasil');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    toast.error(data.error || 'Gagal menyimpan threshold!', 'Error');
+                }
+            } catch (error) {
+                toast.error('Error: ' + error.message, 'Error');
+            }
+        }
+        
+        // Delete product threshold
+        async function deleteProductThreshold(produkId) {
+            if (!confirm('Yakin hapus custom threshold untuk produk ini?')) return;
+            
+            try {
+                const response = await fetch(`/api/settings/notifications/product-threshold/${produkId}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    toast.success('Product threshold berhasil dihapus!', 'Berhasil');
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    toast.error(data.error || 'Gagal menghapus threshold!', 'Error');
+                }
+            } catch (error) {
+                toast.error('Error: ' + error.message, 'Error');
+            }
+        }
+        
+        // Form submit
+        document.getElementById('notificationSettingsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = {};
+            
+            // List semua checkbox yang harus selalu dikirim
+            const checkboxes = [
+                'depositNotificationEnabled',
+                'stockNotificationEnabled',
+                'transactionNotificationEnabled',
+                'lowStockEnabled',
+                'largeTransactionEnabled',
+                'soundEnabled',
+                'browserNotificationsEnabled',
+                'quietHoursEnabled',
+                'autoMarkReadEnabled'
+            ];
+            
+            // Set semua checkbox ke false dulu (default)
+            checkboxes.forEach(key => {
+                data[key] = 'false';
+            });
+            
+            // Update dengan nilai yang ada di form
+            for (const [key, value] of formData.entries()) {
+                if (key.includes('Enabled')) {
+                    data[key] = value === 'on' ? 'true' : 'false';
+                } else {
+                    data[key] = value;
+                }
+            }
+            
+            // Pastikan threshold selalu ada
+            if (!data.lowStockThreshold) {
+                data.lowStockThreshold = document.querySelector('input[name="lowStockThreshold"]').value || '10';
+            }
+            if (!data.largeTransactionThreshold) {
+                data.largeTransactionThreshold = document.querySelector('input[name="largeTransactionThreshold"]').value || '1000000';
+            }
+            
+            console.log('Saving notification settings:', data);
+            
+            try {
+                const response = await fetch('/api/settings/notifications', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    toast.success('Settings berhasil disimpan!', 'Berhasil');
+                    // Reload setelah 1 detik untuk memastikan settings ter-update
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    toast.error(result.error || 'Gagal menyimpan settings!', 'Error');
+                }
+            } catch (error) {
+                console.error('Error saving settings:', error);
+                toast.error('Error: ' + error.message, 'Error');
+            }
+        });
+        
+        // Reset to defaults
+        function resetToDefaults() {
+            if (!confirm('Yakin reset semua settings ke default?')) return;
+            
+            // Reset form
+            document.getElementById('notificationSettingsForm').reset();
+            
+            // Set default values
+            document.querySelector('input[name="lowStockThreshold"]').value = 10;
+            document.querySelector('input[name="largeTransactionThreshold"]').value = 1000000;
+            
+            toast.info('Form telah direset ke default. Klik Save untuk menyimpan.', 'Info');
+        }
+    </script>
+    
+    <script src="/js/notifications.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,400 @@
+<%
+    const currentPage = 'settings-supabase';
+    const pageTitle = '🗄️ Supabase Database Settings';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+    <style>
+        .settings-section {
+            margin-bottom: 30px;
+        }
+        .setting-item {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .setting-item:last-child {
+            border-bottom: none;
+        }
+        .setting-label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        .setting-description {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        .setting-input {
+            width: 100%;
+            max-width: 600px;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .toggle-slider {
+            background-color: #667eea;
+        }
+        input:checked + .toggle-slider:before {
+            transform: translateX(26px);
+        }
+        .toggle-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .toggle-item:last-child {
+            border-bottom: none;
+        }
+        .toggle-info {
+            flex: 1;
+        }
+        .database-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+        }
+        .database-info h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 16px;
+        }
+        .database-info p {
+            margin: 5px 0;
+            color: #666;
+            font-size: 13px;
+        }
+        .api-key-wrapper {
+            position: relative;
+        }
+        .api-key-toggle {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+            color: #666;
+            padding: 5px;
+        }
+        .api-key-toggle:hover {
+            color: #333;
+        }
+        .connection-settings {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .status-indicator {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        .status-connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <%- include('partials/sidebar') %>
+    
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        
+        <div class="container">
+            <form id="supabaseSettingsForm">
+                <!-- Database Connection Status -->
+                <div class="card settings-section">
+                    <div class="card-header">
+                        <h2 class="card-title">⚙️ Database Connection Status</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="toggle-item">
+                            <div class="toggle-info">
+                                <div class="setting-label">Enable Supabase Connection</div>
+                                <div class="setting-description">Aktifkan atau nonaktifkan koneksi ke Supabase database</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" name="enabled" 
+                                    <%= settings.enabled ? 'checked' : '' %>>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="database-info">
+                            <h3>📋 Informasi Koneksi</h3>
+                            <p><strong>Status:</strong> <span id="connection-status"><%= settings.enabled ? '<span class="status-indicator status-connected">✅ Terhubung</span>' : '<span class="status-indicator status-disconnected">❌ Terputus</span>' %></span></p>
+                            <p><strong>Provider:</strong> Supabase</p>
+                            <p><strong>URL:</strong> <span id="display-url"><%= settings.url || 'Belum diatur' %></span></p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Supabase Connection Settings -->
+                <div class="card settings-section">
+                    <div class="card-header">
+                        <h2 class="card-title">🔌 Supabase Connection Settings</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="setting-item">
+                            <label class="setting-label">Supabase Project URL</label>
+                            <div class="setting-description">URL project Supabase Anda (contoh: https://xxxxx.supabase.co)</div>
+                            <input type="url" name="url" id="urlInput" class="setting-input" 
+                                value="<%= settings.url || '' %>" 
+                                placeholder="https://xxxxx.supabase.co" required>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label class="setting-label">Supabase API Key (Anon/Public Key)</label>
+                            <div class="setting-description">API Key publik dari Supabase untuk autentikasi. Dapatkan dari Settings > API di dashboard Supabase Anda.</div>
+                            <div class="api-key-wrapper">
+                                <input type="password" name="key" id="keyInput" class="setting-input" 
+                                    value="<%= settings.key || '' %>" 
+                                    placeholder="Masukkan Supabase API Key">
+                                <button type="button" class="api-key-toggle" onclick="toggleApiKey('keyInput', this)" aria-label="Toggle API Key visibility">
+                                    👁️
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label class="setting-label">Supabase Service Role Key (Opsional)</label>
+                            <div class="setting-description">Service Role Key untuk operasi admin tertentu. Hati-hati: key ini memiliki akses penuh ke database!</div>
+                            <div class="api-key-wrapper">
+                                <input type="password" name="serviceKey" id="serviceKeyInput" class="setting-input" 
+                                    value="<%= settings.serviceKey || '' %>" 
+                                    placeholder="Masukkan Service Role Key (opsional)">
+                                <button type="button" class="api-key-toggle" onclick="toggleApiKey('serviceKeyInput', this)" aria-label="Toggle Service Key visibility">
+                                    👁️
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Connection Advanced Settings -->
+                <div class="card settings-section">
+                    <div class="card-header">
+                        <h2 class="card-title">⚙️ Advanced Connection Settings</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="connection-settings">
+                            <div class="setting-item">
+                                <label class="setting-label">Connection Timeout (detik)</label>
+                                <div class="setting-description">Waktu maksimal untuk menunggu koneksi ke Supabase</div>
+                                <input type="number" name="connectionTimeout" class="setting-input" 
+                                    value="<%= settings.connectionTimeout || 30 %>" 
+                                    min="5" max="120" step="5" required>
+                            </div>
+                            
+                            <div class="setting-item">
+                                <label class="setting-label">Retry Attempts</label>
+                                <div class="setting-description">Jumlah percobaan retry jika koneksi gagal</div>
+                                <input type="number" name="retryAttempts" class="setting-input" 
+                                    value="<%= settings.retryAttempts || 3 %>" 
+                                    min="1" max="10" step="1" required>
+                            </div>
+                            
+                            <div class="setting-item">
+                                <label class="setting-label">Retry Delay (ms)</label>
+                                <div class="setting-description">Delay antar percobaan retry dalam milidetik</div>
+                                <input type="number" name="retryDelay" class="setting-input" 
+                                    value="<%= settings.retryDelay || 1000 %>" 
+                                    min="100" max="10000" step="100" required>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Form Actions -->
+                <div class="card">
+                    <div class="card-body">
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">
+                                💾 Simpan Settings
+                            </button>
+                            <button type="button" class="btn btn-secondary" onclick="testConnection()">
+                                🔍 Test Connection
+                            </button>
+                            <a href="/" class="btn btn-secondary">Batal</a>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </main>
+    
+    <script>
+        function toggleApiKey(inputId, button) {
+            const input = document.getElementById(inputId);
+            if (input.type === 'password') {
+                input.type = 'text';
+                button.textContent = '🙈';
+            } else {
+                input.type = 'password';
+                button.textContent = '👁️';
+            }
+        }
+        
+        function testConnection() {
+            const formData = new FormData(document.getElementById('supabaseSettingsForm'));
+            const url = formData.get('url');
+            const key = formData.get('key');
+            
+            if (!url || !key) {
+                toast.error('Harap isi URL dan API Key terlebih dahulu', 'Error');
+                return;
+            }
+            
+            toast.info('Menguji koneksi ke Supabase...', 'Testing');
+            
+            fetch('/api/settings/supabase/test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ url, key })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    toast.success(result.message || 'Koneksi berhasil!', 'Berhasil');
+                } else {
+                    toast.error(result.error || 'Koneksi gagal', 'Error');
+                }
+            })
+            .catch(error => {
+                console.error('Error testing connection:', error);
+                toast.error('Terjadi kesalahan saat menguji koneksi', 'Error');
+            });
+        }
+        
+        document.getElementById('supabaseSettingsForm').addEventListener('submit', async (e) => {
+            e.preventDefault()
+            
+            const formData = new FormData(e.target)
+            const data = {
+                url: formData.get('url') || '',
+                key: formData.get('key') || '',
+                serviceKey: formData.get('serviceKey') || '',
+                enabled: formData.get('enabled') ? 'true' : 'false',
+                connectionTimeout: parseInt(formData.get('connectionTimeout')) || 30,
+                retryAttempts: parseInt(formData.get('retryAttempts')) || 3,
+                retryDelay: parseInt(formData.get('retryDelay')) || 1000
+            }
+            
+            try {
+                const response = await fetch('/api/settings/supabase', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                })
+                
+                const result = await response.json()
+                
+                if (result.success) {
+                    toast.success(result.message || 'Settings berhasil disimpan!', 'Berhasil')
+                    setTimeout(() => {
+                        window.location.reload()
+                    }, 1500)
+                } else {
+                    toast.error(result.error || 'Gagal menyimpan settings', 'Error')
+                }
+            } catch (error) {
+                console.error('Error saving Supabase settings:', error)
+                toast.error('Terjadi kesalahan saat menyimpan settings', 'Error')
+            }
+        })
+        
+        // Update connection status display when enabled checkbox changes
+        document.querySelector('input[name="enabled"]').addEventListener('change', function() {
+            const statusEl = document.getElementById('connection-status')
+            statusEl.innerHTML = this.checked 
+                ? '<span class="status-indicator status-connected">✅ Terhubung</span>' 
+                : '<span class="status-indicator status-disconnected">❌ Terputus</span>'
+        })
+        
+        // Update URL display when URL input changes
+        document.getElementById('urlInput').addEventListener('input', function() {
+            const displayUrl = document.getElementById('display-url')
+            displayUrl.textContent = this.value || 'Belum diatur'
+        })
+    </script>
+</body>
+</html>
