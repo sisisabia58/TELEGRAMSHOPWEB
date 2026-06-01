@@ -4041,11 +4041,7 @@ Produk *${item.nama}* tidak memiliki stok tersedia.
     // Inisialisasi selectedStokIds jika belum ada
     if (!Data.selectedStokIds) {
       Data.selectedStokIds = []
-    }
-    
-    // Inisialisasi stokPage jika belum ada
-    if (!Data.stokPage) {
-      Data.stokPage = 0
+      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
     }
     
     // Tampilkan stok dengan timestamp dan tombol pilih
@@ -4058,67 +4054,7 @@ Produk *${item.nama}* tidak memiliki stok tersedia.
 ✅ *Dipilih:* ${Data.selectedStokIds.length} item
 💵 *Total Pembayaran:* ${formatrupiah(totalPembayaran)}
 
-━━━━━━━━━━━━━━━━━━━━
-*DAFTAR STOK:*
-━━━━━━━━━━━━━━━━━━━━
-`
-    
-    // Batasi tampilan per halaman untuk menghindari pesan terlalu panjang (batas Telegram: 4096 karakter)
-    let itemsPerPage = 15 // Mulai dengan 15 item per halaman
-    const currentPage = Data.stokPage || 0
-    let startIdx = currentPage * itemsPerPage
-    let endIdx = Math.min(startIdx + itemsPerPage, tersediaItems.length)
-    let itemsToShow = tersediaItems.slice(startIdx, endIdx)
-    
-    // Fungsi untuk membangun teks stok
-    const buildStokText = (items) => {
-      let text = stokText
-      items.forEach((stok, idx) => {
-        const globalIdx = startIdx + idx + 1
-        const isSelected = Data.selectedStokIds.includes(stok.id)
-        const emoji = isSelected ? '✅' : '⬜'
-        const timestamp = formatWIBDetail(stok.created_at)
-        const dataPreview = blurStokData(stok.data)
-        text += `${emoji} *${globalIdx}.* \`${dataPreview}\`
-   📅 Upload: ${timestamp}
-`
-      })
-      return text
-    }
-    
-    // Cek panjang pesan dan kurangi item jika terlalu panjang
-    let tempText = buildStokText(itemsToShow)
-    const footerText = `\n━━━━━━━━━━━━━━━━━━━━
-💡 *Cara:* Gunakan tombol increment di bawah untuk memilih jumlah stok
-━━━━━━━━━━━━━━━━━━━━`
-    
-    // Jika pesan terlalu panjang, kurangi jumlah item per halaman
-    while (tempText.length + footerText.length > 3500 && itemsToShow.length > 1) {
-      itemsPerPage = Math.max(5, itemsPerPage - 2) // Minimal 5 item
-      startIdx = currentPage * itemsPerPage
-      endIdx = Math.min(startIdx + itemsPerPage, tersediaItems.length)
-      itemsToShow = tersediaItems.slice(startIdx, endIdx)
-      tempText = buildStokText(itemsToShow)
-    }
-    
-    // Simpan ukuran halaman
-    Data.stokPageSize = itemsPerPage
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
-    
-    stokText = tempText
-    
-    if (tersediaItems.length > itemsPerPage) {
-      stokText += `\n━━━━━━━━━━━━━━━━━━━━
-📄 Halaman ${Data.stokPage + 1} dari ${Math.ceil(tersediaItems.length / itemsPerPage)}
-`
-    }
-    
-    stokText += footerText
-    
-    // Final check: jika masih terlalu panjang, potong
-    if (stokText.length > 4096) {
-      stokText = stokText.substring(0, 4000) + '\n\n⚠️ *Pesan dipotong karena terlalu panjang*'
-    }
+💡 *Cara:* Gunakan tombol increment di bawah untuk memilih jumlah stok`
     
     // Keyboard sesuai dengan screenshot
     const keyboard = [
@@ -4160,8 +4096,10 @@ async function refreshStokView(query, Data) {
     return isStokAvailable(s.id, query.from.id)
   })
   
-  if (!Data.selectedStokIds) Data.selectedStokIds = []
-  if (!Data.stokPage) Data.stokPage = 0
+  if (!Data.selectedStokIds) {
+    Data.selectedStokIds = []
+    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+  }
   
   const totalPembayaran = Data.selectedStokIds.length * item.harga
   let stokText = `📦 *PILIH STOK YANG INGIN DIBELI*
@@ -4172,67 +4110,7 @@ async function refreshStokView(query, Data) {
 ✅ *Dipilih:* ${Data.selectedStokIds.length} item
 💵 *Total Pembayaran:* ${formatrupiah(totalPembayaran)}
 
-━━━━━━━━━━━━━━━━━━━━
-*DAFTAR STOK:*
-━━━━━━━━━━━━━━━━━━━━
-`
-  
-  // Batasi tampilan per halaman untuk menghindari pesan terlalu panjang (batas Telegram: 4096 karakter)
-  let itemsPerPage = Data.stokPageSize || 15 // Gunakan ukuran halaman yang sudah disimpan atau default 15
-  const currentPage = Data.stokPage || 0
-  let startIdx = currentPage * itemsPerPage
-  let endIdx = Math.min(startIdx + itemsPerPage, tersediaItems.length)
-  let itemsToShow = tersediaItems.slice(startIdx, endIdx)
-  
-  // Fungsi untuk membangun teks stok
-  const buildStokText = (items) => {
-    let text = stokText
-    items.forEach((stok, idx) => {
-      const globalIdx = startIdx + idx + 1
-      const isSelected = Data.selectedStokIds.includes(stok.id)
-      const emoji = isSelected ? '✅' : '⬜'
-      const timestamp = formatWIBDetail(stok.created_at)
-      const dataPreview = blurStokData(stok.data)
-      text += `${emoji} *${globalIdx}.* \`${dataPreview}\`
-   📅 Upload: ${timestamp}
-`
-    })
-    return text
-  }
-  
-  // Cek panjang pesan dan kurangi item jika terlalu panjang
-  let tempText = buildStokText(itemsToShow)
-  const footerText = `\n━━━━━━━━━━━━━━━━━━━━
-💡 *Cara:* Gunakan tombol increment di bawah untuk memilih jumlah stok
-━━━━━━━━━━━━━━━━━━━━`
-  
-  // Jika pesan terlalu panjang, kurangi jumlah item per halaman
-  while (tempText.length + footerText.length > 3500 && itemsToShow.length > 1) {
-    itemsPerPage = Math.max(5, itemsPerPage - 2) // Minimal 5 item
-    startIdx = currentPage * itemsPerPage
-    endIdx = Math.min(startIdx + itemsPerPage, tersediaItems.length)
-    itemsToShow = tersediaItems.slice(startIdx, endIdx)
-    tempText = buildStokText(itemsToShow)
-  }
-  
-  // Simpan ukuran halaman
-  Data.stokPageSize = itemsPerPage
-  fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
-  
-  stokText = tempText
-  
-  if (tersediaItems.length > itemsPerPage) {
-    stokText += `\n━━━━━━━━━━━━━━━━━━━━
-📄 Halaman ${currentPage + 1} dari ${Math.ceil(tersediaItems.length / itemsPerPage)}
-`
-  }
-  
-  stokText += footerText
-  
-  // Final check: jika masih terlalu panjang, potong
-  if (stokText.length > 4096) {
-    stokText = stokText.substring(0, 4000) + '\n\n⚠️ *Pesan dipotong karena terlalu panjang*'
-  }
+💡 *Cara:* Gunakan tombol increment di bawah untuk memilih jumlah stok`
   
   const keyboard = [
     [
