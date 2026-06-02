@@ -975,6 +975,18 @@ async function getTotalStokTerjual() {
   }
 }
 
+// ============================================
+// SEND BANNER MESSAGE HELPER
+// Sends photo + caption as a single merged bubble
+// ============================================
+async function sendBannerMessage(chatId, captionText, options = {}) {
+  return await bot.sendPhoto(chatId, ImagePath, {
+    caption: captionText,
+    parse_mode: "Markdown",
+    ...options
+  })
+}
+
 bot.onText(/\/ownermenu/, async (msg) => {
   if (!isOwner(msg)) return await sendMessage(msg.from.id, `⚠️ Hanya bisa diakses oleh owner!`)
   await bot.sendMessage(msg.from.id, `*⚙️ OWNER MENU*
@@ -2840,18 +2852,16 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
   const reply_markup = { inline_keyboard: buttons }
 
   if (msgId) {
-    await bot.editMessageText(text, {
-      parse_mode: "Markdown",
+    await bot.editMessageCaption(text, {
       chat_id: chatId,
       message_id: msgId,
+      parse_mode: "Markdown",
       reply_markup
     }).catch(async (e) => {
-      await bot.sendMessage(chatId, text, {
-        parse_mode: "Markdown", reply_markup })
+      await sendBannerMessage(chatId, text, { reply_markup })
     })
   } else {
-    await bot.sendMessage(chatId, text, {
-      parse_mode: "Markdown", reply_markup })
+    await sendBannerMessage(chatId, text, { reply_markup })
   }
 }
 
@@ -3667,21 +3677,17 @@ bot.onText(/\/start/, async (msg) => {
     const trxCount = trxCountResult.count || 0
     const userCount = userCountResult.count || 0
     
-    // Kirim foto dan pesan
-    await bot.sendPhoto(msg.from.id, ImagePath)
-    await bot.sendMessage(msg.from.id, `Halo, *${msg.from.first_name}* 👋
+    // Kirim foto + teks dalam satu bubble (banner merged)
+    await sendBannerMessage(msg.from.id, `Halo, *${msg.from.first_name}* 👋
 
 Selamat datang di *${NamaBot}*
-- 👥 Total User: *${userCount} User*
-- 🛍️ Total Transaksi: *${trxCount} Transaksi*
-- 📦 Stok Tersedia: *${stoktersedia}*
-- 📦 Stok Terjual: *${stokterjual}*
-- 💰 Saldo Anda: *${formatrupiah(userSaldo)}*
 
-💡 *Tips:* Anda juga bisa membeli produk dengan mengetik nomor produk di chat (contoh: ketik \`1\` untuk membeli produk nomor 1)
+👥 Total User: *${userCount}*
+🛍️ Total Terjual: *${stokterjual}*
+📦 Stok Tersedia: *${stoktersedia}*
+💰 Saldo Anda: *${formatrupiah(userSaldo)}*
 
-Silahkan pilih tombol dibawah ini!`, {
-      parse_mode: "Markdown",
+Silahkan pilih menu dibawah ini!`, {
       reply_markup: {
         inline_keyboard: [
           [{text: "‹📦› Daftar Produk", callback_data: "daftarproduk" }],
@@ -3976,7 +3982,7 @@ ${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 
       const momentTz = require('moment-timezone')
       const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
 
-      await bot.sendMessage(query.from.id, `tambahkan jumlah pembelian:
+      await sendBannerMessage(query.from.id, `tambahkan jumlah pembelian:
 
 ┌──────────────────
 │ • Produk : ${item.nama.toUpperCase()}
@@ -3990,7 +3996,6 @@ ${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 
 └──────────────────
 
 Current Date: ${formattedTime}`, {
-        parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
             [{text: `${item.nama} (${stokCount})`, callback_data: "lanjut"}],
@@ -4070,8 +4075,7 @@ Produk *${item.nama}* tidak memiliki stok tersedia.
       [{ text: "← Sebelumnya", callback_data: `item:${item.kode}` }]
     ]
     
-    await bot.sendMessage(query.from.id, stokText, {
-      parse_mode: "Markdown",
+    await sendBannerMessage(query.from.id, stokText, {
       reply_markup: {
         inline_keyboard: keyboard
       }
@@ -4129,8 +4133,7 @@ async function refreshStokView(query, Data) {
     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
   } catch (e) {}
   
-  await bot.sendMessage(query.from.id, stokText, {
-    parse_mode: "Markdown",
+  await sendBannerMessage(query.from.id, stokText, {
     reply_markup: {
       inline_keyboard: keyboard
     }
@@ -4794,8 +4797,7 @@ Tersedia ${availableVouchers.length} voucher:`
       } catch (e) {
         // Ignore
       }
-      await bot.sendMessage(query.from.id, paymentText, {
-        parse_mode: "Markdown",
+      await sendBannerMessage(query.from.id, paymentText, {
         reply_markup: {
           inline_keyboard: keyboard
         }
@@ -6436,20 +6438,20 @@ di *${NamaBot}*! 🙏`, {
       }
     }
     
-    await bot.sendMessage(query.from.id, `Halo, *${query.from.first_name}* 👋
+    await sendBannerMessage(query.from.id, `Halo, *${query.from.first_name}* 👋
 
 Selamat datang di *${NamaBot}*
-- 👥 Total User: *${User ? User.length : 0} User*
-- 🛍️ Total Transaksi: *${Trx ? Trx.length : 0} Transaksi*
-- 📦 Stok Tersedia: *${stoktersedia}*
-- 📦 Stok Terjual: *${stokterjual}*
-- 💰 Saldo Anda: *${formatrupiah(saldoBaru)}*
 
-Silahkan pilih tombol dibawah ini!`, {
-      parse_mode: "Markdown",
+👥 Total User: *${User ? User.length : 0}*
+🛍️ Total Terjual: *${stokterjual}*
+📦 Stok Tersedia: *${stoktersedia}*
+💰 Saldo Anda: *${formatrupiah(saldoBaru)}*
+
+Silahkan pilih menu dibawah ini!`, {
       reply_markup: {
         inline_keyboard: [
           [{text: "‹📦› Daftar Produk", callback_data: "daftarproduk" }],
+          [{text: "‹📂› Kategori Produk", callback_data: "kategori_menu"}],
           [{text: "‹📋› Riwayat Transaksi", callback_data: "riwayattransaksi"}, {text: "‹❓› Cara Order", callback_data: "caraorder"}],
           [{text: "‹💰› Saldo & Deposit", callback_data: "saldomenu"}, {text: "‹📊› Stok", callback_data: "stok"}],
           [{text: "‹📢› Channel", url: channelContact.channelStore }],
@@ -7074,20 +7076,20 @@ di *${NamaBot}*! 🙏`, {
                 }
               }
               const userSaldo2 = await cekSaldo(query.from.id)
-              await bot.sendMessage(query.from.id, `Halo, *${query.from.first_name}* 👋
+              await sendBannerMessage(query.from.id, `Halo, *${query.from.first_name}* 👋
 
 Selamat datang di *${NamaBot}*
-- 👥 Total User: *${User ? User.length : 0} User*
-- 🛍️ Total Transaksi: *${Trx2 ? Trx2.length : 0} Transaksi*
-- 📦 Stok Tersedia: *${stoktersedia}*
-- 📦 Stok Terjual: *${stokterjual}*
-- 💰 Saldo Anda: *${formatrupiah(userSaldo2)}*
 
-Silahkan pilih tombol dibawah ini!`, {
-                parse_mode: "Markdown",
+👥 Total User: *${User ? User.length : 0}*
+🛍️ Total Terjual: *${stokterjual}*
+📦 Stok Tersedia: *${stoktersedia}*
+💰 Saldo Anda: *${formatrupiah(userSaldo2)}*
+
+Silahkan pilih menu dibawah ini!`, {
                 reply_markup: {
                   inline_keyboard: [
                     [{text: "‹📦› Daftar Produk", callback_data: "daftarproduk" }],
+                    [{text: "‹📂› Kategori Produk", callback_data: "kategori_menu"}],
                     [{text: "‹📋› Riwayat Transaksi", callback_data: "riwayattransaksi"}, {text: "‹❓› Cara Order", callback_data: "caraorder"}],
                     [{text: "‹💰› Saldo & Deposit", callback_data: "saldomenu"}, {text: "‹📊› Stok", callback_data: "stok"}],
                     [{text: "‹📢› Channel", url: channelContact.channelStore }],
@@ -9456,7 +9458,8 @@ File berisi semua data produk dalam format CSV.`,
 if (cmd === "saldomenu") {
   const saldo = await cekSaldo(query.from.id)
   await bot.answerCallbackQuery(query.id)
-  await bot.editMessageText(`💰 *SALDO & DEPOSIT*
+  
+  const text = `💰 *SALDO & DEPOSIT*
 =======================
 💵 *Saldo Tersedia:* ${formatrupiah(saldo)}
 =======================
@@ -9465,23 +9468,32 @@ if (cmd === "saldomenu") {
 • 📋 Riwayat Deposit - Lihat riwayat deposit
 • 💰 Cek Saldo - Lihat saldo saat ini
 =======================
-💡 Gunakan saldo untuk pembayaran yang lebih cepat!`, {
+💡 Gunakan saldo untuk pembayaran yang lebih cepat!`
+
+  const reply_markup = {
+    inline_keyboard: [
+      [{text: "💳 Top Up Saldo", callback_data: "deposit_menu"}],
+      [{text: "📋 Riwayat Deposit", callback_data: "riwayatdeposit"}],
+      [{text: "🔙 Menu Utama", callback_data: "kembaliawal"}]
+    ]
+  }
+
+  await bot.editMessageCaption(text, {
     chat_id: query.message.chat.id,
     message_id: query.message.message_id,
     parse_mode: "Markdown",
-    reply_markup: {
-      inline_keyboard: [
-        [{text: "💳 Top Up Saldo", callback_data: "deposit_menu"}],
-        [{text: "📋 Riwayat Deposit", callback_data: "riwayatdeposit"}],
-        [{text: "🔙 Menu Utama", callback_data: "kembaliawal"}]
-      ]
-    }
+    reply_markup
+  }).catch(async (e) => {
+    try {
+      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    } catch (err) {}
+    await sendBannerMessage(query.from.id, text, { reply_markup })
   })
 }
 
 if (cmd === "deposit_menu") {
   await bot.answerCallbackQuery(query.id)
-  await bot.editMessageText(`💳 *TOP UP SALDO*
+  const text = `💳 *TOP UP SALDO*
 =======================
 *Cara Top Up:*
 1. Ketik \`/deposit Jumlah\`
@@ -9494,16 +9506,25 @@ if (cmd === "deposit_menu") {
 
 =======================
 💡 *Minimum deposit:* Rp 5.000
-💡 Saldo akan ditambahkan setelah pembayaran berhasil`, {
+💡 Saldo akan ditambahkan setelah pembayaran berhasil`
+
+  const reply_markup = {
+    inline_keyboard: [
+      [{text: "📋 Riwayat Deposit", callback_data: "riwayatdeposit"}],
+      [{text: "🔙 Kembali", callback_data: "saldomenu"}]
+    ]
+  }
+
+  await bot.editMessageCaption(text, {
     chat_id: query.message.chat.id,
     message_id: query.message.message_id,
     parse_mode: "Markdown",
-    reply_markup: {
-      inline_keyboard: [
-        [{text: "📋 Riwayat Deposit", callback_data: "riwayatdeposit"}],
-        [{text: "🔙 Kembali", callback_data: "saldomenu"}]
-      ]
-    }
+    reply_markup
+  }).catch(async (e) => {
+    try {
+      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    } catch (err) {}
+    await sendBannerMessage(query.from.id, text, { reply_markup })
   })
 }
 
@@ -9517,21 +9538,30 @@ if (cmd === "riwayatdeposit") {
     .limit(10)
   
   if (!Deposits || Deposits.length === 0) {
-    await bot.editMessageText(`📋 *RIWAYAT DEPOSIT*
+    const text = `📋 *RIWAYAT DEPOSIT*
 =======================
 Belum ada riwayat deposit.
 
 =======================
-💡 Gunakan \`/deposit\` untuk top up saldo.`, {
+💡 Gunakan \`/deposit\` untuk top up saldo.`
+
+    const reply_markup = {
+      inline_keyboard: [
+        [{text: "💳 Top Up Saldo", callback_data: "deposit_menu"}],
+        [{text: "🔙 Kembali", callback_data: "saldomenu"}]
+      ]
+    }
+
+    await bot.editMessageCaption(text, {
       chat_id: query.message.chat.id,
       message_id: query.message.message_id,
       parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [{text: "💳 Top Up Saldo", callback_data: "deposit_menu"}],
-          [{text: "🔙 Kembali", callback_data: "saldomenu"}]
-        ]
-      }
+      reply_markup
+    }).catch(async (e) => {
+      try {
+        await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+      } catch (err) {}
+      await sendBannerMessage(query.from.id, text, { reply_markup })
     })
     return
   }
@@ -9554,16 +9584,23 @@ Status: *${dep.status.toUpperCase()}*
   
   tx += `=======================`
   
-  await bot.editMessageText(tx, {
+  const reply_markup = {
+    inline_keyboard: [
+      [{text: "💳 Top Up Lagi", callback_data: "deposit_menu"}],
+      [{text: "🔙 Kembali", callback_data: "saldomenu"}]
+    ]
+  }
+
+  await bot.editMessageCaption(tx, {
     chat_id: query.message.chat.id,
     message_id: query.message.message_id,
     parse_mode: "Markdown",
-    reply_markup: {
-      inline_keyboard: [
-        [{text: "💳 Top Up Lagi", callback_data: "deposit_menu"}],
-        [{text: "🔙 Kembali", callback_data: "saldomenu"}]
-      ]
-    }
+    reply_markup
+  }).catch(async (e) => {
+    try {
+      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    } catch (err) {}
+    await sendBannerMessage(query.from.id, tx, { reply_markup })
   })
 }
 
@@ -9626,17 +9663,16 @@ Kode Deposit: \`${kodeDeposit}\`
      const trxCount = trxCountResult.count || 0
      const userCount = userCountResult.count || 0
      
-     await bot.sendMessage(query.from.id, `Halo, *${query.from.first_name}* 👋
+     await sendBannerMessage(query.from.id, `Halo, *${query.from.first_name}* 👋
 
 Selamat datang di *${NamaBot}*
-- 👥 Total User: *${userCount} User*
-- 🛍️ Total Transaksi: *${trxCount} Transaksi*
-- 📦 Stok Tersedia: *${stoktersedia}*
-- 📦 Stok Terjual: *${stokterjual}*
-- 💰 Saldo Anda: *${formatrupiah(userSaldo)}*
 
-Silahkan pilih menu yang ada di keyboard!`, {
-       parse_mode: "Markdown",
+👥 Total User: *${userCount}*
+🛍️ Total Terjual: *${stokterjual}*
+📦 Stok Tersedia: *${stoktersedia}*
+💰 Saldo Anda: *${formatrupiah(userSaldo)}*
+
+Silahkan pilih menu dibawah ini!`, {
        reply_markup: {
          inline_keyboard: [
            [{text: "‹📦› Daftar Produk", callback_data: "daftarproduk" }],
@@ -9759,8 +9795,10 @@ Pilih kategori produk yang ingin dilihat:
     buttons.push([{ text: "🔙 Kembali", callback_data: "kembaliawal" }])
     
     await bot.answerCallbackQuery(query.id)
-    await bot.sendMessage(query.from.id, text, {
-      parse_mode: "Markdown",
+    try {
+      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    } catch (e) {}
+    await sendBannerMessage(query.from.id, text, {
       reply_markup: {
         inline_keyboard: buttons
       }
