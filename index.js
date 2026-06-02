@@ -10656,7 +10656,7 @@ ${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 
       const momentTz = require('moment-timezone')
       const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
 
-      await bot.sendMessage(msg.from.id, `tambahkan jumlah pembelian:
+      await sendBannerMessage(msg.from.id, `tambahkan jumlah pembelian:
 
 ┌──────────────────
 │ • Produk : ${item.nama.toUpperCase()}
@@ -10670,7 +10670,6 @@ ${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 
 └──────────────────
 
 Current Date: ${formattedTime}`, {
-        parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
             [{text: `${item.nama} (${stokCount})`, callback_data: "lanjut"}],
