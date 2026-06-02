@@ -4406,13 +4406,13 @@ async function getPaymentGatewaySettings() {
     })
     
     // Fallback ke .env jika tidak ada di database
-    const { Ariepulsa } = require('./settings.js')
+    const { Okeconnect } = require('./settings.js')
     
     return {
       enabled: settingsMap.payment_gateway_enabled?.value !== false,
-      apiKey: settingsMap.payment_gateway_api_key?.value || Ariepulsa.Apikey || '',
-      qrisChannel: settingsMap.payment_gateway_qris_channel?.value || 'QRISREALTIME',
-      apiEndpoint: settingsMap.payment_gateway_api_endpoint?.value || 'https://ariepulsa.my.id/api/qrisrealtime',
+      apiKey: settingsMap.payment_gateway_api_key?.value || Okeconnect.pin || '',
+      qrisChannel: settingsMap.payment_gateway_qris_channel?.value || Okeconnect.qrisProductCode || 'OKQRIS',
+      apiEndpoint: settingsMap.payment_gateway_api_endpoint?.value || 'https://h2h.okeconnect.com/trx',
       paymentTimeout: parseInt(settingsMap.payment_gateway_timeout?.value) || 10,
       qrisEnabled: settingsMap.payment_gateway_qris_enabled?.value !== false,
       saldoEnabled: settingsMap.payment_gateway_saldo_enabled?.value !== false
@@ -4420,12 +4420,12 @@ async function getPaymentGatewaySettings() {
   } catch (error) {
     console.error('Error getting payment gateway settings:', error)
     // Return defaults
-    const { Ariepulsa } = require('./settings.js')
+    const { Okeconnect } = require('./settings.js')
     return {
       enabled: true,
-      apiKey: Ariepulsa.Apikey || '',
-      qrisChannel: 'QRISREALTIME',
-      apiEndpoint: 'https://ariepulsa.my.id/api/qrisrealtime',
+      apiKey: Okeconnect.pin || '',
+      qrisChannel: Okeconnect.qrisProductCode || 'OKQRIS',
+      apiEndpoint: 'https://h2h.okeconnect.com/trx',
       paymentTimeout: 10,
       qrisEnabled: true,
       saldoEnabled: true
@@ -5373,7 +5373,7 @@ app.post('/api/settings/payment-gateway', isAuthenticated, async (req, res) => {
     // API Endpoint
     updates.push({
       setting_key: 'payment_gateway_api_endpoint',
-      setting_value: { value: apiEndpoint || 'https://ariepulsa.my.id/api/qrisrealtime' }
+      setting_value: { value: apiEndpoint || 'https://h2h.okeconnect.com/trx' }
     })
     
     // Payment Timeout

@@ -9,9 +9,13 @@ const ChannelStore = process.env.CHANNEL_STORE || ""
 const CS = process.env.CS || ""
 const SUPABASE_URL = process.env.SUPABASE_URL || ""
 const SUPABASE_KEY = process.env.SUPABASE_KEY || ""
-const Ariepulsa = {
-  Apikey: process.env.ARIEPULSA_APIKEY || ""
+const Okeconnect = {
+  memberID: process.env.OKECONNECT_MEMBER_ID || "",
+  pin: process.env.OKECONNECT_PIN || "",
+  password: process.env.OKECONNECT_PASSWORD || "",
+  qrisProductCode: process.env.OKECONNECT_QRIS_PRODUCT_CODE || "OKQRIS",
+  staticQrisString: process.env.OKECONNECT_STATIC_QRIS_STRING || ""
 }
 const JamBackup = parseInt(process.env.JAM_BACKUP) || 5
 
-module.exports = { TokenBot, NamaBot, OwnerID, ImagePath, Ariepulsa, ChannelStore, CS, ChannelLog, JamBackup, SUPABASE_URL, SUPABASE_KEY }
+module.exports = { TokenBot, NamaBot, OwnerID, ImagePath, Okeconnect, ChannelStore, CS, ChannelLog, JamBackup, SUPABASE_URL, SUPABASE_KEY }
