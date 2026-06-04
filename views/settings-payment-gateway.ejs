@@ -185,26 +185,26 @@
                     </div>
                 </div>
                 
-                <!-- Ariepulsa Settings -->
+                <!-- Okeconnect Settings -->
                 <div class="card settings-section">
                     <div class="card-header">
-                        <h2 class="card-title">💳 Ariepulsa Payment Gateway</h2>
+                        <h2 class="card-title">💳 Okeconnect Payment Gateway</h2>
                     </div>
                     <div class="card-body">
                         <div class="gateway-info">
                             <h3>📋 Informasi Gateway</h3>
-                            <p><strong>Provider:</strong> Ariepulsa</p>
-                            <p><strong>Metode:</strong> QRIS (QR Code Indonesia Standard)</p>
+                            <p><strong>Provider:</strong> Okeconnect</p>
+                            <p><strong>Metode:</strong> Dynamic QRIS (Pengecekan Mutasi)</p>
                             <p><strong>Status:</strong> <span id="gateway-status"><%= settings.enabled ? '✅ Aktif' : '❌ Nonaktif' %></span></p>
                         </div>
                         
                         <div class="setting-item">
                             <label class="setting-label">API Key</label>
-                            <div class="setting-description">API Key dari Ariepulsa untuk autentikasi. Dapatkan dari dashboard Ariepulsa Anda.</div>
+                            <div class="setting-description">API Key dari dashboard Okeconnect (Menu Payment H2H -> Integrasi API).</div>
                             <div class="api-key-wrapper">
                                 <input type="password" name="apiKey" id="apiKeyInput" class="setting-input" 
                                     value="<%= settings.apiKey || '' %>" 
-                                    placeholder="Masukkan API Key Ariepulsa">
+                                    placeholder="Masukkan API Key Okeconnect">
                                 <button type="button" class="api-key-toggle" onclick="toggleApiKey()" aria-label="Toggle API Key visibility">
                                     👁️
                                 </button>
@@ -212,19 +212,19 @@
                         </div>
                         
                         <div class="setting-item">
-                            <label class="setting-label">QRIS Channel Code</label>
-                            <div class="setting-description">Kode channel untuk QRIS (default: QRISREALTIME)</div>
+                            <label class="setting-label">Merchant Code</label>
+                            <div class="setting-description">Merchant Code / Member ID dari Okeconnect (contoh: OK2377235).</div>
                             <input type="text" name="qrisChannel" class="setting-input" 
-                                value="<%= settings.qrisChannel || 'QRISREALTIME' %>" 
-                                placeholder="QRISREALTIME" required>
+                                value="<%= settings.qrisChannel || '' %>" 
+                                placeholder="Masukkan Merchant Code Okeconnect" required>
                         </div>
                         
                         <div class="setting-item">
                             <label class="setting-label">API Endpoint</label>
-                            <div class="setting-description">URL endpoint API Ariepulsa</div>
+                            <div class="setting-description">URL endpoint API Mutasi Okeconnect</div>
                             <input type="url" name="apiEndpoint" class="setting-input" 
-                                value="<%= settings.apiEndpoint || 'https://ariepulsa.my.id/api/qrisrealtime' %>" 
-                                placeholder="https://ariepulsa.my.id/api/qrisrealtime" required>
+                                value="<%= settings.apiEndpoint || 'https://gateway.okeconnect.com/api/mutasi/qris' %>" 
+                                placeholder="https://gateway.okeconnect.com/api/mutasi/qris" required>
                         </div>
                         
                         <div class="setting-item">

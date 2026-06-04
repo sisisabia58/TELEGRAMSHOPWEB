@@ -4410,9 +4410,9 @@ async function getPaymentGatewaySettings() {
     
     return {
       enabled: settingsMap.payment_gateway_enabled?.value !== false,
-      apiKey: settingsMap.payment_gateway_api_key?.value || Okeconnect.pin || '',
-      qrisChannel: settingsMap.payment_gateway_qris_channel?.value || Okeconnect.qrisProductCode || 'OKQRIS',
-      apiEndpoint: settingsMap.payment_gateway_api_endpoint?.value || 'https://h2h.okeconnect.com/trx',
+      apiKey: settingsMap.payment_gateway_api_key?.value || Okeconnect.apiKey || '',
+      qrisChannel: settingsMap.payment_gateway_qris_channel?.value || Okeconnect.merchantCode || '',
+      apiEndpoint: settingsMap.payment_gateway_api_endpoint?.value || 'https://gateway.okeconnect.com/api/mutasi/qris',
       paymentTimeout: parseInt(settingsMap.payment_gateway_timeout?.value) || 10,
       qrisEnabled: settingsMap.payment_gateway_qris_enabled?.value !== false,
       saldoEnabled: settingsMap.payment_gateway_saldo_enabled?.value !== false
@@ -4423,9 +4423,9 @@ async function getPaymentGatewaySettings() {
     const { Okeconnect } = require('./settings.js')
     return {
       enabled: true,
-      apiKey: Okeconnect.pin || '',
-      qrisChannel: Okeconnect.qrisProductCode || 'OKQRIS',
-      apiEndpoint: 'https://h2h.okeconnect.com/trx',
+      apiKey: Okeconnect.apiKey || '',
+      qrisChannel: Okeconnect.merchantCode || '',
+      apiEndpoint: 'https://gateway.okeconnect.com/api/mutasi/qris',
       paymentTimeout: 10,
       qrisEnabled: true,
       saldoEnabled: true
@@ -5367,13 +5367,13 @@ app.post('/api/settings/payment-gateway', isAuthenticated, async (req, res) => {
     // QRIS Channel
     updates.push({
       setting_key: 'payment_gateway_qris_channel',
-      setting_value: { value: qrisChannel || 'QRISREALTIME' }
+      setting_value: { value: qrisChannel || '' }
     })
     
     // API Endpoint
     updates.push({
       setting_key: 'payment_gateway_api_endpoint',
-      setting_value: { value: apiEndpoint || 'https://h2h.okeconnect.com/trx' }
+      setting_value: { value: apiEndpoint || 'https://gateway.okeconnect.com/api/mutasi/qris' }
     })
     
     // Payment Timeout

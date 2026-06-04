@@ -10,10 +10,8 @@ const CS = process.env.CS || ""
 const SUPABASE_URL = process.env.SUPABASE_URL || ""
 const SUPABASE_KEY = process.env.SUPABASE_KEY || ""
 const Okeconnect = {
-  memberID: process.env.OKECONNECT_MEMBER_ID || "",
-  pin: process.env.OKECONNECT_PIN || "",
-  password: process.env.OKECONNECT_PASSWORD || "",
-  qrisProductCode: process.env.OKECONNECT_QRIS_PRODUCT_CODE || "OKQRIS",
+  merchantCode: process.env.OKECONNECT_MERCHANT_CODE || process.env.OKECONNECT_MEMBER_ID || "",
+  apiKey: process.env.OKECONNECT_API_KEY || process.env.OKECONNECT_PIN || "",
   staticQrisString: process.env.OKECONNECT_STATIC_QRIS_STRING || ""
 }
 const JamBackup = parseInt(process.env.JAM_BACKUP) || 5

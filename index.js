@@ -107,31 +107,47 @@ const RESERVATION_TIMEOUT = 10 * 60 * 1000 // 10 menit dalam milliseconds
 
 // Helper functions for Okeconnect dynamic QRIS generation
 function calculateCRC16(data) {
-  const polynomial = 0x1021;
   let crc = 0xFFFF;
   for (let i = 0; i < data.length; i++) {
     crc ^= (data.charCodeAt(i) << 8);
     for (let j = 0; j < 8; j++) {
-      crc = (crc & 0x8000) ? ((crc << 1) ^ polynomial) : (crc << 1);
+      if (crc & 0x8000) {
+        crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
+      } else {
+        crc = (crc << 1) & 0xFFFF;
+      }
     }
   }
-  return (crc & 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
+  return crc.toString(16).toUpperCase().padStart(4, '0');
 }
 
 function convertStaticToDynamicQRIS(staticQris, amount) {
-  // Split static QRIS at country code tag (5802ID)
-  const parts = staticQris.split("5802ID");
-  if (parts.length < 2) return staticQris;
+  // Remove the last 4 characters (CRC) from static QRIS
+  let qris = staticQris.trim().slice(0, -4);
+  
+  // Change static to dynamic by replacing '010211' with '010212'
+  let step1 = qris.replace("010211", "010212");
+  
+  // Split the string at '5802ID' to insert amount
+  let step2 = step1.split("5802ID");
+  if (step2.length < 2) return staticQris;
   
   const amountStr = amount.toString();
   const amountLength = amountStr.length.toString().padStart(2, '0');
   const tag54 = `54${amountLength}${amountStr}`;
   
-  // Construct data before CRC (excluding old CRC)
-  const dataBeforeCRC = parts[0] + tag54 + "5802ID" + parts[1].slice(0, -4);
-  const newCRC = calculateCRC16(dataBeforeCRC);
+  // Reattach country code tag (5802ID)
+  const uang = tag54 + "5802ID";
   
-  return dataBeforeCRC + newCRC;
+  // Reconstruct the QRIS string
+  const fix = step2[0].trim() + uang + step2[1].trim();
+  
+  // Append new CRC16
+  return fix + calculateCRC16(fix);
+}
+
+function generateUniqueCode(min = 1, max = 99) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 async function generateQRBuffer(qrisString) {
@@ -3211,7 +3227,7 @@ Jumlah yang Anda masukkan: \`${text}\`
   const uniq = require("crypto").randomBytes(5).toString("hex").toUpperCase()
   const time = Date.now() + toMs("10m")
   
-  // Request QRIS via Okeconnect H2H
+  // Request QRIS via Okeconnect Mutasi API
   if (!Okeconnect.staticQrisString) {
     console.error("Okeconnect Static QRIS String is not configured in .env");
     return await bot.sendMessage(msg.from.id, `❌ *ERROR*
@@ -3221,36 +3237,32 @@ Sistem QRIS belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi 
     })
   }
 
-  // Register transaction to Okeconnect
-  const registerUrl = `https://h2h.okeconnect.com/trx?product=${Okeconnect.qrisProductCode}&dest=${msg.from.id}&qty=${jumlah}&refID=${uniq}&memberID=${Okeconnect.memberID}&pin=${Okeconnect.pin}&password=${Okeconnect.password}`;
-  
-  try {
-    const regRes = await axios.get(registerUrl, { timeout: 30000 });
-    const regText = regRes.data || "";
-    
-    if (regText.includes("GAGAL") || regText.includes("Salah") || regText.includes("salah") || regText.includes("tutup") || regText.includes("Tutup")) {
-      console.error("Okeconnect Transaction Registration Failed:", regText);
-      return await bot.sendMessage(msg.from.id, `❌ *ERROR*
+  if (!Okeconnect.merchantCode || !Okeconnect.apiKey) {
+    console.error("Okeconnect Merchant Code or API Key is not configured in .env");
+    return await bot.sendMessage(msg.from.id, `❌ *ERROR*
 =======================
-Gagal mendaftarkan transaksi ke server pembayaran.
-Detail: \`${regText}\`
-Silakan coba lagi nanti atau hubungi admin.`, {
-        parse_mode: "Markdown"
-      })
-    }
+Sistem verifikasi pembayaran belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`, {
+      parse_mode: "Markdown"
+    })
+  }
 
-    // Generate dynamic QRIS locally using static QRIS string
-    const qrisPayload = convertStaticToDynamicQRIS(Okeconnect.staticQrisString, jumlah);
+  try {
+    // Generate unique code (1-99)
+    const uniqueCode = generateUniqueCode();
+    const totalAmount = jumlah + uniqueCode;
+
+    // Generate dynamic QRIS locally using static QRIS string and totalAmount
+    const qrisPayload = convertStaticToDynamicQRIS(Okeconnect.staticQrisString, totalAmount);
     const imageBuffer = await generateQRBuffer(qrisPayload);
 
-    // Simpan ke database (fee: 0, total: jumlah)
+    // Simpan ke database (fee: uniqueCode, total: totalAmount)
     await supabase
       .from("Deposit")
       .insert([{
         user_id: msg.from.id,
         jumlah: jumlah,
-        fee: 0,
-        total: jumlah,
+        fee: uniqueCode,
+        total: totalAmount,
         status: 'pending',
         kode_deposit: uniq,
         metode: 'qris'
@@ -3259,12 +3271,13 @@ Silakan coba lagi nanti atau hubungi admin.`, {
     let txx = `💳 *TOP UP SALDO*
 =======================
 💰 *Jumlah:* ${formatrupiah(jumlah)}
-💸 *Fee:* ${formatrupiah(0)}
-💵 *Total Bayar:* ${formatrupiah(jumlah)}
+💸 *Kode Unik:* ${formatrupiah(uniqueCode)}
+💵 *Total Bayar:* ${formatrupiah(totalAmount)}
 🆔 *Kode Deposit:* \`${uniq}\`
 ⏰ *Expired:* 10 menit
 =======================
-Scan QRIS diatas untuk melakukan pembayaran. Saldo akan ditambahkan otomatis setelah pembayaran berhasil!`
+⚠️ *PENTING:* Transfer harus sama persis sejumlah *${formatrupiah(totalAmount)}* agar pembayaran dapat terdeteksi otomatis!
+Scan QRIS diatas untuk melakukan pembayaran.`
     
     let ff = await retryBotOperation(async () => {
       return await bot.sendPhoto(msg.from.id, imageBuffer, {
@@ -3280,7 +3293,7 @@ Scan QRIS diatas untuk melakukan pembayaran. Saldo akan ditambahkan otomatis set
       });
     });
     
-    // Polling status pembayaran
+    // Polling status pembayaran dari Mutasi API
     let statusP = false
     while (!statusP) {
       await sleep(10000)
@@ -3309,78 +3322,63 @@ Kode Deposit: \`${uniq}\`
       }
       
       try {
-        const checkUrl = `https://h2h.okeconnect.com/trx?product=${Okeconnect.qrisProductCode}&dest=${msg.from.id}&qty=${jumlah}&refID=${uniq}&memberID=${Okeconnect.memberID}&pin=${Okeconnect.pin}&password=${Okeconnect.password}&check=1`;
-        let pst2 = await axios.get(checkUrl, {
+        const checkUrl = `https://gateway.okeconnect.com/api/mutasi/qris/${Okeconnect.merchantCode}/${Okeconnect.apiKey}`;
+        let checkRes = await axios.get(checkUrl, {
           timeout: 30000 // 30 detik timeout
         })
-        const checkText = pst2.data || "";
+        const result = checkRes.data;
         
-        if (checkText.includes("status Sukses")) {
-          statusP = true
+        if (result && result.data && result.data.length > 0) {
+          // Cari mutasi yang nominalnya pas
+          const match = result.data.find(trx => trx.amount && Math.round(parseFloat(trx.amount)) === totalAmount);
           
-          // Update status deposit
-          await supabase
-            .from("Deposit")
-            .update({ status: 'success' })
-            .eq('kode_deposit', uniq)
-          
-          // Tambahkan saldo ke user
-          await addSaldo(msg.from.id, jumlah)
-          
-          await retryBotOperation(async () => {
-            return await bot.deleteMessage(ff.chat.id, ff.message_id);
-          }).catch(err => {
-            if (err.response?.body?.error_code !== 400) {
-              console.warn('Error deleting message:', err.message);
-            }
-          });
-          const saldoBaru = await cekSaldo(msg.from.id)
-          
-          await sendMessage(msg.from.id, `✅ *DEPOSIT BERHASIL*
+          if (match) {
+            statusP = true
+            
+            // Update status deposit
+            await supabase
+              .from("Deposit")
+              .update({ status: 'success' })
+              .eq('kode_deposit', uniq)
+            
+            // Tambahkan saldo ke user (ditambahkan totalAmount agar kode unik tidak hangus)
+            await addSaldo(msg.from.id, totalAmount)
+            
+            await retryBotOperation(async () => {
+              return await bot.deleteMessage(ff.chat.id, ff.message_id);
+            }).catch(err => {
+              if (err.response?.body?.error_code !== 400) {
+                console.warn('Error deleting message:', err.message);
+              }
+            });
+            const saldoBaru = await cekSaldo(msg.from.id)
+            
+            await sendMessage(msg.from.id, `✅ *DEPOSIT BERHASIL*
 =======================
 💰 *Jumlah:* ${formatrupiah(jumlah)}
+💸 *Kode Unik:* ${formatrupiah(uniqueCode)}
+💵 *Total Deposit:* ${formatrupiah(totalAmount)}
 🆔 *Kode Deposit:* \`${uniq}\`
 💵 *Saldo Sekarang:* ${formatrupiah(saldoBaru)}
 =======================
 💡 Saldo telah ditambahkan ke akun Anda!`)
-          
-          // Notifikasi ke owner
-          await bot.sendMessage(channelContact.channelLog, `💰 *DEPOSIT BARU*
+            
+            // Notifikasi ke owner
+            await bot.sendMessage(channelContact.channelLog, `💰 *DEPOSIT BARU*
 =======================
 User: @${msg.from.username || msg.from.first_name}
 Jumlah: ${formatrupiah(jumlah)}
+Kode Unik: ${formatrupiah(uniqueCode)}
+Total: ${formatrupiah(totalAmount)}
 Kode: \`${uniq}\`
 Saldo Baru: ${formatrupiah(saldoBaru)}
 =======================`, {
-            parse_mode: "Markdown"
-          })
-        } else if (checkText.includes("status Gagal") || checkText.includes("GAGAL")) {
-          statusP = true
-          
-          await supabase
-            .from("Deposit")
-            .update({ status: 'failed' })
-            .eq('kode_deposit', uniq)
-          
-          await retryBotOperation(async () => {
-            return await bot.deleteMessage(ff.chat.id, ff.message_id);
-          }).catch(err => {
-            if (err.response?.body?.error_code !== 400) {
-              console.warn('Error deleting message:', err.message);
-            }
-          });
-          
-          await sendMessage(msg.from.id, `❌ *DEPOSIT GAGAL*
-=======================
-Pembayaran deposit dinyatakan gagal oleh server.
-
-Kode Deposit: \`${uniq}\`
-
-=======================
-💡 Silakan coba lagi atau hubungi admin.`)
+              parse_mode: "Markdown"
+            })
+          }
         }
       } catch (err) {
-        console.log(err)
+        console.warn('Error checking deposit mutasi:', err.message)
       }
     }
   } catch (err) {
@@ -6567,20 +6565,18 @@ if (cmd === "bayar") {
       return await sendMessage(query.from.id, `❌ *ERROR*\n=======================\nSistem QRIS belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`)
     }
 
-    // Register transaction to Okeconnect
-    const registerUrl = `https://h2h.okeconnect.com/trx?product=${Okeconnect.qrisProductCode}&dest=${query.from.id}&qty=${harga}&refID=${uniq}&memberID=${Okeconnect.memberID}&pin=${Okeconnect.pin}&password=${Okeconnect.password}`;
-    
-    try {
-      const regRes = await axios.get(registerUrl, { timeout: 30000 });
-      const regText = regRes.data || "";
-      
-      if (regText.includes("GAGAL") || regText.includes("Salah") || regText.includes("salah") || regText.includes("tutup") || regText.includes("Tutup")) {
-        console.error("Okeconnect Checkout Registration Failed:", regText);
-        return await sendMessage(query.from.id, `❌ *ERROR*\n=======================\nGagal mendaftarkan transaksi ke server pembayaran.\nDetail: \`${regText}\`\nSilakan coba lagi nanti atau hubungi admin.`)
-      }
+    if (!Okeconnect.merchantCode || !Okeconnect.apiKey) {
+      console.error("Okeconnect Merchant Code or API Key is not configured in .env");
+      return await sendMessage(query.from.id, `❌ *ERROR*\n=======================\nSistem verifikasi pembayaran belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`)
+    }
 
-      // Generate dynamic QRIS locally using static QRIS string
-      const qrisPayload = convertStaticToDynamicQRIS(Okeconnect.staticQrisString, harga);
+    // Generate unique code (1-99)
+    const uniqueCode = generateUniqueCode();
+    const totalAmount = harga + uniqueCode;
+
+    try {
+      // Generate dynamic QRIS locally using static QRIS string and totalAmount
+      const qrisPayload = convertStaticToDynamicQRIS(Okeconnect.staticQrisString, totalAmount);
       const imageBuffer = await generateQRBuffer(qrisPayload);
 
       let txx = `💸 *PEMBAYARAN OTOMATIS*
@@ -6589,9 +6585,10 @@ Trx ID: *${Data.trxid}*
 Produk: *${Produk[np].nama}*
 Harga: *${formatrupiah(Produk[np].harga)}*
 Jumlah Beli: *${Data.jumlah}*
-Fee: *${formatrupiah(0)}*
-Total Harga: *${formatrupiah(harga)}*
+Kode Unik: *${formatrupiah(uniqueCode)}*
+Total Harga: *${formatrupiah(totalAmount)}*
 =======================
+⚠️ *PENTING:* Transfer harus sama persis sejumlah *${formatrupiah(totalAmount)}* agar pembayaran dapat terdeteksi otomatis!
 Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik setelah kamu bayar!`
       
       let ff = await retryBotOperation(async () => {
@@ -6640,12 +6637,14 @@ Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik s
           break;
         }
         try {
-          const checkUrl = `https://h2h.okeconnect.com/trx?product=${Okeconnect.qrisProductCode}&dest=${query.from.id}&qty=${harga}&refID=${uniq}&memberID=${Okeconnect.memberID}&pin=${Okeconnect.pin}&password=${Okeconnect.password}&check=1`;
-          let pst = await axios.get(checkUrl, {
+          const checkUrl = `https://gateway.okeconnect.com/api/mutasi/qris/${Okeconnect.merchantCode}/${Okeconnect.apiKey}`;
+          let checkRes = await axios.get(checkUrl, {
             timeout: 30000 // 30 detik timeout
           })
-          const checkText = pst.data || "";
-          if (checkText.includes("status Sukses")) {
+          const result = checkRes.data;
+          
+          const match = result && result.data && result.data.length > 0 && result.data.find(trx => trx.amount && Math.round(parseFloat(trx.amount)) === totalAmount);
+          if (match) {
             statusP = true
             
             // Validasi ulang stok sebelum mengambil produk
