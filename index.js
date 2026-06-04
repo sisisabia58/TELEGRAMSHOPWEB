@@ -3295,10 +3295,13 @@ Scan QRIS diatas untuk melakukan pembayaran.`
     
     // Polling status pembayaran dari Mutasi API
     let statusP = false
+    console.log(`[Deposit Polling] Memulai pemantauan mutasi QRIS untuk deposit ${uniq}. Target nominal: Rp ${totalAmount}`);
+    
     while (!statusP) {
       await sleep(10000)
       if (Date.now() >= time) {
         statusP = true
+        console.log(`[Deposit Polling] Deposit ${uniq} expired setelah 10 menit.`);
         await supabase
           .from("Deposit")
           .update({ status: 'expired' })
@@ -3323,16 +3326,28 @@ Kode Deposit: \`${uniq}\`
       
       try {
         const checkUrl = `https://gateway.okeconnect.com/api/mutasi/qris/${Okeconnect.merchantCode}/${Okeconnect.apiKey}`;
+        console.log(`[Deposit Polling] Mengirim request GET ke: https://gateway.okeconnect.com/api/mutasi/qris/${Okeconnect.merchantCode}/***`);
+        
         let checkRes = await axios.get(checkUrl, {
           timeout: 30000 // 30 detik timeout
         })
         const result = checkRes.data;
         
+        console.log(`[Deposit Polling] Response API Mutasi:`, JSON.stringify(result));
+        
         if (result && result.data && result.data.length > 0) {
+          console.log(`[Deposit Polling] Ditemukan ${result.data.length} baris data mutasi.`);
+          
           // Cari mutasi yang nominalnya pas
-          const match = result.data.find(trx => trx.amount && Math.round(parseFloat(trx.amount)) === totalAmount);
+          const match = result.data.find(trx => {
+            const amountVal = trx.amount || trx.nominal || trx.jumlah;
+            const parsedAmount = amountVal ? Math.round(parseFloat(amountVal)) : 0;
+            console.log(`- Membandingkan mutasi: ID=${trx.id || 'N/A'}, Nominal API=${amountVal} (${parsedAmount}), Target=${totalAmount}`);
+            return parsedAmount === totalAmount;
+          });
           
           if (match) {
+            console.log(`[Deposit Polling] MATCH FOUND! Pembayaran terdeteksi:`, JSON.stringify(match));
             statusP = true
             
             // Update status deposit
@@ -3376,9 +3391,15 @@ Saldo Baru: ${formatrupiah(saldoBaru)}
               parse_mode: "Markdown"
             })
           }
+        } else {
+          console.log(`[Deposit Polling] Tidak ada mutasi transaksi masuk atau field data kosong.`);
         }
       } catch (err) {
-        console.warn('Error checking deposit mutasi:', err.message)
+        if (err.response) {
+          console.error(`[Deposit Polling] Error API Okeconnect (HTTP ${err.response.status}):`, JSON.stringify(err.response.data));
+        } else {
+          console.error(`[Deposit Polling] Gagal menghubungi API Okeconnect:`, err.message);
+        }
       }
     }
   } catch (err) {
@@ -6638,13 +6659,30 @@ Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik s
         }
         try {
           const checkUrl = `https://gateway.okeconnect.com/api/mutasi/qris/${Okeconnect.merchantCode}/${Okeconnect.apiKey}`;
+          console.log(`[Checkout Polling] Mengirim request GET ke: https://gateway.okeconnect.com/api/mutasi/qris/${Okeconnect.merchantCode}/***`);
+          
           let checkRes = await axios.get(checkUrl, {
             timeout: 30000 // 30 detik timeout
           })
           const result = checkRes.data;
           
-          const match = result && result.data && result.data.length > 0 && result.data.find(trx => trx.amount && Math.round(parseFloat(trx.amount)) === totalAmount);
+          console.log(`[Checkout Polling] Response API Mutasi:`, JSON.stringify(result));
+          
+          let match = null;
+          if (result && result.data && result.data.length > 0) {
+            console.log(`[Checkout Polling] Ditemukan ${result.data.length} baris data mutasi.`);
+            match = result.data.find(trx => {
+              const amountVal = trx.amount || trx.nominal || trx.jumlah;
+              const parsedAmount = amountVal ? Math.round(parseFloat(amountVal)) : 0;
+              console.log(`- Membandingkan mutasi: ID=${trx.id || 'N/A'}, Nominal API=${amountVal} (${parsedAmount}), Target=${totalAmount}`);
+              return parsedAmount === totalAmount;
+            });
+          } else {
+            console.log(`[Checkout Polling] Tidak ada mutasi transaksi masuk atau field data kosong.`);
+          }
+          
           if (match) {
+            console.log(`[Checkout Polling] MATCH FOUND! Pembayaran terdeteksi:`, JSON.stringify(match));
             statusP = true
             
             // Validasi ulang stok sebelum mengambil produk
@@ -7149,22 +7187,13 @@ Silahkan pilih menu dibawah ini!`, {
             }
           }
         } catch (err) {
-          // Jangan log setiap error, hanya log jika bukan timeout biasa
-          if (err.code !== 'ETIMEDOUT' && err.code !== 'ECONNRESET') {
-            console.error('Error dalam polling pembayaran:', err.message)
-            // Notifikasi error ke user hanya jika error kritis
-            try {
-              await sendMessage(query.from.id, `❌ *ERROR SISTEM*
-=======================
-Terjadi kesalahan saat memproses pembayaran Anda.
-
-Silakan hubungi admin untuk bantuan.
-Error: \`${err.message}\``)
-            } catch (notifError) {
-              console.error('Error mengirim notifikasi error:', notifError)
-            }
+          if (err.response) {
+            console.error(`[Checkout Polling] Error API Okeconnect (HTTP ${err.response.status}):`, JSON.stringify(err.response.data));
+          } else if (err.code === 'ETIMEDOUT' || err.code === 'ECONNRESET') {
+            console.log(`[Checkout Polling] Connection timeout/reset: ${err.message}. Continue polling...`);
+          } else {
+            console.error(`[Checkout Polling] Gagal menghubungi API Okeconnect:`, err.message);
           }
-          // Continue polling meskipun ada error timeout
         }
       }
     } catch (err) {
@@ -11542,4 +11571,11 @@ Terjadi kesalahan saat membaca file:
   }
 })
 
-console.log("Bot is ready!")
+// Startup Diagnostics
+console.log("==================================================");
+console.log("🔒 [Okeconnect Init] Memeriksa Konfigurasi Payment Gateway:");
+console.log(`- Merchant Code: ${Okeconnect.merchantCode ? Okeconnect.merchantCode.substring(0, 4) + '***' : '⚠️ BELUM DIKONFIGURASI'}`);
+console.log(`- API Key (dari PIN/Env): ${Okeconnect.apiKey ? 'Terpasang (Panjang: ' + Okeconnect.apiKey.length + ')' : '⚠️ BELUM DIKONFIGURASI'}`);
+console.log(`- Static QRIS String: ${Okeconnect.staticQrisString ? Okeconnect.staticQrisString.substring(0, 15) + '...' : '⚠️ BELUM DIKONFIGURASI'}`);
+console.log("==================================================");
+console.log("Bot Elevate Digital siap dijalankan!");
