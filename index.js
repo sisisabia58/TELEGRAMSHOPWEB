@@ -62,6 +62,16 @@ const bot = new TelegramBot(TokenBot, {
   // Base URL dengan fallback
   baseApiUrl: process.env.TELEGRAM_API_URL || 'https://api.telegram.org'
 })
+
+// Configure Telegram chat column commands menu (autocomplete)
+bot.setMyCommands([
+  { command: 'start', description: 'mulai bot' },
+  { command: 'stok', description: 'laporan stok produk' }
+]).then(() => {
+  console.log('✅ Telegram bot commands set successfully')
+}).catch((err) => {
+  console.error('❌ Failed to set Telegram bot commands:', err)
+})
 // Enhanced error handling for polling errors
 bot.on("polling_error", (error) => {
   console.error("Polling error:", error.message);
@@ -91,6 +101,7 @@ const fetch = require("node-fetch")
 const md5 = require("md5")
 const axios = require("axios")
 let editstok = {}
+let depositState = {}
 let msgg = {}
 let addProdukState = {}
 let addStokState = {}
@@ -306,6 +317,58 @@ function formatrupiah(nominal) {
     maximumFractionDigits: 0
   }).format(nominal)
   return nom
+}
+
+async function generateReplyKeyboard(userId) {
+  try {
+    const saldo = await cekSaldo(userId)
+    let { data: Produk } = await supabase
+      .from("Produk")
+      .select("id")
+    
+    const totalProducts = Produk ? Produk.length : 0
+    const keyboardRows = []
+    
+    // Row 1: Daftar Produk and Saldo
+    keyboardRows.push([
+      "📦 Daftar Produk",
+      `💰 Saldo: ${formatrupiah(saldo)}`
+    ])
+    
+    // Rows 2 to N: Grid of numbers (6 per row)
+    if (totalProducts > 0) {
+      let numbersRow = []
+      for (let i = 1; i <= totalProducts; i++) {
+        numbersRow.push(i.toString())
+        if (numbersRow.length === 6) {
+          keyboardRows.push([...numbersRow])
+          numbersRow = []
+        }
+      }
+      if (numbersRow.length > 0) {
+        keyboardRows.push(numbersRow)
+      }
+    }
+    
+    // Row Last: Riwayat Transaksi
+    keyboardRows.push([
+      "📋 Riwayat Transaksi"
+    ])
+    
+    return {
+      keyboard: keyboardRows,
+      resize_keyboard: true
+    }
+  } catch (error) {
+    console.error('Error generating reply keyboard:', error)
+    return {
+      keyboard: [
+        ["📦 Daftar Produk"],
+        ["📋 Riwayat Transaksi"]
+      ],
+      resize_keyboard: true
+    }
+  }
 }
 
 // Fungsi untuk mem-blur data stok, hanya menampilkan 4 karakter pertama
@@ -3769,6 +3832,11 @@ Silahkan pilih menu dibawah ini!`, {
         ]
       }
     })
+
+    const replyKb = await generateReplyKeyboard(msg.from.id)
+    await bot.sendMessage(msg.from.id, `⌨️ Menu navigasi cepat diaktifkan.`, {
+      reply_markup: replyKb
+    })
   } catch (error) {
     console.error('Error in /start:', error)
     await bot.sendMessage(msg.from.id, `⚠️ Terjadi kesalahan saat memuat data. Silakan coba lagi.`)
@@ -3786,6 +3854,136 @@ Pilih bulan untuk melihat rekap transaksi tahun *${tahun}*:`, {
     reply_markup: keyboard,
     parse_mode: "Markdown"
   })
+})
+
+bot.onText(/\/stok/, async (msg) => {
+  try {
+    let { data: Produk } = await supabase
+      .from("Produk")
+      .select("*")
+    
+    if (!Produk || Produk.length === 0) {
+      await bot.sendMessage(msg.from.id, `⚠️ *TIDAK ADA PRODUK*
+━━━━━━━━━━━━━━━━━━━━
+Belum ada produk yang terdaftar.
+
+━━━━━━━━━━━━━━━━━━━━
+💡 Gunakan \`/addproduk\` untuk menambah produk.`, { parse_mode: "Markdown" })
+      return
+    }
+    
+    // Hitung stok untuk setiap produk
+    const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
+      const stokCount = await getStokCount(p.kode)
+      return { ...p, stok_count: stokCount }
+    }))
+    
+    // Calculate statistics
+    let totalStok = 0
+    let totalTerjual = 0
+    let produkHabis = 0
+    let produkRendah = 0
+    
+    ProdukWithStok.forEach(p => {
+      totalStok += p.stok_count || 0
+      totalTerjual += p.terjual || 0
+      if (p.stok_count === 0) produkHabis++
+      else if (p.stok_count <= 5) produkRendah++
+    })
+    
+    let tx = `📦 *STOK PRODUK*
+━━━━━━━━━━━━━━━━━━━━
+📊 *STATISTIK*
+━━━━━━━━━━━━━━━━━━━━
+📦 Total Stok: *${totalStok}*
+💰 Total Terjual: *${totalTerjual}*
+❌ Produk Habis: *${produkHabis}*
+⚠️ Stok Rendah (≤5): *${produkRendah}*
+━━━━━━━━━━━━━━━━━━━━
+
+*DAFTAR PRODUK:*
+`
+    
+    // Sort by stock (lowest first, then by name)
+    const sortedProduk = [...ProdukWithStok].sort((a, b) => {
+      if (a.stok_count === 0 && b.stok_count > 0) return -1
+      if (a.stok_count > 0 && b.stok_count === 0) return 1
+      if (a.stok_count !== b.stok_count) return a.stok_count - b.stok_count
+      return a.nama.localeCompare(b.nama)
+    })
+    
+    sortedProduk.forEach((p) => {
+      let emoji = ""
+      let status = ""
+      if (p.stok_count === 0) {
+        emoji = "❌"
+        status = "HABIS"
+      } else if (p.stok_count <= 5) {
+        emoji = "⚠️"
+        status = "RENDAH"
+      } else if (p.stok_count <= 20) {
+        emoji = "✅"
+        status = "NORMAL"
+      } else {
+        emoji = "🟢"
+        status = "BANYAK"
+      }
+      
+      const persentase = p.terjual > 0 ? Math.round((p.terjual / (p.terjual + p.stok_count)) * 100) : 0
+      
+      tx += `${emoji} *${p.nama.toUpperCase()}*
+📊 Stok: *${p.stok_count}* | Terjual: *${p.terjual}* | ${persentase}% terjual
+🔖 Kode: \`${p.kode}\` | 💰 ${formatrupiah(p.harga)}
+━━━━━━━━━━━━━━━━━━━━\n`
+    })
+    
+    // Create inline keyboard with actions
+    const buttons = []
+    
+    // Filter buttons
+    buttons.push([
+      { text: "🔍 Filter", callback_data: "stok_filter" },
+      { text: "📊 Statistik", callback_data: "stok_statistik" }
+    ])
+    
+    // Product buttons (first 6 products, 2 per row)
+    const productRows = []
+    for (let i = 0; i < Math.min(6, sortedProduk.length); i += 2) {
+      const row = []
+      row.push({ 
+        text: `${i + 1}️⃣ ${sortedProduk[i].nama.substring(0, 15)}${sortedProduk[i].nama.length > 15 ? '...' : ''}`, 
+        callback_data: `stok_detail_${sortedProduk[i].kode}` 
+      })
+      if (sortedProduk[i + 1]) {
+        row.push({ 
+          text: `${i + 2}️⃣ ${sortedProduk[i + 1].nama.substring(0, 15)}${sortedProduk[i + 1].nama.length > 15 ? '...' : ''}`, 
+          callback_data: `stok_detail_${sortedProduk[i + 1].kode}` 
+        })
+      }
+      productRows.push(row)
+    }
+    buttons.push(...productRows)
+    
+    // Action buttons (only for owner)
+    if (msg.from.id === OwnerID) {
+      buttons.push([
+        { text: "➕ Tambah Stok", callback_data: "addstok" },
+        { text: "✏️ Edit Stok", callback_data: "stok_edit_menu" }
+      ])
+    }
+    
+    buttons.push([{ text: "🔙 Kembali", callback_data: "kembaliawal" }])
+    
+    await bot.sendMessage(msg.from.id, tx, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: buttons
+      }
+    })
+  } catch (error) {
+    console.error('Error in /stok:', error)
+    await bot.sendMessage(msg.from.id, `⚠️ Terjadi kesalahan saat memuat data stok.`)
+  }
 })
 
 
@@ -6316,7 +6514,7 @@ ${DataProduk}
 
 //Terimakasih telah percaya kepada ${NamaBot}. Kami harap layanan kami dapat membuat anda puas`
     
-    let txxx = "```txt\n<|==== SYARAT DAN KETENTUAN ====|>\n" + Produk[np].snk + "\n\n<|==== PRODUK ====|>\n" + DataProduk + "\n\n//Terimakasih telah percaya kepada "+ NamaBot + ". Kami harap layanan kami dapat membuat anda puas```"
+    let txxx = "```txt\n[GARANSI / S&K]\n" + Produk[np].snk + "\n\n[DATA PRODUK]\n" + DataProduk + "```"
     let pathtxt = `./${query.from.id}-${Produk[np].kode}-${Data.jumlah}.txt`
     fs.writeFileSync(pathtxt, txfile)
     let tggl = new Date().toISOString()
@@ -6886,7 +7084,7 @@ ${Produk[np].snk}
 ${DataProduk}
 
 //Terimakasih telah percaya kepada ${NamaBot}. Kami harap layanan kami dapat membuat anda puas`
-let txxx = "```txt\n<|==== SYARAT DAN KETENTUAN ====|>\n" + Produk[np].snk + "\n\n<|==== PRODUK ====|>\n" + DataProduk + "\n\n//Terimakasih telah percaya kepada "+ NamaBot + ". Kami harap layanan kami dapat membuat anda puas```"
+let txxx = "```txt\n[GARANSI / S&K]\n" + Produk[np].snk + "\n\n[DATA PRODUK]\n" + DataProduk + "```"
 let pathtxt = `./${query.from.id}-${Produk[np].kode}-${Data.jumlah}.txt`
 fs.writeFileSync(pathtxt, txfile)
 let tggl = new Date().toISOString()
@@ -10526,6 +10724,37 @@ bot.on('message',async (msg) => {
         delete editKategoriState[msg.from.id]
       }
     }
+    if (command !== '/deposit' && command !== '/batal') {
+      if (depositState[msg.from.id]) {
+        delete depositState[msg.from.id]
+      }
+    }
+  }
+  
+  // Handler untuk custom nominal deposit (tanpa prefix /deposit)
+  if (depositState[msg.from.id] && depositState[msg.from.id].status === 'awaiting_custom_nominal' && text && !text.startsWith('/')) {
+    const inputText = text.trim()
+    
+    // Parse nominal
+    const jumlah = parseInt(inputText)
+    if (isNaN(jumlah) || jumlah < 1000) {
+      return await bot.sendMessage(msg.from.id, `❌ *NOMINAL TIDAK VALID*
+=======================
+Minimum deposit: *Rp 1.000*
+
+Nominal yang Anda masukkan: \`${inputText}\`
+
+=======================
+💡 Silakan kirim angka nominal minimal 1000 (contoh: \`15000\`).
+Ketik \`/batal\` untuk membatalkan.`, {
+        parse_mode: "Markdown"
+      })
+    }
+    
+    // Clear state dan jalankan transaksi deposit
+    delete depositState[msg.from.id]
+    await createDepositTransaction(msg.from.id, msg.from.username, msg.from.first_name, jumlah, msg.chat.id)
+    return
   }
   
   // PRIORITAS 1: Handler voucher (harus dijalankan pertama)
@@ -10700,6 +10929,77 @@ ${infoText}`, {
       return // PENTING: return agar handler lain tidak dijalankan
     }
   }
+
+  // Handler untuk text button dari Reply Keyboard
+  if (text && typeof text === 'string' && !text.startsWith('/')) {
+    const cleanText = text.trim()
+    
+    // 1. Daftar Produk
+    if (cleanText === "Daftar Produk" || cleanText === "📦 Daftar Produk") {
+      let { data: Produk } = await supabase
+        .from("Produk")
+        .select("*")
+      
+      if (!Produk || Produk.length === 0) {
+        return await bot.sendMessage(msg.from.id, `⚠️ *BELUM ADA PRODUK*
+━━━━━━━━━━━━━━━━━━━━
+Belum ada produk yang terdaftar.
+
+━━━━━━━━━━━━━━━━━━━━
+💡 Hubungi admin untuk informasi lebih lanjut.`, {
+          parse_mode: "Markdown"
+        })
+      }
+      
+      const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
+        const stokCount = await getStokCount(p.kode)
+        return { ...p, stok_count: stokCount }
+      }))
+      
+      const isOwnerUser = msg.from.id === OwnerID
+      await sendProductPage(ProdukWithStok, msg.from.id, 0, null, null, {}, isOwnerUser)
+      return
+    }
+    
+    // 2. Riwayat Transaksi
+    if (cleanText === "Riwayat Transaksi" || cleanText === "📋 Riwayat Transaksi") {
+      let { data: Trx } = await supabase
+        .from("Trx")
+        .select("*")
+      
+      if (!Trx || Trx.length === 0) {
+        return await bot.sendMessage(msg.from.id, `⚠️ Belum ada transaksi apapun!`)
+      }
+      await sendPage(Trx, msg.from.id, 0)
+      return
+    }
+    
+    // 3. Saldo Menu
+    if (cleanText.startsWith("Saldo:") || cleanText.startsWith("💰 Saldo:") || cleanText === "Saldo & Deposit" || cleanText === "‹💰› Saldo & Deposit") {
+      const saldo = await cekSaldo(msg.from.id)
+      const textResponse = `💰 *SALDO & DEPOSIT*
+=======================
+💵 *Saldo Tersedia:* ${formatrupiah(saldo)}
+=======================
+*Fitur:*
+• 💳 Top Up Saldo - Deposit saldo via QRIS
+• 📋 Riwayat Deposit - Lihat riwayat deposit
+• 💰 Cek Saldo - Lihat saldo saat ini
+=======================
+💡 Gunakan saldo untuk pembayaran yang lebih cepat!`
+
+      const reply_markup = {
+        inline_keyboard: [
+          [{text: "💳 Top Up Saldo", callback_data: "deposit_menu"}],
+          [{text: "📋 Riwayat Deposit", callback_data: "riwayatdeposit"}],
+          [{text: "🔙 Menu Utama", callback_data: "kembaliawal"}]
+        ]
+      }
+
+      await sendBannerMessage(msg.from.id, textResponse, { reply_markup })
+      return
+    }
+  }
   
   // PRIORITAS 2: Handler untuk pembelian via nomor produk
   // Cek apakah text adalah angka (nomor produk)
@@ -10708,6 +11008,7 @@ ${infoText}`, {
   if (text && typeof text === 'string' && /^\d+$/.test(text.trim()) && !text.startsWith('/') && 
       !(editstok[msg.from.id] && editstok[msg.from.id].status) &&
       !(addStokState[msg.from.id] && addStokState[msg.from.id].step === 2) &&
+      !(depositState[msg.from.id] && depositState[msg.from.id].status) &&
       !addProdukState[msg.from.id] &&
       !editNamaState[msg.from.id] &&
       !editKodeState[msg.from.id] &&
