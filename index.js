@@ -104,7 +104,7 @@ let editKategoriState = {}
 
 // Tracking reserved stocks untuk mencegah concurrent purchase
 let reservedStocks = {} // Format: { stokId: { userId, reservedAt, trxid } }
-const RESERVATION_TIMEOUT = 10 * 60 * 1000 // 10 menit dalam milliseconds
+const RESERVATION_TIMEOUT = 5 * 60 * 1000 // 5 menit dalam milliseconds
 
 // Helper function to detect product format
 function detectProductFormat(productData, manualFormat = null) {
@@ -995,6 +995,204 @@ async function sendBannerMessage(chatId, captionText, options = {}) {
 async function generateQRBuffer(qrisString) {
   const QRCode = require('qrcode');
   return await QRCode.toBuffer(qrisString, { type: 'png', margin: 2, scale: 8 });
+}
+
+async function createDepositTransaction(userId, username, firstName, jumlah, chatId) {
+  const { toMs } = require('ms')
+  // Generate kode deposit unik
+  const uniq = require("crypto").randomBytes(5).toString("hex").toUpperCase()
+  const time = Date.now() + toMs("10m")
+  
+  if (!Pakasir.project) {
+    console.error("Pakasir project slug is not configured in .env");
+    return await sendMessage(chatId, `❌ *ERROR*\n=======================\nSistem QRIS belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`)
+  }
+
+  if (!Pakasir.apiKey) {
+    console.error("Pakasir API key is not configured in .env");
+    return await sendMessage(chatId, `❌ *ERROR*\n=======================\nSistem verifikasi pembayaran belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`)
+  }
+
+  try {
+    // Create a Pakasir QRIS transaction (order_id = kode deposit)
+    const pay = await pakasir.createTransaction({ orderId: uniq, amount: jumlah });
+    const totalAmount = pay.total_payment; // amount + Pakasir fee (paid by the customer)
+    const imageBuffer = await generateQRBuffer(pay.payment_number);
+
+    // Simpan ke database (fee: Pakasir fee, total: total_payment)
+    await supabase
+      .from("Deposit")
+      .insert([{
+        user_id: userId,
+        jumlah: jumlah,
+        fee: pay.fee || 0,
+        total: totalAmount,
+        status: 'pending',
+        kode_deposit: uniq,
+        metode: 'qris'
+      }])
+
+    // Payment coordination row (webhook + polling fallback)
+    await supabase
+      .from("Payment")
+      .insert([{
+        order_id: uniq,
+        type: 'deposit',
+        user_id: userId,
+        amount: jumlah,
+        fee: pay.fee || 0,
+        total: totalAmount,
+        status: 'pending',
+        payment_method: 'qris',
+        qr_string: pay.payment_number,
+        expired_at: pay.expired_at || null,
+        meta: { jumlah: jumlah }
+      }])
+    
+    let txx = `💳 *TOP UP SALDO*
+=======================
+💰 *Jumlah:* ${formatrupiah(jumlah)}
+💸 *Fee:* ${formatrupiah(pay.fee || 0)}
+💵 *Total Bayar:* ${formatrupiah(totalAmount)}
+🆔 *Kode Deposit:* \`${uniq}\`
+⏰ *Expired:* 10 menit
+=======================
+⚠️ *PENTING:* Transfer harus sama persis sejumlah *${formatrupiah(totalAmount)}* agar pembayaran dapat terdeteksi otomatis!
+Scan QRIS diatas untuk melakukan pembayaran.`
+    
+    let ff = await retryBotOperation(async () => {
+      return await bot.sendPhoto(chatId, imageBuffer, {
+        parse_mode: "Markdown",
+        caption: txx,
+        filename: 'qris-deposit.png',
+        contentType: 'image/png',
+        reply_markup: {
+          inline_keyboard: [
+            [{text: "❌ Batal", callback_data: `bataldeposit_${uniq}`}]
+          ]
+        }
+      });
+    });
+    
+    // Detect payment: webhook flips Payment.status to 'paid'; poll Pakasir as fallback.
+    let statusP = false
+    console.log(`[Deposit Polling] Memantau pembayaran Pakasir untuk deposit ${uniq}. Nominal: Rp ${totalAmount}`);
+    
+    while (!statusP) {
+      await sleep(10000)
+      if (Date.now() >= time) {
+        statusP = true
+        console.log(`[Deposit Polling] Deposit ${uniq} expired setelah 10 menit.`);
+        await supabase
+          .from("Deposit")
+          .update({ status: 'expired' })
+          .eq('kode_deposit', uniq)
+        await supabase
+          .from("Payment")
+          .update({ status: 'expired' })
+          .eq('order_id', uniq)
+          .eq('status', 'pending')
+        pakasir.cancelTransaction({ orderId: uniq, amount: jumlah }).catch(() => {})
+        await retryBotOperation(async () => {
+          return await bot.deleteMessage(ff.chat.id, ff.message_id);
+        }).catch(err => {
+          if (err.response?.body?.error_code !== 400) {
+            console.warn('Error deleting message:', err.message);
+          }
+        });
+        await sendMessage(chatId, `⏰ *DEPOSIT EXPIRED*
+=======================
+Pembayaran deposit telah expired.
+
+Kode Deposit: \`${uniq}\`
+
+=======================
+💡 Gunakan \`/deposit\` untuk membuat deposit baru.`)
+        break;
+      }
+      
+      try {
+        // Webhook may have already marked it paid; otherwise ask Pakasir directly.
+        let isPaid = false
+        const { data: payRow } = await supabase
+          .from("Payment").select("status").eq("order_id", uniq).single()
+        if (payRow && (payRow.status === 'paid' || payRow.status === 'fulfilled')) {
+          isPaid = true
+        } else {
+          const trxDetail = await pakasir.getTransactionStatus({ orderId: uniq, amount: jumlah })
+          if (trxDetail && trxDetail.status === 'completed') isPaid = true
+        }
+
+        if (isPaid) {
+          // Atomically claim fulfillment so the webhook/cron cannot double-credit.
+          const { data: claimed } = await supabase
+            .from("Payment")
+            .update({ status: 'fulfilled' })
+            .eq('order_id', uniq)
+            .in('status', ['pending', 'paid'])
+            .select()
+
+          statusP = true
+          if (!claimed || claimed.length === 0) break;
+
+          await supabase
+            .from("Deposit")
+            .update({ status: 'success' })
+            .eq('kode_deposit', uniq)
+
+          // Credit the base amount requested (Pakasir fee is payed on top by the customer).
+          await addSaldo(userId, jumlah)
+
+          await retryBotOperation(async () => {
+            return await bot.deleteMessage(ff.chat.id, ff.message_id);
+          }).catch(err => {
+            if (err.response?.body?.error_code !== 400) {
+              console.warn('Error deleting message:', err.message);
+            }
+          });
+          const saldoBaru = await cekSaldo(userId)
+
+          await sendMessage(chatId, `✅ *DEPOSIT BERHASIL*
+=======================
+💰 *Jumlah:* ${formatrupiah(jumlah)}
+💸 *Fee:* ${formatrupiah(pay.fee || 0)}
+💵 *Total Bayar:* ${formatrupiah(totalAmount)}
+🆔 *Kode Deposit:* \`${uniq}\`
+💵 *Saldo Sekarang:* ${formatrupiah(saldoBaru)}
+=======================
+💡 Saldo telah ditambahkan ke akun Anda!`)
+
+          await bot.sendMessage(channelContact.channelLog, `💰 *DEPOSIT BARU*
+=======================
+User: @${username || firstName}
+Jumlah: ${formatrupiah(jumlah)}
+Fee: ${formatrupiah(pay.fee || 0)}
+Total: ${formatrupiah(totalAmount)}
+Kode: \`${uniq}\`
+Saldo Baru: ${formatrupiah(saldoBaru)}
+=======================`, {
+            parse_mode: "Markdown"
+          })
+        }
+      } catch (err) {
+        if (err.response) {
+          console.error(`[Deposit Polling] Error API Pakasir (HTTP ${err.response.status}):`, JSON.stringify(err.response.data));
+        } else {
+          console.error(`[Deposit Polling] Gagal menghubungi API Pakasir:`, err.message);
+        }
+      }
+    }
+  } catch (err) {
+    console.error(err)
+    await sendMessage(chatId, `❌ *ERROR*
+=======================
+Terjadi kesalahan saat membuat deposit.
+
+Error: \`${err.message}\`
+
+=======================
+💡 Silakan coba lagi atau hubungi admin.`)
+  }
 }
 
 bot.onText(/\/ownermenu/, async (msg) => {
@@ -3123,7 +3321,25 @@ bot.onText(/\/deposit/, async (msg) => {
 =======================
 💡 *Minimum deposit:* Rp 1.000
 💡 Saldo akan ditambahkan setelah pembayaran berhasil`, {
-      parse_mode: "Markdown"
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "Rp 5.000", callback_data: "deposit_preset:5000" },
+            { text: "Rp 10.000", callback_data: "deposit_preset:10000" }
+          ],
+          [
+            { text: "Rp 25.000", callback_data: "deposit_preset:25000" },
+            { text: "Rp 50.000", callback_data: "deposit_preset:50000" }
+          ],
+          [
+            { text: "Rp 100.000", callback_data: "deposit_preset:100000" }
+          ],
+          [
+            { text: "⌨️ Custom Nominal", callback_data: "deposit_custom" }
+          ]
+        ]
+      }
     })
   }
   
@@ -3140,210 +3356,8 @@ Jumlah yang Anda masukkan: \`${text}\`
       parse_mode: "Markdown"
     })
   }
-  
-  // Generate kode deposit unik
-  const uniq = require("crypto").randomBytes(5).toString("hex").toUpperCase()
-  const time = Date.now() + toMs("10m")
-  
-  // Request QRIS via Pakasir
-  if (!Pakasir.project) {
-    console.error("Pakasir project slug is not configured in .env");
-    return await bot.sendMessage(msg.from.id, `❌ *ERROR*
-=======================
-Sistem QRIS belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`, {
-      parse_mode: "Markdown"
-    })
-  }
 
-  if (!Pakasir.apiKey) {
-    console.error("Pakasir API key is not configured in .env");
-    return await bot.sendMessage(msg.from.id, `❌ *ERROR*
-=======================
-Sistem verifikasi pembayaran belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`, {
-      parse_mode: "Markdown"
-    })
-  }
-
-  try {
-    // Create a Pakasir QRIS transaction (order_id = kode deposit)
-    const pay = await pakasir.createTransaction({ orderId: uniq, amount: jumlah });
-    const totalAmount = pay.total_payment; // amount + Pakasir fee (paid by the customer)
-    const imageBuffer = await generateQRBuffer(pay.payment_number);
-
-    // Simpan ke database (fee: Pakasir fee, total: total_payment)
-    await supabase
-      .from("Deposit")
-      .insert([{
-        user_id: msg.from.id,
-        jumlah: jumlah,
-        fee: pay.fee || 0,
-        total: totalAmount,
-        status: 'pending',
-        kode_deposit: uniq,
-        metode: 'qris'
-      }])
-
-    // Payment coordination row (webhook + polling fallback)
-    await supabase
-      .from("Payment")
-      .insert([{
-        order_id: uniq,
-        type: 'deposit',
-        user_id: msg.from.id,
-        amount: jumlah,
-        fee: pay.fee || 0,
-        total: totalAmount,
-        status: 'pending',
-        payment_method: 'qris',
-        qr_string: pay.payment_number,
-        expired_at: pay.expired_at || null,
-        meta: { jumlah: jumlah }
-      }])
-    
-    let txx = `💳 *TOP UP SALDO*
-=======================
-💰 *Jumlah:* ${formatrupiah(jumlah)}
-💸 *Fee:* ${formatrupiah(pay.fee || 0)}
-💵 *Total Bayar:* ${formatrupiah(totalAmount)}
-🆔 *Kode Deposit:* \`${uniq}\`
-⏰ *Expired:* 10 menit
-=======================
-⚠️ *PENTING:* Transfer harus sama persis sejumlah *${formatrupiah(totalAmount)}* agar pembayaran dapat terdeteksi otomatis!
-Scan QRIS diatas untuk melakukan pembayaran.`
-    
-    let ff = await retryBotOperation(async () => {
-      return await bot.sendPhoto(msg.from.id, imageBuffer, {
-        parse_mode: "Markdown",
-        caption: txx,
-        filename: 'qris-deposit.png',
-        contentType: 'image/png',
-        reply_markup: {
-          inline_keyboard: [
-            [{text: "❌ Batal", callback_data: `bataldeposit_${uniq}`}]
-          ]
-        }
-      });
-    });
-    
-    // Detect payment: webhook flips Payment.status to 'paid'; poll Pakasir as fallback.
-    let statusP = false
-    console.log(`[Deposit Polling] Memantau pembayaran Pakasir untuk deposit ${uniq}. Nominal: Rp ${totalAmount}`);
-    
-    while (!statusP) {
-      await sleep(10000)
-      if (Date.now() >= time) {
-        statusP = true
-        console.log(`[Deposit Polling] Deposit ${uniq} expired setelah 10 menit.`);
-        await supabase
-          .from("Deposit")
-          .update({ status: 'expired' })
-          .eq('kode_deposit', uniq)
-        await supabase
-          .from("Payment")
-          .update({ status: 'expired' })
-          .eq('order_id', uniq)
-          .eq('status', 'pending')
-        pakasir.cancelTransaction({ orderId: uniq, amount: jumlah }).catch(() => {})
-        await retryBotOperation(async () => {
-          return await bot.deleteMessage(ff.chat.id, ff.message_id);
-        }).catch(err => {
-          if (err.response?.body?.error_code !== 400) {
-            console.warn('Error deleting message:', err.message);
-          }
-        });
-        await sendMessage(msg.from.id, `⏰ *DEPOSIT EXPIRED*
-=======================
-Pembayaran deposit telah expired.
-
-Kode Deposit: \`${uniq}\`
-
-=======================
-💡 Gunakan \`/deposit\` untuk membuat deposit baru.`)
-        break;
-      }
-      
-      try {
-        // Webhook may have already marked it paid; otherwise ask Pakasir directly.
-        let isPaid = false
-        const { data: payRow } = await supabase
-          .from("Payment").select("status").eq("order_id", uniq).single()
-        if (payRow && (payRow.status === 'paid' || payRow.status === 'fulfilled')) {
-          isPaid = true
-        } else {
-          const trxDetail = await pakasir.getTransactionStatus({ orderId: uniq, amount: jumlah })
-          if (trxDetail && trxDetail.status === 'completed') isPaid = true
-        }
-
-        if (isPaid) {
-          // Atomically claim fulfillment so the webhook/cron cannot double-credit.
-          const { data: claimed } = await supabase
-            .from("Payment")
-            .update({ status: 'fulfilled' })
-            .eq('order_id', uniq)
-            .in('status', ['pending', 'paid'])
-            .select()
-
-          statusP = true
-          if (!claimed || claimed.length === 0) break;
-
-          await supabase
-            .from("Deposit")
-            .update({ status: 'success' })
-            .eq('kode_deposit', uniq)
-
-          // Credit the base amount requested (Pakasir fee is paid on top by the customer).
-          await addSaldo(msg.from.id, jumlah)
-
-          await retryBotOperation(async () => {
-            return await bot.deleteMessage(ff.chat.id, ff.message_id);
-          }).catch(err => {
-            if (err.response?.body?.error_code !== 400) {
-              console.warn('Error deleting message:', err.message);
-            }
-          });
-          const saldoBaru = await cekSaldo(msg.from.id)
-
-          await sendMessage(msg.from.id, `✅ *DEPOSIT BERHASIL*
-=======================
-💰 *Jumlah:* ${formatrupiah(jumlah)}
-💸 *Fee:* ${formatrupiah(pay.fee || 0)}
-💵 *Total Bayar:* ${formatrupiah(totalAmount)}
-🆔 *Kode Deposit:* \`${uniq}\`
-💵 *Saldo Sekarang:* ${formatrupiah(saldoBaru)}
-=======================
-💡 Saldo telah ditambahkan ke akun Anda!`)
-
-          await bot.sendMessage(channelContact.channelLog, `💰 *DEPOSIT BARU*
-=======================
-User: @${msg.from.username || msg.from.first_name}
-Jumlah: ${formatrupiah(jumlah)}
-Fee: ${formatrupiah(pay.fee || 0)}
-Total: ${formatrupiah(totalAmount)}
-Kode: \`${uniq}\`
-Saldo Baru: ${formatrupiah(saldoBaru)}
-=======================`, {
-            parse_mode: "Markdown"
-          })
-        }
-      } catch (err) {
-        if (err.response) {
-          console.error(`[Deposit Polling] Error API Pakasir (HTTP ${err.response.status}):`, JSON.stringify(err.response.data));
-        } else {
-          console.error(`[Deposit Polling] Gagal menghubungi API Pakasir:`, err.message);
-        }
-      }
-    }
-  } catch (err) {
-    console.error(err)
-    await sendMessage(msg.from.id, `❌ *ERROR*
-=======================
-Terjadi kesalahan saat membuat deposit.
-
-Error: \`${err.message}\`
-
-=======================
-💡 Silakan coba lagi atau hubungi admin.`)
-  }
+  createDepositTransaction(msg.from.id, msg.from.username, msg.from.first_name, jumlah, msg.from.id)
 })
 
 bot.onText(/\/riwayatdeposit/, async (msg) => {
@@ -3725,6 +3739,31 @@ bot.on("callback_query", async (query) => {
   let cmd = query.data
  //await bot.answerCallbackQuery(query.id, { text: "⏳ Harap tunggu sebentar..." })
 try {
+  if (cmd.startsWith('deposit_preset:')) {
+    const amount = parseInt(cmd.split(':')[1])
+    await bot.answerCallbackQuery(query.id, { text: `💸 Menyiapkan deposit Rp ${formatrupiah(amount)}` })
+    try {
+      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    } catch (e) {}
+    createDepositTransaction(query.from.id, query.from.username, query.from.first_name, amount, query.message.chat.id)
+    return
+  }
+  
+  if (cmd === 'deposit_custom') {
+    await bot.answerCallbackQuery(query.id)
+    await bot.sendMessage(query.message.chat.id, `⌨️ *CUSTOM DEPOSIT NOMINAL*
+=======================
+Silakan ketik \`/deposit <jumlah>\` untuk melakukan top up saldo dengan nominal kustom.
+
+*Contoh:*
+\`/deposit 15000\` (untuk deposit Rp 15.000)
+=======================
+💡 Batas minimal deposit adalah *Rp 1.000*`, {
+      parse_mode: "Markdown"
+    })
+    return
+  }
+
   if (cmd.startsWith('bulan_')) {
     const [_, bulan, tahun] = cmd.split('_')
     let { data: Trx } = await supabase
@@ -4377,9 +4416,33 @@ if (cmd.startsWith("checkout_payment:")) {
       await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     } catch (e) {}
     
-    // Redirect langsung ke pilih_payment_method
-    query.data = "pilih_payment_method"
-    cmd = "pilih_payment_method"
+    // Redirect langsung ke metode pembayaran yang dipilih
+    if (method === "qris") {
+      query.data = "bayar"
+      cmd = "bayar"
+    } else {
+      let { data: Produk } = await supabase.from("Produk").select("*")
+      let np = Produk.findIndex(i => i.kode.toLowerCase() === Data.kode.toLowerCase())
+      if (np === -1) {
+        return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+      }
+      
+      let harga = Data.jumlah * Produk[np].harga
+      let { data: Voucher } = await supabase.from("Voucher").select("*")
+      let vcr = Voucher.find(v => v.kode === Data.voucher)
+      if (vcr && !vcr.user.some(a => a === query.from.id) && vcr.limit > 0) {
+        harga = harga - vcr.potongan
+      }
+      
+      const userSaldo = await cekSaldo(query.from.id)
+      if (userSaldo >= harga) {
+        query.data = "bayarsaldo"
+        cmd = "bayarsaldo"
+      } else {
+        query.data = "pilih_payment_method"
+        cmd = "pilih_payment_method"
+      }
+    }
   }
 }
 
@@ -9517,6 +9580,20 @@ if (cmd === "deposit_menu") {
 
   const reply_markup = {
     inline_keyboard: [
+      [
+        { text: "Rp 5.000", callback_data: "deposit_preset:5000" },
+        { text: "Rp 10.000", callback_data: "deposit_preset:10000" }
+      ],
+      [
+        { text: "Rp 25.000", callback_data: "deposit_preset:25000" },
+        { text: "Rp 50.000", callback_data: "deposit_preset:50000" }
+      ],
+      [
+        { text: "Rp 100.000", callback_data: "deposit_preset:100000" }
+      ],
+      [
+        { text: "⌨️ Custom Nominal", callback_data: "deposit_custom" }
+      ],
       [{text: "📋 Riwayat Deposit", callback_data: "riwayatdeposit"}],
       [{text: "🔙 Kembali", callback_data: "saldomenu"}]
     ]
@@ -10489,20 +10566,38 @@ ${Data.kode}
       // Voucher valid, simpan ke data transaksi
       Data.voucher = vv.kode
       fs.writeFileSync(`./Database/Trx/${msg.from.id}.json`, JSON.stringify(Data, null, 2))
+      
+      let { data: Produk } = await supabase.from("Produk").select("*")
+      let np = Produk.findIndex(i => i.kode.toLowerCase() === Data.kode.toLowerCase())
+      let price = np !== -1 ? Produk[np].harga : 0
+      let harga = Data.jumlah * price
+      let totalBayar = harga - vv.potongan
+      if (totalBayar < 0) totalBayar = 0
+      
+      const userSaldo = await cekSaldo(msg.from.id)
+      const keyboard = []
+      let infoText = `Silahkan klik tombol di bawah untuk melakukan pembayaran.`
+      
+      if (userSaldo >= totalBayar) {
+        keyboard.push([{ text: "💰 Bayar Pakai Saldo", callback_data: "bayarsaldo" }])
+        keyboard.push([{ text: "💳 Bayar QRIS", callback_data: "bayar" }])
+      } else {
+        infoText = `Saldo Anda tidak mencukupi untuk membayar dengan saldo. Silakan top up atau bayar langsung via QRIS.`
+        keyboard.push([{ text: "💳 Bayar QRIS", callback_data: "bayar" }])
+        keyboard.push([{ text: "💰 Top Up Saldo", callback_data: "deposit_menu" }])
+      }
+      
       await bot.sendMessage(msg.from.id, `✅ *Kode Voucher Valid!*
 =======================
 🎟️ *Kode:* \`${vv.kode}\`
 💰 *Potongan:* ${formatrupiah(vv.potongan)}
 📦 *Produk Berlaku:* ${vv.produk[0] === "all" ? "Semua Produk" : vv.produk.join(", ")}
+💵 *Total Setelah Diskon:* ${formatrupiah(totalBayar)}
 =======================
-Silahkan klik ✅ Bayar untuk melakukan pembayaran`, {
+${infoText}`, {
         parse_mode: "Markdown",
         reply_markup: {
-          inline_keyboard: [
-            [
-             { text: "✅ Bayar", callback_data: "bayar"}
-              ]
-            ]
+          inline_keyboard: keyboard
         }
       })
       return // PENTING: return agar handler lain tidak dijalankan
