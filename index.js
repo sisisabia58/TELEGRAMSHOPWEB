@@ -4412,9 +4412,7 @@ if (cmd.startsWith("checkout_payment:")) {
     
     await bot.answerCallbackQuery(query.id)
     
-    try {
-      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-    } catch (e) {}
+
     
     // Redirect langsung ke metode pembayaran yang dipilih
     if (method === "qris") {
@@ -6137,7 +6135,9 @@ if (cmd === "batalbeli") {
 
 if (cmd === "bayarsaldo") {
   if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    try {
+      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    } catch (e) {}
     let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
     let { data: Produk } = await supabase.from("Produk").select("*")
     let np = null
@@ -6530,7 +6530,9 @@ Silahkan pilih menu dibawah ini!`, {
 
 if (cmd === "bayar") {
   if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    try {
+      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    } catch (e) {}
     let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
     let { data: Produk } = await supabase
 .from("Produk")
