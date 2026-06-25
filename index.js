@@ -3121,7 +3121,7 @@ bot.onText(/\/deposit/, async (msg) => {
 \`/deposit 100000\`
 
 =======================
-💡 *Minimum deposit:* Rp 5.000
+💡 *Minimum deposit:* Rp 1.000
 💡 Saldo akan ditambahkan setelah pembayaran berhasil`, {
       parse_mode: "Markdown"
     })
@@ -9512,7 +9512,7 @@ if (cmd === "deposit_menu") {
 \`/deposit 100000\`
 
 =======================
-💡 *Minimum deposit:* Rp 5.000
+💡 *Minimum deposit:* Rp 1.000
 💡 Saldo akan ditambahkan setelah pembayaran berhasil`
 
   const reply_markup = {
