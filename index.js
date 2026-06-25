@@ -3128,15 +3128,15 @@ bot.onText(/\/deposit/, async (msg) => {
   }
   
   const jumlah = parseInt(text)
-  if (isNaN(jumlah) || jumlah < 5000) {
+  if (isNaN(jumlah) || jumlah < 1000) {
     return await bot.sendMessage(msg.from.id, `❌ *JUMLAH TIDAK VALID*
 =======================
-Minimum deposit: *Rp 5.000*
+Minimum deposit: *Rp 1.000*
 
 Jumlah yang Anda masukkan: \`${text}\`
 
 =======================
-💡 Silakan masukkan jumlah minimal Rp 5.000`, {
+💡 Silakan masukkan jumlah minimal Rp 1.000`, {
       parse_mode: "Markdown"
     })
   }
