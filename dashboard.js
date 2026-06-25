@@ -109,6 +109,53 @@ async function getStokCount(produkId) {
   }
 }
 
+// Helper: Send Telegram message to Feed Channel
+async function sendFeedMessage(text, type = 'stock') {
+  try {
+    const { data } = await supabase
+      .from('NotificationSettings')
+      .select('setting_key, setting_value')
+      .in('setting_key', ['feed_channel', 'feed_stock_enabled', 'feed_purchase_enabled'])
+    
+    let feedChannel = '';
+    let feedStockEnabled = true;
+    let feedPurchaseEnabled = true;
+    
+    if (data && data.length) {
+      data.forEach((row) => {
+        const v = row.setting_value?.value
+        if (v !== undefined && v !== null) {
+          if (row.setting_key === 'feed_channel') feedChannel = v
+          else if (row.setting_key === 'feed_stock_enabled') feedStockEnabled = (v === true || v === 'true')
+          else if (row.setting_key === 'feed_purchase_enabled') feedPurchaseEnabled = (v === true || v === 'true')
+        }
+      })
+    }
+    
+    if (!feedChannel) return;
+    if (type === 'stock' && !feedStockEnabled) return;
+    if (type === 'purchase' && !feedPurchaseEnabled) return;
+    
+    let target = feedChannel;
+    if (typeof target === 'string' && !target.startsWith('@') && !target.startsWith('-') && !target.startsWith('http')) {
+      target = '@' + target;
+    } else if (typeof target === 'string' && target.startsWith('https://t.me/')) {
+      target = '@' + target.replace('https://t.me/', '');
+    }
+    
+    const { TokenBot } = require('./settings.js');
+    const axios = require('axios');
+    await axios.post(`https://api.telegram.org/bot${TokenBot}/sendMessage`, {
+      chat_id: target,
+      text: text,
+      parse_mode: 'Markdown'
+    });
+  } catch (error) {
+    console.error('Error sending feed message from dashboard:', error.message);
+  }
+}
+
+
 // ============================================
 // SECURITY & ACCESS MANAGEMENT
 // ============================================
@@ -1371,6 +1418,16 @@ app.post('/produk/:id/stok/tambah', isAuthenticated, async (req, res) => {
       .insert(stokItems)
 
     if (insertError) throw insertError
+
+    // Kirim notifikasi stok baru ke feed channel
+    const totalStok = await getStokCount(id)
+    const formattedPrice = formatrupiah(produk.harga)
+    await sendFeedMessage(
+      `📢 ${dataArray.length} new stock added for ${produk.nama}!\n\n` +
+      `✨ Available: ${totalStok} items\n` +
+      `🪙 Price: ${formattedPrice}`,
+      'stock'
+    ).catch(err => console.error('Error sending stock feed message:', err))
 
     console.log(`[${new Date().toISOString()}] Stok ditambahkan: ${dataArray.length} item untuk produk ${produk.nama} (${produk.kode}) oleh ${req.session.username}`)
     res.redirect(`/produk/${id}/stok?success=tambah`)
@@ -4381,33 +4438,39 @@ async function getGeneralSettings() {
   }
 }
 
-// Helper: Get channel & contact settings (CHANNEL_LOG, CHANNEL_STORE, CS)
+// Helper: Get channel & contact settings (CHANNEL_LOG, CHANNEL_STORE, CS, FEED_CHANNEL, FEED_STOCK_ENABLED, FEED_PURCHASE_ENABLED)
 async function getChannelContactSettings() {
   try {
     const { data: settings } = await supabase
       .from('NotificationSettings')
       .select('*')
-      .in('setting_key', ['channel_log', 'channel_store', 'cs'])
+      .in('setting_key', ['channel_log', 'channel_store', 'cs', 'feed_channel', 'feed_stock_enabled', 'feed_purchase_enabled'])
     
     const settingsMap = {}
     settings?.forEach(s => {
       settingsMap[s.setting_key] = s.setting_value
     })
     
-    const { ChannelLog, ChannelStore, CS } = require('./settings.js')
+    const { ChannelLog, ChannelStore, CS, FeedChannel, FeedStockEnabled, FeedPurchaseEnabled } = require('./settings.js')
     
     return {
       channelLog: settingsMap.channel_log?.value ?? ChannelLog ?? '',
       channelStore: settingsMap.channel_store?.value ?? ChannelStore ?? '',
-      cs: settingsMap.cs?.value ?? CS ?? ''
+      cs: settingsMap.cs?.value ?? CS ?? '',
+      feedChannel: settingsMap.feed_channel?.value ?? FeedChannel ?? '',
+      feedStockEnabled: settingsMap.feed_stock_enabled?.value ?? FeedStockEnabled ?? true,
+      feedPurchaseEnabled: settingsMap.feed_purchase_enabled?.value ?? FeedPurchaseEnabled ?? true
     }
   } catch (error) {
     console.error('Error getting channel/contact settings:', error)
-    const { ChannelLog, ChannelStore, CS } = require('./settings.js')
+    const { ChannelLog, ChannelStore, CS, FeedChannel, FeedStockEnabled, FeedPurchaseEnabled } = require('./settings.js')
     return {
       channelLog: ChannelLog || '',
       channelStore: ChannelStore || '',
-      cs: CS || ''
+      cs: CS || '',
+      feedChannel: FeedChannel || '',
+      feedStockEnabled: FeedStockEnabled ?? true,
+      feedPurchaseEnabled: FeedPurchaseEnabled ?? true
     }
   }
 }
@@ -5307,15 +5370,17 @@ app.get('/settings/channel-contact', isAuthenticated, async (req, res) => {
   }
 })
 
-// Route: Update Channel & Contact Settings
 app.post('/api/settings/channel-contact', isAuthenticated, async (req, res) => {
   try {
-    const { channelLog, channelStore, cs } = req.body
+    const { channelLog, channelStore, cs, feedChannel, feedStockEnabled, feedPurchaseEnabled } = req.body
     
     const updates = [
       { setting_key: 'channel_log', setting_value: { value: (channelLog || '').trim() } },
       { setting_key: 'channel_store', setting_value: { value: (channelStore || '').trim() } },
-      { setting_key: 'cs', setting_value: { value: (cs || '').trim() } }
+      { setting_key: 'cs', setting_value: { value: (cs || '').trim() } },
+      { setting_key: 'feed_channel', setting_value: { value: (feedChannel || '').trim() } },
+      { setting_key: 'feed_stock_enabled', setting_value: { value: feedStockEnabled === true || feedStockEnabled === 'true' } },
+      { setting_key: 'feed_purchase_enabled', setting_value: { value: feedPurchaseEnabled === true || feedPurchaseEnabled === 'true' } }
     ]
     
     for (const update of updates) {
@@ -6060,6 +6125,18 @@ app.post('/bulk/stok/tambah', isAuthenticated, async (req, res) => {
       produk_kode: produk.kode,
       jumlah: successCount
     })
+
+    if (successCount > 0) {
+      // Kirim notifikasi stok baru ke feed channel
+      const totalStok = await getStokCount(produk_id)
+      const formattedPrice = formatrupiah(produk.harga)
+      await sendFeedMessage(
+        `📢 ${successCount} new stock added for ${produk.nama}!\n\n` +
+        `✨ Available: ${totalStok} items\n` +
+        `🪙 Price: ${formattedPrice}`,
+        'stock'
+      ).catch(err => console.error('Error sending stock feed message:', err))
+    }
 
     res.json({
       success: true,

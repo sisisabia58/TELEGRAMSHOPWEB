@@ -645,6 +645,52 @@ async function sendMessage(id, msg, options = {}) {
   });
 }
 
+async function sendFeedMessage(text, type = 'stock') {
+  try {
+    const { data } = await supabase
+      .from('NotificationSettings')
+      .select('setting_key, setting_value')
+      .in('setting_key', ['feed_channel', 'feed_stock_enabled', 'feed_purchase_enabled'])
+    
+    let feedChannel = '';
+    let feedStockEnabled = true;
+    let feedPurchaseEnabled = true;
+    
+    if (data && data.length) {
+      data.forEach((row) => {
+        const v = row.setting_value?.value
+        if (v !== undefined && v !== null) {
+          if (row.setting_key === 'feed_channel') feedChannel = v
+          else if (row.setting_key === 'feed_stock_enabled') feedStockEnabled = (v === true || v === 'true')
+          else if (row.setting_key === 'feed_purchase_enabled') feedPurchaseEnabled = (v === true || v === 'true')
+        }
+      })
+    }
+    
+    if (!feedChannel) return;
+    if (type === 'stock' && !feedStockEnabled) return;
+    if (type === 'purchase' && !feedPurchaseEnabled) return;
+    
+    let target = feedChannel;
+    if (typeof target === 'string' && !target.startsWith('@') && !target.startsWith('-') && !target.startsWith('http')) {
+      target = '@' + target;
+    } else if (typeof target === 'string' && target.startsWith('https://t.me/')) {
+      target = '@' + target.replace('https://t.me/', '');
+    }
+    
+    await retryBotOperation(async () => {
+      return await bot.sendMessage(target, text, {
+        parse_mode: 'Markdown'
+      });
+    }).catch(err => {
+      console.error('Failed to send feed message after retries:', err.message);
+    });
+  } catch (error) {
+    console.error('Error in sendFeedMessage:', error);
+  }
+}
+
+
 async function isRegistered(id) {
       let regist = false
       const { data, error } = await supabase
@@ -1522,6 +1568,15 @@ Terjadi kesalahan saat menambah stok:
       }
       
       const stokSekarang = await getStokCount(kode.toLowerCase())
+
+      // Kirim notifikasi ke feed channel
+      const formattedPrice = formatrupiah(Produk[f].harga)
+      await sendFeedMessage(
+        `📢 ${dataArray.length} new stock added for ${namaProduk}!\n\n` +
+        `✨ Available: ${stokSekarang} items\n` +
+        `🪙 Price: ${formattedPrice}`,
+        'stock'
+      ).catch(err => console.error('Error sending stock feed message:', err))
       
       await sendMessage(msg.from.id, `✅ *STOK BERHASIL DITAMBAHKAN*
 =======================
@@ -6393,6 +6448,12 @@ Terima kasih! 🙏`, {
       metode: 'saldo'
     }, null, 2))
     
+    // Kirim notifikasi pembelian ke feed channel
+    await sendFeedMessage(
+      `🛍️ *Someone just bought ${Data.jumlah}x ${Produk[np].nama}!*`,
+      'purchase'
+    ).catch(err => console.error('Error sending purchase feed message:', err))
+
     await bot.sendMessage(channelContact.channelLog, `✅ *PESANAN SELESAI (SALDO)*
 =======================
 User: @${query.from.username || query.from.first_name}
@@ -7003,6 +7064,12 @@ Silakan hubungi CS untuk mendapatkan produk Anda.`)
               console.error('Error menyimpan temp file:', fileError)
             }
             
+            // Kirim notifikasi pembelian ke feed channel
+            await sendFeedMessage(
+              `🛍️ *Someone just bought ${Data.jumlah}x ${Produk[np].nama}!*`,
+              'purchase'
+            ).catch(err => console.error('Error sending purchase feed message:', err))
+
             try {
               await bot.sendMessage(channelContact.channelLog, `✅ *PESANAN SELESAI*
 =======================
@@ -7905,6 +7972,16 @@ if (cmd.startsWith("addstok_confirm_")) {
   // Ambil stok terbaru
   const stokSekarang = await getStokCount(state.data.kode)
   
+  if (berhasil > 0) {
+    const formattedPrice = formatrupiah(ProdukData.harga)
+    await sendFeedMessage(
+      `📢 ${berhasil} new stock added for ${state.data.nama}!\n\n` +
+      `✨ Available: ${stokSekarang} items\n` +
+      `🪙 Price: ${formattedPrice}`,
+      'stock'
+    ).catch(err => console.error('Error sending stock feed message:', err))
+  }
+
   await bot.answerCallbackQuery(query.id)
   await bot.editMessageText(`✅ *STOK BERHASIL DITAMBAHKAN*
 =======================
@@ -10867,7 +10944,7 @@ Tidak ada data stok yang valid untuk ditambahkan.
     // Ambil produk untuk mendapatkan ID
     const { data: ProdukData } = await supabase
       .from("Produk")
-      .select("id, nama")
+      .select("id, nama, harga")
       .eq('kode', state.data.kode)
       .single()
     
@@ -10888,6 +10965,16 @@ Tidak ada data stok yang valid untuk ditambahkan.
     
     // Ambil stok terbaru
     const stokSekarang = await getStokCount(state.data.kode)
+    
+    if (berhasil > 0) {
+      const formattedPrice = formatrupiah(ProdukData.harga)
+      await sendFeedMessage(
+        `📢 ${berhasil} new stock added for ${ProdukData.nama}!\n\n` +
+        `✨ Available: ${stokSekarang} items\n` +
+        `🪙 Price: ${formattedPrice}`,
+        'stock'
+      ).catch(err => console.error('Error sending stock feed message:', err))
+    }
     
     await bot.sendMessage(msg.from.id, `✅ *STOK BERHASIL DITAMBAHKAN*
 =======================

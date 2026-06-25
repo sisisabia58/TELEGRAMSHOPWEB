@@ -7,6 +7,9 @@ const ImagePath = process.env.IMAGE_PATH || "./logo.jpg"
 const ChannelLog = process.env.CHANNEL_LOG || ""
 const ChannelStore = process.env.CHANNEL_STORE || ""
 const CS = process.env.CS || ""
+const FeedChannel = process.env.FEED_CHANNEL || ""
+const FeedStockEnabled = process.env.FEED_STOCK_ENABLED !== "false"
+const FeedPurchaseEnabled = process.env.FEED_PURCHASE_ENABLED !== "false"
 const SUPABASE_URL = process.env.SUPABASE_URL || ""
 const SUPABASE_KEY = process.env.SUPABASE_KEY || ""
 const Pakasir = {
@@ -16,4 +19,4 @@ const Pakasir = {
 }
 const JamBackup = parseInt(process.env.JAM_BACKUP) || 5
 
-module.exports = { TokenBot, NamaBot, OwnerID, ImagePath, Pakasir, ChannelStore, CS, ChannelLog, JamBackup, SUPABASE_URL, SUPABASE_KEY }
+module.exports = { TokenBot, NamaBot, OwnerID, ImagePath, Pakasir, ChannelStore, CS, ChannelLog, FeedChannel, FeedStockEnabled, FeedPurchaseEnabled, JamBackup, SUPABASE_URL, SUPABASE_KEY }

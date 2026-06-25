@@ -89,6 +89,28 @@
                                 value="<%= settings.cs %>"
                                 placeholder="https://t.me/your_cs">
                         </div>
+
+                        <div class="setting-item">
+                            <label class="setting-label">CHANNEL_FEED (Update Feed Channel)</label>
+                            <div class="setting-description">Username atau link channel Telegram untuk update feed publik (stok baru, notifikasi pembelian). Contoh: @your_channel_feed atau https://t.me/your_channel_feed</div>
+                            <input type="text" name="feedChannel" class="setting-input"
+                                value="<%= settings.feedChannel || '' %>"
+                                placeholder="@your_channel_feed atau https://t.me/your_channel_feed">
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label class="setting-label">Fitur Update Feed Publik</label>
+                            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 5px;">
+                                <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer;">
+                                    <input type="checkbox" name="feedStockEnabled" value="true" <%= settings.feedStockEnabled !== false ? 'checked' : '' %>>
+                                    Kirim notifikasi ke channel feed saat stok baru ditambahkan
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer;">
+                                    <input type="checkbox" name="feedPurchaseEnabled" value="true" <%= settings.feedPurchaseEnabled !== false ? 'checked' : '' %>>
+                                    Kirim notifikasi ke channel feed saat ada pembelian produk
+                                </label>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
@@ -111,7 +133,10 @@
             const data = {
                 channelLog: formData.get('channelLog') || '',
                 channelStore: formData.get('channelStore') || '',
-                cs: formData.get('cs') || ''
+                cs: formData.get('cs') || '',
+                feedChannel: formData.get('feedChannel') || '',
+                feedStockEnabled: formData.has('feedStockEnabled'),
+                feedPurchaseEnabled: formData.has('feedPurchaseEnabled')
             }
             try {
                 const response = await fetch('/api/settings/channel-contact', {
