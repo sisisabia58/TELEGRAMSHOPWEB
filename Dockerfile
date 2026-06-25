@@ -1,5 +1,4 @@
-# Use official Node.js long-term support image
-FROM node:18
+FROM node:20
 
 # Set working directory inside the container
 WORKDIR /usr/src/app

@@ -7937,7 +7937,7 @@ if (cmd.startsWith("addstok_confirm_")) {
   // Ambil produk untuk mendapatkan ID
   const { data: ProdukData } = await supabase
     .from("Produk")
-    .select("id")
+    .select("id, harga")
     .eq('kode', state.data.kode)
     .single()
   
