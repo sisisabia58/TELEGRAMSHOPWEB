@@ -1044,10 +1044,10 @@ async function generateQRBuffer(qrisString) {
 }
 
 async function createDepositTransaction(userId, username, firstName, jumlah, chatId) {
-  const { toMs } = require('ms')
+  const ms = require('ms')
   // Generate kode deposit unik
   const uniq = require("crypto").randomBytes(5).toString("hex").toUpperCase()
-  const time = Date.now() + toMs("10m")
+  const time = Date.now() + ms("10m")
   
   if (!Pakasir.project) {
     console.error("Pakasir project slug is not configured in .env");
