@@ -82,7 +82,7 @@
                                     <% products.forEach(p => { %>
                                         <tr>
                                             <td><strong><%= p.nama %></strong></td>
-                                            <td><%= p.grup ? '<span class="badge badge-success" style="background:#6c47ff;">' + p.grup + '</span>' : '<span style="color:#aaa;">—</span>' %></td>
+                                            <td><%-  p.grup ? '<span class="badge badge-success" style="background:#6c47ff;">' + p.grup + '</span>' : '<span style="color:#aaa;">—</span>' %></td>
                                             <td><code><%= p.kode %></code></td>
                                             <td><%= formatrupiah(p.harga) %></td>
                                             <td>
