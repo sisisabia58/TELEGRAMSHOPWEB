@@ -9769,11 +9769,29 @@ Status: *${dep.status.toUpperCase()}*
 
 if (cmd.startsWith("bataldeposit_")) {
   const kodeDeposit = cmd.replace("bataldeposit_", "")
+  
+  // Ambil data deposit untuk mendapatkan nominal agar bisa dicancel di Pakasir
+  const { data: dep } = await supabase
+    .from("Deposit")
+    .select("jumlah")
+    .eq('kode_deposit', kodeDeposit)
+    .single()
+    
+  if (dep) {
+    await pakasir.cancelTransaction({ orderId: kodeDeposit, amount: dep.jumlah })
+      .catch(err => console.error(`Error canceling transaction ${kodeDeposit} on Pakasir:`, err.message))
+  }
+
   await supabase
     .from("Deposit")
     .update({ status: 'failed' })
     .eq('kode_deposit', kodeDeposit)
     .eq('user_id', query.from.id)
+
+  await supabase
+    .from("Payment")
+    .update({ status: 'canceled', updated_at: new Date().toISOString() })
+    .eq('order_id', kodeDeposit)
   
   await bot.answerCallbackQuery(query.id, { text: "✅ Deposit dibatalkan", show_alert: true })
   await bot.deleteMessage(query.message.chat.id, query.message.message_id)
