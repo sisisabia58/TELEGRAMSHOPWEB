@@ -14,8 +14,9 @@ process.emitWarning = function(warning, ...args) {
 process.env.NTBA_FIX_350 = '1'
 
 const { createClient } = require('@supabase/supabase-js')
-const { TokenBot, NamaBot, OwnerID, ImagePath, Okeconnect, ChannelLog, ChannelStore, CS, SUPABASE_URL, SUPABASE_KEY } = require("./settings.js")
+const { TokenBot, NamaBot, OwnerID, ImagePath, Pakasir, ChannelLog, ChannelStore, CS, SUPABASE_URL, SUPABASE_KEY } = require("./settings.js")
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+const pakasir = require('./pakasir.js')
 
 // Channel & Contact: dipakai bot (bisa di-override dari DB via dashboard)
 const channelContact = {
@@ -104,55 +105,6 @@ let editKategoriState = {}
 // Tracking reserved stocks untuk mencegah concurrent purchase
 let reservedStocks = {} // Format: { stokId: { userId, reservedAt, trxid } }
 const RESERVATION_TIMEOUT = 10 * 60 * 1000 // 10 menit dalam milliseconds
-
-// Helper functions for Okeconnect dynamic QRIS generation
-function calculateCRC16(data) {
-  let crc = 0xFFFF;
-  for (let i = 0; i < data.length; i++) {
-    crc ^= (data.charCodeAt(i) << 8);
-    for (let j = 0; j < 8; j++) {
-      if (crc & 0x8000) {
-        crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
-      } else {
-        crc = (crc << 1) & 0xFFFF;
-      }
-    }
-  }
-  return crc.toString(16).toUpperCase().padStart(4, '0');
-}
-
-function convertStaticToDynamicQRIS(staticQris, amount) {
-  // Remove the last 4 characters (CRC) from static QRIS
-  let qris = staticQris.trim().slice(0, -4);
-  
-  // Change static to dynamic by replacing '010211' with '010212'
-  let step1 = qris.replace("010211", "010212");
-  
-  // Split the string at '5802ID' to insert amount
-  let step2 = step1.split("5802ID");
-  if (step2.length < 2) return staticQris;
-  
-  const amountStr = amount.toString();
-  const amountLength = amountStr.length.toString().padStart(2, '0');
-  const tag54 = `54${amountLength}${amountStr}`;
-  
-  // Reattach country code tag (5802ID)
-  const uang = tag54 + "5802ID";
-  
-  // Reconstruct the QRIS string
-  const fix = step2[0].trim() + uang + step2[1].trim();
-  
-  // Append new CRC16
-  return fix + calculateCRC16(fix);
-}
-
-function generateUniqueCode(min = 1, max = 99) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-async function generateQRBuffer(qrisString) {
-  return await QRCode.toBuffer(qrisString, { type: 'png', margin: 2, scale: 8 });
-}
 
 // Helper function to detect product format
 function detectProductFormat(productData, manualFormat = null) {
@@ -1043,40 +995,6 @@ async function sendBannerMessage(chatId, captionText, options = {}) {
 async function generateQRBuffer(qrisString) {
   const QRCode = require('qrcode');
   return await QRCode.toBuffer(qrisString, { type: 'png', margin: 2, scale: 8 });
-}
-
-// ============================================
-// CRC16-CCITT CHECKSUM HELPER
-// Calculates CRC16 checksum for QRIS string
-// ============================================
-function calculateCRC16(data) {
-  const polynomial = 0x1021;
-  let crc = 0xFFFF;
-  for (let i = 0; i < data.length; i++) {
-    crc ^= (data.charCodeAt(i) << 8);
-    for (let j = 0; j < 8; j++) {
-      crc = (crc & 0x8000) ? ((crc << 1) ^ polynomial) : (crc << 1);
-    }
-  }
-  return (crc & 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
-}
-
-// ============================================
-// STATIC TO DYNAMIC QRIS CONVERTER
-// Injects payment amount and returns dynamic QRIS string
-// ============================================
-function convertStaticToDynamicQRIS(staticQris, amount) {
-  const parts = staticQris.split("5802ID");
-  if (parts.length < 2) return staticQris;
-  
-  const amountStr = amount.toString();
-  const amountLength = amountStr.length.toString().padStart(2, '0');
-  const tag54 = `54${amountLength}${amountStr}`;
-  
-  const dataBeforeCRC = parts[0] + tag54 + "5802ID" + parts[1].slice(0, -4);
-  const newCRC = calculateCRC16(dataBeforeCRC);
-  
-  return dataBeforeCRC + newCRC;
 }
 
 bot.onText(/\/ownermenu/, async (msg) => {
@@ -3227,9 +3145,9 @@ Jumlah yang Anda masukkan: \`${text}\`
   const uniq = require("crypto").randomBytes(5).toString("hex").toUpperCase()
   const time = Date.now() + toMs("10m")
   
-  // Request QRIS via Okeconnect Mutasi API
-  if (!Okeconnect.staticQrisString) {
-    console.error("Okeconnect Static QRIS String is not configured in .env");
+  // Request QRIS via Pakasir
+  if (!Pakasir.project) {
+    console.error("Pakasir project slug is not configured in .env");
     return await bot.sendMessage(msg.from.id, `❌ *ERROR*
 =======================
 Sistem QRIS belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`, {
@@ -3237,8 +3155,8 @@ Sistem QRIS belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi 
     })
   }
 
-  if (!Okeconnect.merchantCode || !Okeconnect.apiKey) {
-    console.error("Okeconnect Merchant Code or API Key is not configured in .env");
+  if (!Pakasir.apiKey) {
+    console.error("Pakasir API key is not configured in .env");
     return await bot.sendMessage(msg.from.id, `❌ *ERROR*
 =======================
 Sistem verifikasi pembayaran belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`, {
@@ -3247,31 +3165,45 @@ Sistem verifikasi pembayaran belum dikonfigurasi dengan benar oleh pemilik toko.
   }
 
   try {
-    // Generate unique code (1-99)
-    const uniqueCode = generateUniqueCode();
-    const totalAmount = jumlah + uniqueCode;
+    // Create a Pakasir QRIS transaction (order_id = kode deposit)
+    const pay = await pakasir.createTransaction({ orderId: uniq, amount: jumlah });
+    const totalAmount = pay.total_payment; // amount + Pakasir fee (paid by the customer)
+    const imageBuffer = await generateQRBuffer(pay.payment_number);
 
-    // Generate dynamic QRIS locally using static QRIS string and totalAmount
-    const qrisPayload = convertStaticToDynamicQRIS(Okeconnect.staticQrisString, totalAmount);
-    const imageBuffer = await generateQRBuffer(qrisPayload);
-
-    // Simpan ke database (fee: uniqueCode, total: totalAmount)
+    // Simpan ke database (fee: Pakasir fee, total: total_payment)
     await supabase
       .from("Deposit")
       .insert([{
         user_id: msg.from.id,
         jumlah: jumlah,
-        fee: uniqueCode,
+        fee: pay.fee || 0,
         total: totalAmount,
         status: 'pending',
         kode_deposit: uniq,
         metode: 'qris'
       }])
+
+    // Payment coordination row (webhook + polling fallback)
+    await supabase
+      .from("Payment")
+      .insert([{
+        order_id: uniq,
+        type: 'deposit',
+        user_id: msg.from.id,
+        amount: jumlah,
+        fee: pay.fee || 0,
+        total: totalAmount,
+        status: 'pending',
+        payment_method: 'qris',
+        qr_string: pay.payment_number,
+        expired_at: pay.expired_at || null,
+        meta: { jumlah: jumlah }
+      }])
     
     let txx = `💳 *TOP UP SALDO*
 =======================
 💰 *Jumlah:* ${formatrupiah(jumlah)}
-💸 *Kode Unik:* ${formatrupiah(uniqueCode)}
+💸 *Fee:* ${formatrupiah(pay.fee || 0)}
 💵 *Total Bayar:* ${formatrupiah(totalAmount)}
 🆔 *Kode Deposit:* \`${uniq}\`
 ⏰ *Expired:* 10 menit
@@ -3293,9 +3225,9 @@ Scan QRIS diatas untuk melakukan pembayaran.`
       });
     });
     
-    // Polling status pembayaran dari Mutasi API
+    // Detect payment: webhook flips Payment.status to 'paid'; poll Pakasir as fallback.
     let statusP = false
-    console.log(`[Deposit Polling] Memulai pemantauan mutasi QRIS untuk deposit ${uniq}. Target nominal: Rp ${totalAmount}`);
+    console.log(`[Deposit Polling] Memantau pembayaran Pakasir untuk deposit ${uniq}. Nominal: Rp ${totalAmount}`);
     
     while (!statusP) {
       await sleep(10000)
@@ -3306,6 +3238,12 @@ Scan QRIS diatas untuk melakukan pembayaran.`
           .from("Deposit")
           .update({ status: 'expired' })
           .eq('kode_deposit', uniq)
+        await supabase
+          .from("Payment")
+          .update({ status: 'expired' })
+          .eq('order_id', uniq)
+          .eq('status', 'pending')
+        pakasir.cancelTransaction({ orderId: uniq, amount: jumlah }).catch(() => {})
         await retryBotOperation(async () => {
           return await bot.deleteMessage(ff.chat.id, ff.message_id);
         }).catch(err => {
@@ -3325,80 +3263,73 @@ Kode Deposit: \`${uniq}\`
       }
       
       try {
-        const checkUrl = `https://gateway.okeconnect.com/api/mutasi/qris/${Okeconnect.merchantCode}/${Okeconnect.apiKey}`;
-        console.log(`[Deposit Polling] Mengirim request GET ke: https://gateway.okeconnect.com/api/mutasi/qris/${Okeconnect.merchantCode}/***`);
-        
-        let checkRes = await axios.get(checkUrl, {
-          timeout: 30000 // 30 detik timeout
-        })
-        const result = checkRes.data;
-        
-        console.log(`[Deposit Polling] Response API Mutasi:`, JSON.stringify(result));
-        
-        if (result && result.data && result.data.length > 0) {
-          console.log(`[Deposit Polling] Ditemukan ${result.data.length} baris data mutasi.`);
-          
-          // Cari mutasi yang nominalnya pas
-          const match = result.data.find(trx => {
-            const amountVal = trx.amount || trx.nominal || trx.jumlah;
-            const parsedAmount = amountVal ? Math.round(parseFloat(amountVal)) : 0;
-            console.log(`- Membandingkan mutasi: ID=${trx.id || 'N/A'}, Nominal API=${amountVal} (${parsedAmount}), Target=${totalAmount}`);
-            return parsedAmount === totalAmount;
+        // Webhook may have already marked it paid; otherwise ask Pakasir directly.
+        let isPaid = false
+        const { data: payRow } = await supabase
+          .from("Payment").select("status").eq("order_id", uniq).single()
+        if (payRow && (payRow.status === 'paid' || payRow.status === 'fulfilled')) {
+          isPaid = true
+        } else {
+          const trxDetail = await pakasir.getTransactionStatus({ orderId: uniq, amount: jumlah })
+          if (trxDetail && trxDetail.status === 'completed') isPaid = true
+        }
+
+        if (isPaid) {
+          // Atomically claim fulfillment so the webhook/cron cannot double-credit.
+          const { data: claimed } = await supabase
+            .from("Payment")
+            .update({ status: 'fulfilled' })
+            .eq('order_id', uniq)
+            .in('status', ['pending', 'paid'])
+            .select()
+
+          statusP = true
+          if (!claimed || claimed.length === 0) break;
+
+          await supabase
+            .from("Deposit")
+            .update({ status: 'success' })
+            .eq('kode_deposit', uniq)
+
+          // Credit the base amount requested (Pakasir fee is paid on top by the customer).
+          await addSaldo(msg.from.id, jumlah)
+
+          await retryBotOperation(async () => {
+            return await bot.deleteMessage(ff.chat.id, ff.message_id);
+          }).catch(err => {
+            if (err.response?.body?.error_code !== 400) {
+              console.warn('Error deleting message:', err.message);
+            }
           });
-          
-          if (match) {
-            console.log(`[Deposit Polling] MATCH FOUND! Pembayaran terdeteksi:`, JSON.stringify(match));
-            statusP = true
-            
-            // Update status deposit
-            await supabase
-              .from("Deposit")
-              .update({ status: 'success' })
-              .eq('kode_deposit', uniq)
-            
-            // Tambahkan saldo ke user (ditambahkan totalAmount agar kode unik tidak hangus)
-            await addSaldo(msg.from.id, totalAmount)
-            
-            await retryBotOperation(async () => {
-              return await bot.deleteMessage(ff.chat.id, ff.message_id);
-            }).catch(err => {
-              if (err.response?.body?.error_code !== 400) {
-                console.warn('Error deleting message:', err.message);
-              }
-            });
-            const saldoBaru = await cekSaldo(msg.from.id)
-            
-            await sendMessage(msg.from.id, `✅ *DEPOSIT BERHASIL*
+          const saldoBaru = await cekSaldo(msg.from.id)
+
+          await sendMessage(msg.from.id, `✅ *DEPOSIT BERHASIL*
 =======================
 💰 *Jumlah:* ${formatrupiah(jumlah)}
-💸 *Kode Unik:* ${formatrupiah(uniqueCode)}
-💵 *Total Deposit:* ${formatrupiah(totalAmount)}
+💸 *Fee:* ${formatrupiah(pay.fee || 0)}
+💵 *Total Bayar:* ${formatrupiah(totalAmount)}
 🆔 *Kode Deposit:* \`${uniq}\`
 💵 *Saldo Sekarang:* ${formatrupiah(saldoBaru)}
 =======================
 💡 Saldo telah ditambahkan ke akun Anda!`)
-            
-            // Notifikasi ke owner
-            await bot.sendMessage(channelContact.channelLog, `💰 *DEPOSIT BARU*
+
+          await bot.sendMessage(channelContact.channelLog, `💰 *DEPOSIT BARU*
 =======================
 User: @${msg.from.username || msg.from.first_name}
 Jumlah: ${formatrupiah(jumlah)}
-Kode Unik: ${formatrupiah(uniqueCode)}
+Fee: ${formatrupiah(pay.fee || 0)}
 Total: ${formatrupiah(totalAmount)}
 Kode: \`${uniq}\`
 Saldo Baru: ${formatrupiah(saldoBaru)}
 =======================`, {
-              parse_mode: "Markdown"
-            })
-          }
-        } else {
-          console.log(`[Deposit Polling] Tidak ada mutasi transaksi masuk atau field data kosong.`);
+            parse_mode: "Markdown"
+          })
         }
       } catch (err) {
         if (err.response) {
-          console.error(`[Deposit Polling] Error API Okeconnect (HTTP ${err.response.status}):`, JSON.stringify(err.response.data));
+          console.error(`[Deposit Polling] Error API Pakasir (HTTP ${err.response.status}):`, JSON.stringify(err.response.data));
         } else {
-          console.error(`[Deposit Polling] Gagal menghubungi API Okeconnect:`, err.message);
+          console.error(`[Deposit Polling] Gagal menghubungi API Pakasir:`, err.message);
         }
       }
     }
@@ -6581,24 +6512,38 @@ if (cmd === "bayar") {
     let uniq = require("crypto").randomBytes(5).toString("hex").toUpperCase()
     let time = Date.now() + toMs("10m")
     
-    if (!Okeconnect.staticQrisString) {
-      console.error("Okeconnect Static QRIS String is not configured in .env");
+    if (!Pakasir.project) {
+      console.error("Pakasir project slug is not configured in .env");
       return await sendMessage(query.from.id, `❌ *ERROR*\n=======================\nSistem QRIS belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`)
     }
 
-    if (!Okeconnect.merchantCode || !Okeconnect.apiKey) {
-      console.error("Okeconnect Merchant Code or API Key is not configured in .env");
+    if (!Pakasir.apiKey) {
+      console.error("Pakasir API key is not configured in .env");
       return await sendMessage(query.from.id, `❌ *ERROR*\n=======================\nSistem verifikasi pembayaran belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`)
     }
 
-    // Generate unique code (1-99)
-    const uniqueCode = generateUniqueCode();
-    const totalAmount = harga + uniqueCode;
-
     try {
-      // Generate dynamic QRIS locally using static QRIS string and totalAmount
-      const qrisPayload = convertStaticToDynamicQRIS(Okeconnect.staticQrisString, totalAmount);
-      const imageBuffer = await generateQRBuffer(qrisPayload);
+      // Create a Pakasir QRIS transaction (order_id = trx id)
+      const pay = await pakasir.createTransaction({ orderId: Data.trxid, amount: harga });
+      const totalAmount = pay.total_payment; // amount + Pakasir fee (paid by the customer)
+      const imageBuffer = await generateQRBuffer(pay.payment_number);
+
+      // Payment coordination row (webhook + polling fallback)
+      await supabase
+        .from("Payment")
+        .insert([{
+          order_id: Data.trxid,
+          type: 'purchase',
+          user_id: query.from.id,
+          amount: harga,
+          fee: pay.fee || 0,
+          total: totalAmount,
+          status: 'pending',
+          payment_method: 'qris',
+          qr_string: pay.payment_number,
+          expired_at: pay.expired_at || null,
+          meta: { kode: Data.kode, jumlah: Data.jumlah, voucher: Data.voucher || null, selectedStokIds: Data.selectedStokIds || [] }
+        }])
 
       let txx = `💸 *PEMBAYARAN OTOMATIS*
 =======================
@@ -6606,7 +6551,7 @@ Trx ID: *${Data.trxid}*
 Produk: *${Produk[np].nama}*
 Harga: *${formatrupiah(Produk[np].harga)}*
 Jumlah Beli: *${Data.jumlah}*
-Kode Unik: *${formatrupiah(uniqueCode)}*
+Fee: *${formatrupiah(pay.fee || 0)}*
 Total Harga: *${formatrupiah(totalAmount)}*
 =======================
 ⚠️ *PENTING:* Transfer harus sama persis sejumlah *${formatrupiah(totalAmount)}* agar pembayaran dapat terdeteksi otomatis!
@@ -6654,31 +6599,32 @@ Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik s
             }
           });
           await sendMessage(query.from.id, `Pesananmu telah expired, harap pesan kembali!`)
+          await supabase.from("Payment").update({ status: 'expired' }).eq('order_id', Data.trxid).eq('status', 'pending')
+          pakasir.cancelTransaction({ orderId: Data.trxid, amount: harga }).catch(() => {})
           fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
           break;
         }
         try {
-          const checkUrl = `https://gateway.okeconnect.com/api/mutasi/qris/${Okeconnect.merchantCode}/${Okeconnect.apiKey}`;
-          console.log(`[Checkout Polling] Mengirim request GET ke: https://gateway.okeconnect.com/api/mutasi/qris/${Okeconnect.merchantCode}/***`);
-          
-          let checkRes = await axios.get(checkUrl, {
-            timeout: 30000 // 30 detik timeout
-          })
-          const result = checkRes.data;
-          
-          console.log(`[Checkout Polling] Response API Mutasi:`, JSON.stringify(result));
-          
-          let match = null;
-          if (result && result.data && result.data.length > 0) {
-            console.log(`[Checkout Polling] Ditemukan ${result.data.length} baris data mutasi.`);
-            match = result.data.find(trx => {
-              const amountVal = trx.amount || trx.nominal || trx.jumlah;
-              const parsedAmount = amountVal ? Math.round(parseFloat(amountVal)) : 0;
-              console.log(`- Membandingkan mutasi: ID=${trx.id || 'N/A'}, Nominal API=${amountVal} (${parsedAmount}), Target=${totalAmount}`);
-              return parsedAmount === totalAmount;
-            });
+          // Webhook may have already marked it paid; otherwise ask Pakasir directly.
+          let match = false
+          const { data: payRow } = await supabase
+            .from("Payment").select("status").eq("order_id", Data.trxid).single()
+          if (payRow && (payRow.status === 'paid' || payRow.status === 'fulfilled')) {
+            match = true
           } else {
-            console.log(`[Checkout Polling] Tidak ada mutasi transaksi masuk atau field data kosong.`);
+            const trxDetail = await pakasir.getTransactionStatus({ orderId: Data.trxid, amount: harga })
+            if (trxDetail && trxDetail.status === 'completed') match = true
+          }
+
+          // Atomically claim fulfillment so the webhook/cron cannot double-deliver.
+          if (match) {
+            const { data: claimed } = await supabase
+              .from("Payment")
+              .update({ status: 'fulfilled' })
+              .eq('order_id', Data.trxid)
+              .in('status', ['pending', 'paid'])
+              .select()
+            if (!claimed || claimed.length === 0) { match = false; statusP = true }
           }
           
           if (match) {
@@ -6828,7 +6774,7 @@ let tggl = new Date().toISOString()
       
       // Calculate discount amount if voucher used
       const discountAmount = vcr && !vcr.user.some(a => a === query.from.id) && vcr.limit > 0 ? vcr.potongan : 0
-      const totalHarga = (dy.fee || 0) + harga
+      const totalHarga = (pay.fee || 0) + harga
       
       // Build completion message
       // Jika pembelian lebih dari 2, tidak tampilkan preview produk di caption
@@ -6846,7 +6792,7 @@ let tggl = new Date().toISOString()
 📊 *Jumlah:* ${Data.jumlah} item
 💰 *Harga Satuan:* ${formatrupiah(Produk[np].harga)}
 ${discountAmount > 0 ? `🎟️ *Voucher:* ${Data.voucher}\n💸 *Potongan:* ${formatrupiah(discountAmount)}` : ''}
-💵 *Fee Admin:* ${formatrupiah(dy.fee || 0)}
+💵 *Fee Admin:* ${formatrupiah(pay.fee || 0)}
 ━━━━━━━━━━━━━━━━━━━━
 💎 *TOTAL BAYAR:* ${formatrupiah(totalHarga)}
 ━━━━━━━━━━━━━━━━━━━━
@@ -6983,7 +6929,7 @@ Silakan hubungi CS untuk mendapatkan produk Anda.`)
                 },
                 jumlah: Data.jumlah,
                 harga: harga,
-                fee: dy.fee || 0,
+                fee: pay.fee || 0,
                 total: totalHarga,
                 tanggal: tggl,
                 voucher: Data.voucher || null
@@ -7000,7 +6946,7 @@ Trx ID: *${Data.trxid}*
 Produk: *${Produk[np].nama}*
 Harga: *${formatrupiah(Produk[np].harga)}*
 Jumlah Beli: *${Data.jumlah}*
-Fee: *${formatrupiah(dy.fee || 0)}*
+Fee: *${formatrupiah(pay.fee || 0)}*
 Total Harga: *${formatrupiah(totalHarga)}*
 ${discountAmount > 0 ? `Voucher: ${Data.voucher} (Potongan: ${formatrupiah(discountAmount)})` : ''}
 Tanggal: *${formatWIB(tggl)}*
@@ -7188,11 +7134,11 @@ Silahkan pilih menu dibawah ini!`, {
           }
         } catch (err) {
           if (err.response) {
-            console.error(`[Checkout Polling] Error API Okeconnect (HTTP ${err.response.status}):`, JSON.stringify(err.response.data));
+            console.error(`[Checkout Polling] Error API Pakasir (HTTP ${err.response.status}):`, JSON.stringify(err.response.data));
           } else if (err.code === 'ETIMEDOUT' || err.code === 'ECONNRESET') {
             console.log(`[Checkout Polling] Connection timeout/reset: ${err.message}. Continue polling...`);
           } else {
-            console.error(`[Checkout Polling] Gagal menghubungi API Okeconnect:`, err.message);
+            console.error(`[Checkout Polling] Gagal menghubungi API Pakasir:`, err.message);
           }
         }
       }
@@ -11573,9 +11519,82 @@ Terjadi kesalahan saat membaca file:
 
 // Startup Diagnostics
 console.log("==================================================");
-console.log("🔒 [Okeconnect Init] Memeriksa Konfigurasi Payment Gateway:");
-console.log(`- Merchant Code: ${Okeconnect.merchantCode ? Okeconnect.merchantCode.substring(0, 4) + '***' : '⚠️ BELUM DIKONFIGURASI'}`);
-console.log(`- API Key (dari PIN/Env): ${Okeconnect.apiKey ? 'Terpasang (Panjang: ' + Okeconnect.apiKey.length + ')' : '⚠️ BELUM DIKONFIGURASI'}`);
-console.log(`- Static QRIS String: ${Okeconnect.staticQrisString ? Okeconnect.staticQrisString.substring(0, 15) + '...' : '⚠️ BELUM DIKONFIGURASI'}`);
+console.log("🔒 [Pakasir Init] Memeriksa Konfigurasi Payment Gateway:");
+console.log(`- Project Slug: ${Pakasir.project ? Pakasir.project : '⚠️ BELUM DIKONFIGURASI'}`);
+console.log(`- API Key: ${Pakasir.apiKey ? 'Terpasang (Panjang: ' + Pakasir.apiKey.length + ')' : '⚠️ BELUM DIKONFIGURASI'}`);
+console.log(`- Base URL: ${Pakasir.baseUrl}`);
 console.log("==================================================");
 console.log("Bot Elevate Digital siap dijalankan!");
+
+// ============================================
+// RECONCILIATION CRON (Pakasir durability)
+// Catches payments the webhook marked 'paid' but the in-process polling
+// loop never fulfilled (e.g. the bot restarted mid-payment). Runs every
+// 2 minutes; fulfillment is idempotent via the guarded paid -> fulfilled
+// status transition, so it can never double-credit or double-deliver.
+// ============================================
+cron.schedule('*/2 * * * *', async () => {
+  try {
+    const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString()
+    const { data: rows } = await supabase
+      .from('Payment')
+      .select('*')
+      .eq('status', 'paid')
+      .lt('created_at', cutoff)
+      .limit(20)
+
+    if (!rows || rows.length === 0) return
+
+    for (const p of rows) {
+      // Claim atomically so we never double-fulfill.
+      const { data: claimed } = await supabase
+        .from('Payment')
+        .update({ status: 'fulfilled' })
+        .eq('order_id', p.order_id)
+        .eq('status', 'paid')
+        .select()
+      if (!claimed || claimed.length === 0) continue
+
+      if (p.type === 'deposit') {
+        await supabase.from('Deposit').update({ status: 'success' }).eq('kode_deposit', p.order_id)
+        await addSaldo(p.user_id, p.amount)
+        const saldoBaru = await cekSaldo(p.user_id)
+        await sendMessage(p.user_id, `✅ *DEPOSIT BERHASIL*
+=======================
+💰 *Jumlah:* ${formatrupiah(p.amount)}
+🆔 *Kode Deposit:* \`${p.order_id}\`
+💵 *Saldo Sekarang:* ${formatrupiah(saldoBaru)}
+=======================
+💡 Saldo telah ditambahkan ke akun Anda!`).catch(() => {})
+        if (channelContact.channelLog) {
+          await bot.sendMessage(channelContact.channelLog, `💰 *DEPOSIT (REKONSILIASI)*
+=======================
+User ID: \`${p.user_id}\`
+Jumlah: ${formatrupiah(p.amount)}
+Kode: \`${p.order_id}\`
+=======================`, { parse_mode: 'Markdown' }).catch(() => {})
+        }
+      } else if (p.type === 'purchase') {
+        // Product delivery needs the bot purchase context, so alert the owner to deliver manually.
+        if (channelContact.channelLog) {
+          await bot.sendMessage(channelContact.channelLog, `⚠️ *PEMBAYARAN PERLU TINDAK LANJUT*
+=======================
+Pembelian QRIS sudah DIBAYAR tapi belum terkirim otomatis (kemungkinan bot restart).
+Trx ID: \`${p.order_id}\`
+User ID: \`${p.user_id}\`
+Produk: \`${p.meta?.kode || '-'}\` x${p.meta?.jumlah || '-'}
+Total: ${formatrupiah(p.total)}
+=======================
+Mohon kirim produk secara manual.`, { parse_mode: 'Markdown' }).catch(() => {})
+        }
+        await sendMessage(p.user_id, `✅ *PEMBAYARAN DITERIMA*
+=======================
+Trx ID: \`${p.order_id}\`
+Pembayaran Anda sudah kami terima. Produk akan segera diproses. Jika belum diterima dalam beberapa menit, silakan hubungi CS.`).catch(() => {})
+      }
+    }
+  } catch (e) {
+    console.error('[Pakasir Reconcile] error:', e.message)
+  }
+})
+console.log("⏱️  [Pakasir Reconcile] Cron rekonsiliasi pembayaran aktif (setiap 2 menit).");

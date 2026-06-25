@@ -9,11 +9,11 @@ const ChannelStore = process.env.CHANNEL_STORE || ""
 const CS = process.env.CS || ""
 const SUPABASE_URL = process.env.SUPABASE_URL || ""
 const SUPABASE_KEY = process.env.SUPABASE_KEY || ""
-const Okeconnect = {
-  merchantCode: process.env.OKECONNECT_MERCHANT_CODE || process.env.OKECONNECT_MEMBER_ID || "",
-  apiKey: process.env.OKECONNECT_API_KEY || process.env.OKECONNECT_PIN || "",
-  staticQrisString: process.env.OKECONNECT_STATIC_QRIS_STRING || ""
+const Pakasir = {
+  project: process.env.PAKASIR_PROJECT || "",
+  apiKey: process.env.PAKASIR_API_KEY || "",
+  baseUrl: process.env.PAKASIR_BASE_URL || "https://app.pakasir.com"
 }
 const JamBackup = parseInt(process.env.JAM_BACKUP) || 5
 
-module.exports = { TokenBot, NamaBot, OwnerID, ImagePath, Okeconnect, ChannelStore, CS, ChannelLog, JamBackup, SUPABASE_URL, SUPABASE_KEY }
+module.exports = { TokenBot, NamaBot, OwnerID, ImagePath, Pakasir, ChannelStore, CS, ChannelLog, JamBackup, SUPABASE_URL, SUPABASE_KEY }

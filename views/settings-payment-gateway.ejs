@@ -185,26 +185,26 @@
                     </div>
                 </div>
                 
-                <!-- Okeconnect Settings -->
+                <!-- Pakasir Settings -->
                 <div class="card settings-section">
                     <div class="card-header">
-                        <h2 class="card-title">💳 Okeconnect Payment Gateway</h2>
+                        <h2 class="card-title">💳 Pakasir Payment Gateway</h2>
                     </div>
                     <div class="card-body">
                         <div class="gateway-info">
                             <h3>📋 Informasi Gateway</h3>
-                            <p><strong>Provider:</strong> Okeconnect</p>
-                            <p><strong>Metode:</strong> Dynamic QRIS (Pengecekan Mutasi)</p>
+                            <p><strong>Provider:</strong> Pakasir</p>
+                            <p><strong>Metode:</strong> QRIS (Webhook + Polling)</p>
                             <p><strong>Status:</strong> <span id="gateway-status"><%= settings.enabled ? '✅ Aktif' : '❌ Nonaktif' %></span></p>
                         </div>
                         
                         <div class="setting-item">
                             <label class="setting-label">API Key</label>
-                            <div class="setting-description">API Key dari dashboard Okeconnect (Menu Payment H2H -> Integrasi API).</div>
+                            <div class="setting-description">API Key dari halaman detail Proyek Pakasir.</div>
                             <div class="api-key-wrapper">
                                 <input type="password" name="apiKey" id="apiKeyInput" class="setting-input" 
                                     value="<%= settings.apiKey || '' %>" 
-                                    placeholder="Masukkan API Key Okeconnect">
+                                    placeholder="Masukkan API Key Pakasir">
                                 <button type="button" class="api-key-toggle" onclick="toggleApiKey()" aria-label="Toggle API Key visibility">
                                     👁️
                                 </button>
@@ -212,19 +212,19 @@
                         </div>
                         
                         <div class="setting-item">
-                            <label class="setting-label">Merchant Code</label>
-                            <div class="setting-description">Merchant Code / Member ID dari Okeconnect (contoh: OK2377235).</div>
-                            <input type="text" name="qrisChannel" class="setting-input" 
-                                value="<%= settings.qrisChannel || '' %>" 
-                                placeholder="Masukkan Merchant Code Okeconnect" required>
+                            <label class="setting-label">Project Slug</label>
+                            <div class="setting-description">Slug proyek dari dashboard Pakasir (contoh: depodomain).</div>
+                            <input type="text" name="project" class="setting-input" 
+                                value="<%= settings.project || '' %>" 
+                                placeholder="Masukkan Project Slug Pakasir" required>
                         </div>
                         
                         <div class="setting-item">
-                            <label class="setting-label">API Endpoint</label>
-                            <div class="setting-description">URL endpoint API Mutasi Okeconnect</div>
-                            <input type="url" name="apiEndpoint" class="setting-input" 
-                                value="<%= settings.apiEndpoint || 'https://gateway.okeconnect.com/api/mutasi/qris' %>" 
-                                placeholder="https://gateway.okeconnect.com/api/mutasi/qris" required>
+                            <label class="setting-label">Base URL</label>
+                            <div class="setting-description">Base URL API Pakasir (default: https://app.pakasir.com)</div>
+                            <input type="url" name="baseUrl" class="setting-input" 
+                                value="<%= settings.baseUrl || 'https://app.pakasir.com' %>" 
+                                placeholder="https://app.pakasir.com" required>
                         </div>
                         
                         <div class="setting-item">
@@ -304,8 +304,8 @@
             const data = {
                 enabled: formData.get('enabled') ? 'true' : 'false',
                 apiKey: formData.get('apiKey') || '',
-                qrisChannel: formData.get('qrisChannel') || 'QRISREALTIME',
-                apiEndpoint: formData.get('apiEndpoint') || 'https://ariepulsa.my.id/api/qrisrealtime',
+                project: formData.get('project') || '',
+                baseUrl: formData.get('baseUrl') || 'https://app.pakasir.com',
                 paymentTimeout: parseInt(formData.get('paymentTimeout')) || 10,
                 qrisEnabled: formData.get('qrisEnabled') ? 'true' : 'false',
                 saldoEnabled: formData.get('saldoEnabled') ? 'true' : 'false'

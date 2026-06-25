@@ -5,6 +5,7 @@ const { SUPABASE_URL, SUPABASE_KEY, NamaBot } = require('./settings.js')
 const path = require('path')
 const moment = require('moment-timezone')
 const fs = require('fs')
+const pakasir = require('./pakasir.js')
 
 const app = express()
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -17,6 +18,33 @@ app.set('views', path.join(__dirname, 'views'))
 app.use(express.static(path.join(__dirname, 'public')))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+
+// ============================================
+// PAKASIR PAYMENT WEBHOOK (public, no auth)
+// ============================================
+// Pakasir POSTs here when a payment completes. Webhooks are unsigned, so we
+// re-verify via the Transaction Detail API before marking the payment paid.
+// Fulfillment (deliver product / credit saldo) is performed by the bot
+// (index.js) polling/reconciliation, guarded by the Payment status transition.
+app.post('/webhook/pakasir', async (req, res) => {
+  try {
+    const { order_id, amount } = req.body || {}
+    if (!order_id) return res.sendStatus(400)
+    const trx = await pakasir.getTransactionStatus({ orderId: order_id, amount })
+    if (trx && trx.status === 'completed') {
+      await supabase
+        .from('Payment')
+        .update({ status: 'paid', updated_at: new Date().toISOString() })
+        .eq('order_id', order_id)
+        .eq('status', 'pending')
+      console.log(`[Pakasir Webhook] order ${order_id} marked paid`)
+    }
+    res.sendStatus(200)
+  } catch (e) {
+    console.error('[Pakasir Webhook] error:', e.message)
+    res.sendStatus(200)
+  }
+})
 
 // Session configuration
 const session = require('express-session')
@@ -4392,9 +4420,9 @@ async function getPaymentGatewaySettings() {
       .select('*')
       .in('setting_key', [
         'payment_gateway_enabled',
+        'payment_gateway_project',
         'payment_gateway_api_key',
-        'payment_gateway_qris_channel',
-        'payment_gateway_api_endpoint',
+        'payment_gateway_base_url',
         'payment_gateway_timeout',
         'payment_gateway_qris_enabled',
         'payment_gateway_saldo_enabled'
@@ -4406,13 +4434,13 @@ async function getPaymentGatewaySettings() {
     })
     
     // Fallback ke .env jika tidak ada di database
-    const { Okeconnect } = require('./settings.js')
+    const { Pakasir } = require('./settings.js')
     
     return {
       enabled: settingsMap.payment_gateway_enabled?.value !== false,
-      apiKey: settingsMap.payment_gateway_api_key?.value || Okeconnect.apiKey || '',
-      qrisChannel: settingsMap.payment_gateway_qris_channel?.value || Okeconnect.merchantCode || '',
-      apiEndpoint: settingsMap.payment_gateway_api_endpoint?.value || 'https://gateway.okeconnect.com/api/mutasi/qris',
+      project: settingsMap.payment_gateway_project?.value || Pakasir.project || '',
+      apiKey: settingsMap.payment_gateway_api_key?.value || Pakasir.apiKey || '',
+      baseUrl: settingsMap.payment_gateway_base_url?.value || Pakasir.baseUrl || 'https://app.pakasir.com',
       paymentTimeout: parseInt(settingsMap.payment_gateway_timeout?.value) || 10,
       qrisEnabled: settingsMap.payment_gateway_qris_enabled?.value !== false,
       saldoEnabled: settingsMap.payment_gateway_saldo_enabled?.value !== false
@@ -4420,12 +4448,12 @@ async function getPaymentGatewaySettings() {
   } catch (error) {
     console.error('Error getting payment gateway settings:', error)
     // Return defaults
-    const { Okeconnect } = require('./settings.js')
+    const { Pakasir } = require('./settings.js')
     return {
       enabled: true,
-      apiKey: Okeconnect.apiKey || '',
-      qrisChannel: Okeconnect.merchantCode || '',
-      apiEndpoint: 'https://gateway.okeconnect.com/api/mutasi/qris',
+      project: Pakasir.project || '',
+      apiKey: Pakasir.apiKey || '',
+      baseUrl: Pakasir.baseUrl || 'https://app.pakasir.com',
       paymentTimeout: 10,
       qrisEnabled: true,
       saldoEnabled: true
@@ -5342,9 +5370,9 @@ app.post('/api/settings/payment-gateway', isAuthenticated, async (req, res) => {
   try {
     const {
       enabled,
+      project,
       apiKey,
-      qrisChannel,
-      apiEndpoint,
+      baseUrl,
       paymentTimeout,
       qrisEnabled,
       saldoEnabled
@@ -5364,16 +5392,16 @@ app.post('/api/settings/payment-gateway', isAuthenticated, async (req, res) => {
       setting_value: { value: apiKey || '' }
     })
     
-    // QRIS Channel
+    // Project Slug
     updates.push({
-      setting_key: 'payment_gateway_qris_channel',
-      setting_value: { value: qrisChannel || '' }
+      setting_key: 'payment_gateway_project',
+      setting_value: { value: project || '' }
     })
     
-    // API Endpoint
+    // Base URL
     updates.push({
-      setting_key: 'payment_gateway_api_endpoint',
-      setting_value: { value: apiEndpoint || 'https://gateway.okeconnect.com/api/mutasi/qris' }
+      setting_key: 'payment_gateway_base_url',
+      setting_value: { value: baseUrl || 'https://app.pakasir.com' }
     })
     
     // Payment Timeout
