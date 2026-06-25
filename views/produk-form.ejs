@@ -128,6 +128,18 @@
                                 <div class="form-help">Format manual produk. Jika kosong, akan auto-detect dari data stok. Gunakan | untuk memisahkan format dan contoh.</div>
                             </div>
 
+                            <div class="form-group">
+                                <label class="form-label">Grup Produk <span style="color:#888;font-weight:400;">(Opsional)</span></label>
+                                <input 
+                                    type="text" 
+                                    name="grup" 
+                                    class="form-input" 
+                                    value="<%= produk ? (produk.grup || '') : '' %>"
+                                    placeholder="Contoh: Netflix, ChatGPT"
+                                >
+                                <div class="form-help">Produk dengan nama grup yang sama ditampilkan bersama di bot sebagai satu entri. Kosongkan jika produk berdiri sendiri.</div>
+                            </div>
+
                             <div class="form-actions">
                                 <button type="submit" class="btn btn-primary">
                                     <%= action === 'tambah' ? '💾 Simpan Produk' : '💾 Update Produk' %>

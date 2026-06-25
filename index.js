@@ -371,7 +371,47 @@ async function generateReplyKeyboard(userId) {
   }
 }
 
-// Fungsi untuk mem-blur data stok, hanya menampilkan 4 karakter pertama
+// Collapse flat product list into grouped entries for display
+// Products with same grup are merged; null grup products are individual entries
+function getProductEntries(products) {
+  const entries = []
+  const grupMap = {} // grup_name -> entry index
+
+  products.forEach(product => {
+    const grup = product.grup ? product.grup.trim() : null
+    if (!grup) {
+      // Solo product — add as individual entry
+      entries.push({ type: 'single', product })
+    } else {
+      if (grupMap[grup] !== undefined) {
+        // Append to existing group entry
+        entries[grupMap[grup]].products.push(product)
+      } else {
+        // Create new group entry
+        grupMap[grup] = entries.length
+        entries.push({ type: 'group', grup, products: [product] })
+      }
+    }
+  })
+
+  return entries
+}
+
+// Get total stok count for a group entry
+function getEntryStokCount(entry) {
+  if (entry.type === 'single') {
+    return entry.product.stok_count !== undefined ? entry.product.stok_count : (entry.product.data?.length || 0)
+  }
+  return entry.products.reduce((sum, p) => sum + (p.stok_count !== undefined ? p.stok_count : (p.data?.length || 0)), 0)
+}
+
+// Get entry display name
+function getEntryName(entry) {
+  if (entry.type === 'single') return entry.product.nama
+  return entry.grup
+}
+
+
 function blurStokData(data) {
   if (!data || data.length === 0) return '****'
   if (data.length <= 4) return '****'
@@ -3058,7 +3098,6 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
   // Helper function untuk mendapatkan jumlah stok
   const getStokCount = (p) => {
     if (p.stok_count !== undefined) return p.stok_count
-    // Backward compatibility: jika belum ada stok_count, gunakan data.length
     return p.data?.length || 0
   }
   
@@ -3085,7 +3124,6 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
       sortedProducts.sort((a, b) => a.nama.localeCompare(b.nama))
       break
     default:
-      // Default: by name
       sortedProducts.sort((a, b) => a.nama.localeCompare(b.nama))
   }
   
@@ -3108,36 +3146,29 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
   } else if (filterOptions.status === 'tersedia') {
     sortedProducts = sortedProducts.filter(p => getStokCount(p) > 0)
   }
+
+  // Collapse into grouped entries
+  const allEntries = getProductEntries(sortedProducts)
   
-  // Calculate statistics
-  const totalProducts = sortedProducts.length
-  const produkTersedia = sortedProducts.filter(p => getStokCount(p) > 0).length
-  const produkHabis = sortedProducts.filter(p => getStokCount(p) === 0).length
-  const totalStok = sortedProducts.reduce((sum, p) => sum + getStokCount(p), 0)
-  const totalTerjual = sortedProducts.reduce((sum, p) => sum + (p.terjual || 0), 0)
-  const totalNilaiStok = sortedProducts.reduce((sum, p) => sum + (getStokCount(p) * (p.harga || 0)), 0)
-  
-  const totalPages = Math.ceil(sortedProducts.length / PRODUCTS_PER_PAGE)
+  const totalPages = Math.ceil(allEntries.length / PRODUCTS_PER_PAGE)
   const start = page * PRODUCTS_PER_PAGE
   const end = start + PRODUCTS_PER_PAGE
-  const items = sortedProducts.slice(start, end)
+  const items = allEntries.slice(start, end)
 
   if (callbackId) await bot.answerCallbackQuery(callbackId)
   
-  // Header yang simple sesuai screenshot
   let text = `*LIST PRODUCT*\n\n`
   
-  // Empty state jika tidak ada produk
   if (items.length === 0) {
     text += `📭 *Tidak ada produk*`
   } else {
-    items.forEach((p, idx) => {
+    items.forEach((entry, idx) => {
       const itemNum = start + idx + 1
-      const stokCount = getStokCount(p)
-      text += `[${itemNum}]. ${p.nama.toUpperCase()} ( ${stokCount} )\n`
+      const stokCount = getEntryStokCount(entry)
+      const name = getEntryName(entry).toUpperCase()
+      text += `[${itemNum}]. ${name} ( ${stokCount} )\n`
     })
     
-    // Informasi halaman dan waktu saat ini (WIB)
     const momentTz = require('moment-timezone')
     const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
     text += `\n📄 Halaman ${page + 1} / ${totalPages}\n`
@@ -3152,7 +3183,6 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
       { text: "🔙 Kembali", callback_data: "kembaliawal" }
     ])
   } else {
-    // Navigation buttons (⬅️ Sebelumnya / ➡️ Selanjutnya)
     const navButtons = []
     if (page > 0) {
       navButtons.push({ text: '⬅️ Sebelumnya', callback_data: `produk_prev:${page}_${filterOptions.filterKey || 'all'}` })
@@ -3164,14 +3194,12 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
       buttons.push(navButtons)
     }
     
-    // Popular products button
     if (filterOptions.filterKey === 'bestseller') {
       buttons.push([{ text: "📦 Semua Produk", callback_data: "daftarproduk" }])
     } else {
       buttons.push([{ text: "🔥 PRODUK POPULER", callback_data: "produk_filter_bestseller" }])
     }
     
-    // Back button
     buttons.push([{ text: "🔙 Kembali", callback_data: "kembaliawal" }])
   }
 
@@ -3188,6 +3216,85 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
     })
   } else {
     await sendBannerMessage(chatId, text, { reply_markup })
+  }
+}
+
+// Build and send group product card
+async function sendGroupCard(chatId, grupNama, msgId = null) {
+  try {
+    const momentTz = require('moment-timezone')
+    const formattedTime = momentTz().tz("Asia/Jakarta").format("HH:mm:ss")
+
+    // Fetch all products in this group with live stock
+    let { data: grupProducts } = await supabase
+      .from("Produk")
+      .select("*")
+      .eq("grup", grupNama)
+
+    if (!grupProducts || grupProducts.length === 0) {
+      return await bot.sendMessage(chatId, `⚠️ Grup "${grupNama}" tidak ditemukan.`)
+    }
+
+    // Attach live stock counts
+    grupProducts = await Promise.all(grupProducts.map(async (p) => {
+      const stok_count = await getStokCount(p.kode)
+      return { ...p, stok_count }
+    }))
+
+    // Sort by name
+    grupProducts.sort((a, b) => a.nama.localeCompare(b.nama))
+
+    const totalTerjual = grupProducts.reduce((sum, p) => sum + (p.terjual || 0), 0)
+
+    // S&K — use from first product
+    const snkRaw = grupProducts[0].snk || ''
+    const snkDisplay = snkRaw.startsWith('http')
+      ? `[${snkRaw.replace(/https?:\/\//, '')}](${snkRaw})`
+      : snkRaw
+
+    // Build variation lines
+    let variasiLines = ''
+    grupProducts.forEach(p => {
+      if (p.stok_count > 0) {
+        variasiLines += `*${p.nama}* - ${formatrupiah(p.harga)} (Stok ${p.stok_count})\n`
+      } else {
+        variasiLines += `~${p.nama}~ - ${formatrupiah(p.harga)} _(Habis)_\n`
+      }
+    })
+
+    const text = `📦 *${grupNama}*\n\n${totalTerjual.toLocaleString('id-ID')} Terjual\nS&K / T&C : ${snkDisplay}\n\n${variasiLines}\n🕒 Diperbarui pada ${formattedTime} WIB`
+
+    // Build inline buttons — only available variants get buttons
+    const varButtons = []
+    const availableProducts = grupProducts.filter(p => p.stok_count > 0)
+    for (let i = 0; i < availableProducts.length; i += 2) {
+      const row = [{ text: availableProducts[i].nama, callback_data: `pilih_variasi:${availableProducts[i].kode}` }]
+      if (availableProducts[i + 1]) {
+        row.push({ text: availableProducts[i + 1].nama, callback_data: `pilih_variasi:${availableProducts[i + 1].kode}` })
+      }
+      varButtons.push(row)
+    }
+
+    varButtons.push([{ text: "⟳ Perbarui", callback_data: `grup_refresh:${grupNama}` }])
+    varButtons.push([{ text: "← Kembali", callback_data: "daftarproduk" }])
+
+    const reply_markup = { inline_keyboard: varButtons }
+
+    if (msgId) {
+      await bot.editMessageCaption(text, {
+        chat_id: chatId,
+        message_id: msgId,
+        parse_mode: "Markdown",
+        reply_markup
+      }).catch(async () => {
+        await sendBannerMessage(chatId, text, { reply_markup })
+      })
+    } else {
+      await sendBannerMessage(chatId, text, { reply_markup })
+    }
+  } catch (error) {
+    console.error('Error sendGroupCard:', error)
+    await bot.sendMessage(chatId, `⚠️ Terjadi kesalahan saat memuat grup produk.`)
   }
 }
 
@@ -3856,7 +3963,79 @@ Pilih bulan untuk melihat rekap transaksi tahun *${tahun}*:`, {
   })
 })
 
+// /setgrup {kode} {grup_nama} — assign a product to a group
+bot.onText(/\/setgrup/, async (msg) => {
+  if (!isOwner(msg)) return await bot.sendMessage(msg.from.id, `⚠️ Hanya bisa diakses oleh owner!`)
+  const args = msg.text.trim().split(/\s+/).slice(1)
+  if (args.length < 2) {
+    return await bot.sendMessage(msg.from.id, `📝 *FORMAT SETGRUP*\n\n\`/setgrup {kode} {nama_grup}\`\n\n*Contoh:*\n\`/setgrup netflix7d Netflix\`\n\`/setgrup netflix30d Netflix\`\n\nProduk dengan nama grup yang sama akan ditampilkan bersama.`, { parse_mode: "Markdown" })
+  }
+  const kode = args[0].toLowerCase()
+  const grupNama = args.slice(1).join(' ')
+
+  const { data: produk } = await supabase.from("Produk").select("*").eq("kode", kode).single()
+  if (!produk) return await bot.sendMessage(msg.from.id, `❌ Produk dengan kode \`${kode}\` tidak ditemukan.`, { parse_mode: "Markdown" })
+
+  await supabase.from("Produk").update({ grup: grupNama }).eq("kode", kode)
+  await bot.sendMessage(msg.from.id, `✅ *GRUP BERHASIL DISET*\n\n📦 Produk: *${produk.nama}*\n🔖 Kode: \`${kode}\`\n📁 Grup: *${grupNama}*`, { parse_mode: "Markdown" })
+})
+
+// /unsetgrup {kode} — remove a product from its group
+bot.onText(/\/unsetgrup/, async (msg) => {
+  if (!isOwner(msg)) return await bot.sendMessage(msg.from.id, `⚠️ Hanya bisa diakses oleh owner!`)
+  const kode = msg.text.trim().split(/\s+/)[1]?.toLowerCase()
+  if (!kode) {
+    return await bot.sendMessage(msg.from.id, `📝 *FORMAT UNSETGRUP*\n\n\`/unsetgrup {kode}\`\n\n*Contoh:*\n\`/unsetgrup netflix7d\``, { parse_mode: "Markdown" })
+  }
+
+  const { data: produk } = await supabase.from("Produk").select("*").eq("kode", kode).single()
+  if (!produk) return await bot.sendMessage(msg.from.id, `❌ Produk dengan kode \`${kode}\` tidak ditemukan.`, { parse_mode: "Markdown" })
+
+  await supabase.from("Produk").update({ grup: null }).eq("kode", kode)
+  await bot.sendMessage(msg.from.id, `✅ *GRUP BERHASIL DIHAPUS*\n\n📦 Produk: *${produk.nama}*\n🔖 Kode: \`${kode}\`\n📁 Produk kini berdiri sendiri (tanpa grup).`, { parse_mode: "Markdown" })
+})
+
+// /listgrup — list all groups and their products
+bot.onText(/\/listgrup/, async (msg) => {
+  if (!isOwner(msg)) return await bot.sendMessage(msg.from.id, `⚠️ Hanya bisa diakses oleh owner!`)
+
+  let { data: Produk } = await supabase.from("Produk").select("nama, kode, grup").order("grup", { ascending: true })
+  if (!Produk || Produk.length === 0) return await bot.sendMessage(msg.from.id, `⚠️ Belum ada produk.`)
+
+  const grupMap = {}
+  const solo = []
+
+  Produk.forEach(p => {
+    if (p.grup) {
+      if (!grupMap[p.grup]) grupMap[p.grup] = []
+      grupMap[p.grup].push(p)
+    } else {
+      solo.push(p)
+    }
+  })
+
+  let text = `📁 *DAFTAR GRUP PRODUK*\n\n`
+
+  Object.keys(grupMap).sort().forEach(g => {
+    text += `*${g}:*\n`
+    grupMap[g].forEach(p => {
+      text += `  • ${p.nama} (\`${p.kode}\`)\n`
+    })
+    text += `\n`
+  })
+
+  if (solo.length > 0) {
+    text += `*📦 Produk Solo (tanpa grup):*\n`
+    solo.forEach(p => {
+      text += `  • ${p.nama} (\`${p.kode}\`)\n`
+    })
+  }
+
+  await bot.sendMessage(msg.from.id, text, { parse_mode: "Markdown" })
+})
+
 bot.onText(/\/stok/, async (msg) => {
+
   try {
     let { data: Produk } = await supabase
       .from("Produk")
@@ -3992,6 +4171,62 @@ bot.on("callback_query", async (query) => {
   let cmd = query.data
  //await bot.answerCallbackQuery(query.id, { text: "⏳ Harap tunggu sebentar..." })
 try {
+  // Handler: user picks a variation from a group card
+  if (cmd.startsWith('pilih_variasi:')) {
+    const kode = cmd.split(':')[1]
+    await bot.answerCallbackQuery(query.id)
+    
+    let { data: Produk } = await supabase.from("Produk").select("*")
+    const item = Produk ? Produk.find(p => p.kode.toLowerCase() === kode.toLowerCase()) : null
+    
+    if (!item) return await bot.sendMessage(query.from.id, `⚠️ Produk tidak ditemukan!`)
+    
+    const stokCount = await getStokCount(item.kode)
+    if (stokCount === 0) {
+      return await bot.answerCallbackQuery(query.id, { text: `⚠️ Stok ${item.nama} habis!`, show_alert: true })
+    }
+    
+    // Save kode to Trx file and proceed to quantity selection
+    const data = {
+      kode: item.kode,
+      jumlah: 1,
+      trxid: `TRX-${Date.now()}`,
+      voucher: '',
+      voucher_status: '',
+      variasi_nama: item.nama,
+      grup_nama: item.grup || null,
+      selectedStokIds: []
+    }
+    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(data, null, 2))
+    
+    // Proceed to product detail card (reuse existing flow)
+    const stokItems = await getStokItems(item.kode, 1)
+    const sampleData = stokItems.length > 0 ? [stokItems[0].data] : (item.data || [])
+    const formatDetected = detectProductFormat(sampleData, item.format)
+    
+    const momentTz = require('moment-timezone')
+    const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
+    
+    await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    await sendBannerMessage(query.from.id, `tambahkan jumlah pembelian:\n\n┌──────────────────\n│ • Produk : ${item.grup ? item.grup.toUpperCase() + ' — ' : ''}${item.nama.toUpperCase()}\n│ • Stok Terjual : ${item.terjual}\n│ • Desk : ${item.deskripsi}\n└──────────────────\n\n┌──────────────────\n│ Harga: ${formatrupiah(item.harga)} — (Stok ${stokCount})\n└──────────────────\n\nCurrent Date: ${formattedTime}`, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: `${item.nama} (${stokCount})`, callback_data: "lanjut" }],
+          [{ text: "🔙 Kembali", callback_data: "daftarproduk" }]
+        ]
+      }
+    })
+    return
+  }
+
+  // Handler: refresh a group card
+  if (cmd.startsWith('grup_refresh:')) {
+    const grupNama = cmd.slice('grup_refresh:'.length)
+    await bot.answerCallbackQuery(query.id, { text: '🔄 Memperbarui data...' })
+    await sendGroupCard(query.from.id, grupNama, query.message.message_id)
+    return
+  }
+
   if (cmd.startsWith('deposit_preset:')) {
     const amount = parseInt(cmd.split(':')[1])
     await bot.answerCallbackQuery(query.id, { text: `💸 Menyiapkan deposit Rp ${formatrupiah(amount)}` })
@@ -11019,64 +11254,49 @@ Belum ada produk yang terdaftar.
       !editKategoriState[msg.from.id]) {
     const productNumber = parseInt(text.trim())
     
-    // Ambil semua produk
-    let { data: Produk } = await supabase
-      .from("Produk")
-      .select("*")
+    // Fetch and sort products
+    let { data: Produk } = await supabase.from("Produk").select("*")
     
-    if (!Produk || Produk.length === 0) {
-      return // Tidak ada produk, biarkan handler lain menangani
-    }
+    if (!Produk || Produk.length === 0) return
     
-    // Hitung stok untuk setiap produk dan urutkan sesuai dengan yang ditampilkan di daftar produk
     const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
       const stokCount = await getStokCount(p.kode)
       return { ...p, stok_count: stokCount }
     }))
     
-    // Urutkan produk sesuai dengan yang ditampilkan di sendProductPage (default: by name)
     const sortedProducts = [...ProdukWithStok].sort((a, b) => a.nama.localeCompare(b.nama))
     
-    // Validasi nomor produk
-    if (productNumber < 1 || productNumber > sortedProducts.length) {
-      return await bot.sendMessage(msg.from.id, `❌ *Nomor Produk Tidak Valid*
-━━━━━━━━━━━━━━━━━━━━
-Nomor \`${productNumber}\` tidak ditemukan.
-
-💡 Gunakan nomor 1-${sortedProducts.length} sesuai dengan daftar produk.
-💡 Ketik \`/start\` atau klik "📦 Daftar Produk" untuk melihat daftar produk.`, {
+    // Collapse into entries (groups + solo)
+    const allEntries = getProductEntries(sortedProducts)
+    
+    if (productNumber < 1 || productNumber > allEntries.length) {
+      return await bot.sendMessage(msg.from.id, `❌ *Nomor Produk Tidak Valid*\n━━━━━━━━━━━━━━━━━━━━\nNomor \`${productNumber}\` tidak ditemukan.\n\n💡 Gunakan nomor 1-${allEntries.length} sesuai dengan daftar produk.\n💡 Ketik \`/start\` atau klik "📦 Daftar Produk" untuk melihat daftar produk.`, {
         parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "📦 Lihat Daftar Produk", callback_data: "daftarproduk" }]
-          ]
-        }
+        reply_markup: { inline_keyboard: [[{ text: "📦 Lihat Daftar Produk", callback_data: "daftarproduk" }]] }
       })
     }
     
-    // Ambil produk berdasarkan nomor (index dimulai dari 0, jadi kurangi 1)
-    const selectedProduct = sortedProducts[productNumber - 1]
+    const selectedEntry = allEntries[productNumber - 1]
     
-    if (!selectedProduct) {
+    // If it's a GROUP entry → show group card
+    if (selectedEntry.type === 'group') {
+      await sendGroupCard(msg.from.id, selectedEntry.grup)
       return
     }
     
+    // Solo product — continue with existing flow
+    const selectedProduct = selectedEntry.product
+    
+    if (!selectedProduct) return
+    
     // Cek apakah produk memiliki stok
     if (selectedProduct.stok_count === 0) {
-      return await bot.sendMessage(msg.from.id, `⚠️ *STOK KOSONG*
-━━━━━━━━━━━━━━━━━━━━
-Produk *${selectedProduct.nama}* tidak memiliki stok tersedia.
-
-━━━━━━━━━━━━━━━━━━━━
-💡 Silakan pilih produk lain.`, {
+      return await bot.sendMessage(msg.from.id, `⚠️ *STOK KOSONG*\n━━━━━━━━━━━━━━━━━━━━\nProduk *${selectedProduct.nama}* tidak memiliki stok tersedia.\n\n━━━━━━━━━━━━━━━━━━━━\n💡 Silakan pilih produk lain.`, {
         parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "📦 Lihat Produk Lain", callback_data: "daftarproduk" }]
-          ]
-        }
+        reply_markup: { inline_keyboard: [[{ text: "📦 Lihat Produk Lain", callback_data: "daftarproduk" }]] }
       })
     }
+
     
     // Simulasi klik produk dengan callback item:${kode}
     const itemName = selectedProduct.kode

@@ -1022,6 +1022,7 @@ app.post('/produk/tambah', isAuthenticated, async (req, res) => {
         deskripsi: deskripsi.trim(),
         snk: snk.trim(),
         format: format ? format.trim() : null,
+        grup: req.body.grup ? req.body.grup.trim() : null,
         data: [],
         terjual: 0
       }])
@@ -1163,7 +1164,8 @@ app.post('/produk/edit/:id', isAuthenticated, async (req, res) => {
         harga: hargaInt,
         deskripsi: deskripsi.trim(),
         snk: snk.trim(),
-        format: format ? format.trim() : null
+        format: format ? format.trim() : null,
+        grup: req.body.grup ? req.body.grup.trim() : null
       })
       .eq('id', id)
 
