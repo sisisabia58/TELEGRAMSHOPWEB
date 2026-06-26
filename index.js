@@ -1138,6 +1138,28 @@ async function sendBannerMessage(chatId, captionText, options = {}) {
 }
 
 // ============================================
+// EDIT OR SEND BANNER MESSAGE HELPER
+// Tries to edit existing photo caption in-place,
+// falls back to sending a new banner if message
+// doesn't exist or edit fails.
+// ============================================
+async function editOrSendBannerMessage(chatId, messageId, captionText, options = {}) {
+  if (messageId) {
+    try {
+      return await bot.editMessageCaption(captionText, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: "Markdown",
+        ...options
+      })
+    } catch (error) {
+      console.log(`[editOrSendBannerMessage] Edit failed, sending new banner: ${error.message}`)
+    }
+  }
+  return await sendBannerMessage(chatId, captionText, options)
+}
+
+// ============================================
 // GENERATE QR BUFFER HELPER
 // Generates a PNG buffer from a QRIS payload string
 // ============================================
@@ -4208,8 +4230,7 @@ try {
     const momentTz = require('moment-timezone')
     const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
     
-    await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-    await sendBannerMessage(query.from.id, `tambahkan jumlah pembelian:\n\n┌──────────────────\n│ • Produk : ${item.grup ? item.grup.toUpperCase() + ' — ' : ''}${item.nama.toUpperCase()}\n│ • Stok Terjual : ${item.terjual}\n│ • Desk : ${item.deskripsi}\n└──────────────────\n\n┌──────────────────\n│ Harga: ${formatrupiah(item.harga)} — (Stok ${stokCount})\n└──────────────────\n\nCurrent Date: ${formattedTime}`, {
+    await editOrSendBannerMessage(query.from.id, query.message.message_id, `tambahkan jumlah pembelian:\n\n┌──────────────────\n│ • Produk : ${item.grup ? item.grup.toUpperCase() + ' — ' : ''}${item.nama.toUpperCase()}\n│ • Stok Terjual : ${item.terjual}\n│ • Desk : ${item.deskripsi}\n└──────────────────\n\n┌──────────────────\n│ Harga: ${formatrupiah(item.harga)} — (Stok ${stokCount})\n└──────────────────\n\nCurrent Date: ${formattedTime}`, {
       reply_markup: {
         inline_keyboard: [
           [{ text: `${item.nama} (${stokCount})`, callback_data: "lanjut" }],
@@ -4501,7 +4522,6 @@ ${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 
         selectedStokIds: [] // Tambahkan field untuk menyimpan ID stok yang dipilih
       }
       fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(data, null, 2))
-      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
       
       // Detect format - gunakan stok items untuk detect format
       const stokItems = await getStokItems(item.kode, 1)
@@ -4511,7 +4531,7 @@ ${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 
       const momentTz = require('moment-timezone')
       const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
 
-      await sendBannerMessage(query.from.id, `tambahkan jumlah pembelian:
+      await editOrSendBannerMessage(query.from.id, query.message.message_id, `tambahkan jumlah pembelian:
 
 ┌──────────────────
 │ • Produk : ${item.nama.toUpperCase()}
@@ -4604,7 +4624,7 @@ Produk *${item.nama}* tidak memiliki stok tersedia.
       [{ text: "← Sebelumnya", callback_data: `item:${item.kode}` }]
     ]
     
-    await sendBannerMessage(query.from.id, stokText, {
+    await editOrSendBannerMessage(query.from.id, query.message.message_id, stokText, {
       reply_markup: {
         inline_keyboard: keyboard
       }
@@ -4615,7 +4635,7 @@ Produk *${item.nama}* tidak memiliki stok tersedia.
 }
 
 // Helper function untuk refresh tampilan stok
-async function refreshStokView(query, Data) {
+async function refreshStokView(query, Data, msgId = null) {
   const { data: Produk } = await supabase.from("Produk").select("*")
   const item = Produk.find(i => i.kode.toLowerCase() === Data.kode.toLowerCase())
   if (!item) return false
@@ -4658,11 +4678,7 @@ async function refreshStokView(query, Data) {
     [{ text: "← Sebelumnya", callback_data: `item:${item.kode}` }]
   ]
   
-  try {
-    await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-  } catch (e) {}
-  
-  await sendBannerMessage(query.from.id, stokText, {
+  await editOrSendBannerMessage(query.from.id, msgId || query.message?.message_id, stokText, {
     reply_markup: {
       inline_keyboard: keyboard
     }
@@ -5075,12 +5091,6 @@ if (cmd === "konfirmasi") {
         }
       }
       
-      try {
-        await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-      } catch (e) {
-        // Ignore if already deleted
-      }
-      
       const userSaldo = await cekSaldo(query.from.id)
       let hargaAwal = Data.jumlah * Produk[s].harga
       let { data: Voucher } = await supabase.from("Voucher").select("*")
@@ -5094,36 +5104,10 @@ if (cmd === "konfirmasi") {
       const totalBayar = hargaAwal - potongan
       const saldoSetelah = userSaldo - totalBayar
       
-      // Ambil info stok yang dipilih untuk ditampilkan
+      // Ambil info stok yang dipilih untuk ditampilkan (COMPACTED FOR 1024 CAPTION LIMIT)
       let stokInfoText = ""
       if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
-        const allStok = await getStokItems(Data.kode.toLowerCase())
-        const selectedStokDetails = allStok.filter(s => Data.selectedStokIds.includes(s.id))
-        
-        // Batasi jumlah stok yang ditampilkan untuk menghindari pesan terlalu panjang
-        const maxDisplay = 10 // Maksimal 10 stok yang ditampilkan detail
-        const stokToDisplay = selectedStokDetails.slice(0, maxDisplay)
-        const remainingCount = selectedStokDetails.length - maxDisplay
-        
-        stokInfoText = `\n📦 *Stok yang Dipilih:* (${selectedStokDetails.length} item)
-━━━━━━━━━━━━━━━━━━━━
-`
-        stokToDisplay.forEach((stok, idx) => {
-          const timestamp = formatWIBDetail(stok.created_at)
-          // Blur data stok, hanya tampilkan 4 karakter pertama
-          const dataPreview = blurStokData(stok.data)
-          stokInfoText += `${idx + 1}. \`${dataPreview}\`
-   📅 Upload: ${timestamp}
-`
-        })
-        
-        // Tampilkan summary untuk stok yang tidak ditampilkan
-        if (remainingCount > 0) {
-          stokInfoText += `\n... dan ${remainingCount} stok lainnya
-`
-        }
-        
-        stokInfoText += `━━━━━━━━━━━━━━━━━━━━\n`
+        stokInfoText = `\n📦 *Stok yang Dipilih:* ${Data.selectedStokIds.length} item\n━━━━━━━━━━━━━━━━━━━━\n`
       }
       
       // Detect format
@@ -5243,8 +5227,11 @@ ${Produk[s].snk.length > 100 ? Produk[s].snk.substring(0, 100) + '...' : Produk[
         { text: "💬 Hubungi CS", url: channelContact.cs }
       ])
       
-      await bot.sendMessage(query.from.id, confirmText, {
-        parse_mode: "Markdown",
+      // Enforce photo caption limit (1024 chars)
+      if (confirmText.length > 1000) {
+        confirmText = confirmText.substring(0, 980) + '\n\n⚠️ _(Detail dipotong)_'
+      }
+      await editOrSendBannerMessage(query.from.id, query.message.message_id, confirmText, {
         reply_markup: {
           inline_keyboard: keyboard
         }
@@ -5343,12 +5330,11 @@ Tersedia ${availableVouchers.length} voucher:`
       
       keyboard.push([{ text: "🔙 Kembali", callback_data: "konfirmasi_kembali" }])
       
-      try {
-        await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-      } catch (e) {
-        // Ignore
+      // Enforce caption limit
+      if (paymentText.length > 1000) {
+        paymentText = paymentText.substring(0, 980) + '\n\n⚠️ _(Dipotong)_'
       }
-      await sendBannerMessage(query.from.id, paymentText, {
+      await editOrSendBannerMessage(query.from.id, query.message.message_id, paymentText, {
         reply_markup: {
           inline_keyboard: keyboard
         }
@@ -5417,13 +5403,11 @@ ${v.minimal_pembelian ? `💵 Min. pembelian: ${formatrupiah(v.minimal_pembelian
       
       keyboard.push([{ text: "🔙 Kembali", callback_data: "pilih_payment_method" }])
       
-      try {
-        await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-      } catch (e) {
-        // Ignore
+      // Enforce caption limit
+      if (voucherText.length > 1000) {
+        voucherText = voucherText.substring(0, 980) + '\n\n⚠️ _(Dipotong)_'
       }
-      await bot.sendMessage(query.from.id, voucherText, {
-        parse_mode: "Markdown",
+      await editOrSendBannerMessage(query.from.id, query.message.message_id, voucherText, {
         reply_markup: {
           inline_keyboard: keyboard
         }
@@ -5490,12 +5474,7 @@ if (cmd.startsWith("apply_voucher_")) {
         show_alert: true 
       })
       
-      // Return to payment method selection by re-triggering
-      try {
-        await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-      } catch (e) {
-        // Ignore
-      }
+      // Return to payment method selection by re-triggering (in-place)
       
       // Re-trigger pilih_payment_method manually
       const userSaldo = await cekSaldo(query.from.id)
@@ -5602,12 +5581,11 @@ if (cmd === "punya") {
 if (cmd === "batal_pesanan") {
   if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
     await bot.answerCallbackQuery(query.id)
-    await bot.sendMessage(query.from.id, `❌ *BATAL PESANAN*
+    await editOrSendBannerMessage(query.from.id, query.message.message_id, `❌ *BATAL PESANAN*
 ━━━━━━━━━━━━━━━━━━━━
 Apakah Anda yakin ingin membatalkan pesanan ini?
 
 ━━━━━━━━━━━━━━━━━━━━`, {
-      parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
           [
@@ -5637,14 +5615,13 @@ if (cmd === "batal_pesanan_confirm") {
       // Ignore
     }
     fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
-    await bot.sendMessage(query.from.id, `✅ *PESANAN DIBATALKAN*
-
-━━━━━━━━━━━━━━━━━━━━
-Pesanan Anda telah dibatalkan.
-
-━━━━━━━━━━━━━━━━━━━━
-💡 Klik tombol di bawah untuk melanjutkan.`, {
-      parse_mode: "Markdown",
+    await editOrSendBannerMessage(query.from.id, query.message.message_id, `✅ *PESANAN DIBATALKAN*
+ 
+ ━━━━━━━━━━━━━━━━━━━━
+ Pesanan Anda telah dibatalkan.
+ 
+ ━━━━━━━━━━━━━━━━━━━━
+ 💡 Klik tombol di bawah untuk melanjutkan.`, {
       reply_markup: {
         inline_keyboard: [
           [{ text: "🛍️ Belanja Lagi", callback_data: "daftarproduk" }],
@@ -5758,8 +5735,11 @@ ${Produk[s].snk.length > 150 ? Produk[s].snk.substring(0, 150) + '...' : Produk[
         { text: "💬 Hubungi CS", url: channelContact.cs }
       ])
       
-      await bot.sendMessage(query.from.id, confirmText, {
-        parse_mode: "Markdown",
+      // Enforce caption limit
+      if (confirmText.length > 1000) {
+        confirmText = confirmText.substring(0, 980) + '\n\n⚠️ _(Dipotong)_'
+      }
+      await editOrSendBannerMessage(query.from.id, query.message.message_id, confirmText, {
         reply_markup: {
           inline_keyboard: keyboard
         }
@@ -10247,21 +10227,19 @@ Kode Deposit: \`${kodeDeposit}\`
 }
 
  if (cmd === "kembaliawal") {
-   try {
-     // Hapus file transaksi sementara jika ada
-     if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-       let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
-       
-       // Release reservations sebelum kembali ke menu awal
-       if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
-         releaseReservation(Data.selectedStokIds)
-         console.log(`🔓 Release ${Data.selectedStokIds.length} reserved stocks for user ${query.from.id} (kembaliawal)`)
-       }
-       
-       fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
-     }
-     
-     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    try {
+      // Hapus file transaksi sementara jika ada
+      if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
+        let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+        
+        // Release reservations sebelum kembali ke menu awal
+        if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
+          releaseReservation(Data.selectedStokIds)
+          console.log(`🔓 Release ${Data.selectedStokIds.length} reserved stocks for user ${query.from.id} (kembaliawal)`)
+        }
+        
+        fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+      }
      
      // Parallel queries untuk semua data (LEBIH CEPAT!)
      const [
@@ -10285,9 +10263,8 @@ Kode Deposit: \`${kodeDeposit}\`
      
      // Extract counts
      const trxCount = trxCountResult.count || 0
-     const userCount = userCountResult.count || 0
-     
-     await sendBannerMessage(query.from.id, `Halo, *${query.from.first_name}* 👋
+      const userCount = userCountResult.count || 0
+      await editOrSendBannerMessage(query.from.id, query.message.message_id, `Halo, *${query.from.first_name}* 👋
 
 Selamat datang di *${NamaBot}*
 
@@ -10347,7 +10324,7 @@ Belum ada produk yang terdaftar.
     }))
     
     const isOwnerUser = isOwner(query)
-    await sendProductPage(ProdukWithStok, query.from.id, 0, null, query.id, {}, isOwnerUser)
+    await sendProductPage(ProdukWithStok, query.from.id, 0, query.message.message_id, query.id, {}, isOwnerUser)
   }
   
   // Handler untuk menu kategori
@@ -10419,10 +10396,7 @@ Pilih kategori produk yang ingin dilihat:
     buttons.push([{ text: "🔙 Kembali", callback_data: "kembaliawal" }])
     
     await bot.answerCallbackQuery(query.id)
-    try {
-      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-    } catch (e) {}
-    await sendBannerMessage(query.from.id, text, {
+    await editOrSendBannerMessage(query.from.id, query.message.message_id, text, {
       reply_markup: {
         inline_keyboard: buttons
       }
@@ -10468,7 +10442,7 @@ Pilih kategori produk yang ingin dilihat:
     
     const isOwnerUser = isOwner(query)
     const kategoriLabel = `${getKategoriEmoji(kategori)} ${getKategoriName(kategori)}`
-    await sendProductPage(kategoriProduk, query.from.id, 0, null, query.id, {
+    await sendProductPage(kategoriProduk, query.from.id, 0, query.message.message_id, query.id, {
       kategori: kategori,
       kategoriLabel: kategoriLabel
     }, isOwnerUser)
