@@ -1300,6 +1300,7 @@ Kode Deposit: \`${uniq}\`
             }
           });
           const saldoBaru = await cekSaldo(userId)
+          const replyKb = await generateReplyKeyboard(userId)
 
           await sendMessage(chatId, `✅ *DEPOSIT BERHASIL*
 =======================
@@ -1309,7 +1310,7 @@ Kode Deposit: \`${uniq}\`
 🆔 *Kode Deposit:* \`${uniq}\`
 💵 *Saldo Sekarang:* ${formatrupiah(saldoBaru)}
 =======================
-💡 Saldo telah ditambahkan ke akun Anda!`)
+💡 Saldo telah ditambahkan ke akun Anda!`, { reply_markup: replyKb })
 
           await bot.sendMessage(channelContact.channelLog, `💰 *DEPOSIT BARU*
 =======================
@@ -6860,6 +6861,15 @@ Terima kasih! 🙏`, {
         reply_markup: completionKeyboard
       })
     }
+
+    try {
+      const replyKb = await generateReplyKeyboard(query.from.id)
+      await bot.sendMessage(query.from.id, `🛒 *Pesanan Selesai.* Saldo Anda telah diperbarui.`, {
+        reply_markup: replyKb
+      })
+    } catch (replyKbError) {
+      console.error('Error updating reply keyboard after purchase:', replyKbError)
+    }
     
     // Store product data temporarily for redownload/copy (save to a temp file)
     const tempDataPath = `./Database/Trx/temp_${Data.trxid}.json`
@@ -12282,13 +12292,14 @@ cron.schedule('*/2 * * * *', async () => {
         await supabase.from('Deposit').update({ status: 'success' }).eq('kode_deposit', p.order_id)
         await addSaldo(p.user_id, p.amount)
         const saldoBaru = await cekSaldo(p.user_id)
+        const replyKb = await generateReplyKeyboard(p.user_id)
         await sendMessage(p.user_id, `✅ *DEPOSIT BERHASIL*
 =======================
 💰 *Jumlah:* ${formatrupiah(p.amount)}
 🆔 *Kode Deposit:* \`${p.order_id}\`
 💵 *Saldo Sekarang:* ${formatrupiah(saldoBaru)}
 =======================
-💡 Saldo telah ditambahkan ke akun Anda!`).catch(() => {})
+💡 Saldo telah ditambahkan ke akun Anda!`, { reply_markup: replyKb }).catch(() => {})
         if (channelContact.channelLog) {
           await bot.sendMessage(channelContact.channelLog, `💰 *DEPOSIT (REKONSILIASI)*
 =======================
