@@ -1,0 +1,14 @@
+{
+  "name": "telegramshopweb",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "install": "bash .cursor/install.sh",
+  "start": "sudo dockerd >/tmp/dockerd.log 2>&1 & sleep 2 && sudo chmod 666 /var/run/docker.sock 2>/dev/null || true",
+  "ports": [
+    { "name": "dashboard", "port": 3000 },
+    { "name": "supabase-api", "port": 54321 },
+    { "name": "supabase-db", "port": 54322 },
+    { "name": "supabase-studio", "port": 54323 }
+  ]
+}
