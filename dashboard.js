@@ -5453,6 +5453,54 @@ app.post('/api/settings/channel-contact', isAuthenticated, async (req, res) => {
 })
 
 // ============================================
+// BOT COPY SETTINGS
+// ============================================
+
+app.get('/settings/bot-copy', isAuthenticated, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('BotCopy')
+      .select('*')
+      .order('kind', { ascending: true })
+      .order('key', { ascending: true })
+    if (error) throw error
+    res.render('settings-bot-copy', {
+      title: `Bot Copy - ${NamaBot}`,
+      namaBot: NamaBot,
+      username: req.session.username,
+      currentPage: 'settings-bot-copy',
+      pageTitle: '📝 Bot Copy',
+      rows: data || [],
+      req,
+      success: req.query.success || '',
+    })
+  } catch (e) {
+    console.error(e)
+    res.status(500).send(e.message)
+  }
+})
+
+app.post('/settings/bot-copy/:key', isAuthenticated, async (req, res) => {
+  try {
+    const key = req.params.key
+    const body = String(req.body.body ?? '')
+    if (!body.trim()) {
+      return res.redirect('/settings/bot-copy?error=empty')
+    }
+    const { error } = await supabase
+      .from('BotCopy')
+      .update({ body, updated_at: new Date().toISOString() })
+      .eq('key', key)
+    if (error) throw error
+    await runtimeSettings.bump()
+    res.redirect('/settings/bot-copy?success=1')
+  } catch (e) {
+    console.error(e)
+    res.status(500).send(e.message)
+  }
+})
+
+// ============================================
 // PAYMENT GATEWAY SETTINGS
 // ============================================
 
