@@ -103,6 +103,26 @@ async function loadProdukVarian(produkId, varianId) {
   return { produk, varian }
 }
 
+async function sumTodayRevenue(todayStart, todayEnd) {
+  const PAGE_SIZE = 1000
+  let offset = 0
+  let total = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('Trx')
+      .select('harga')
+      .gte('tanggal', todayStart.toISOString())
+      .lt('tanggal', todayEnd.toISOString())
+      .range(offset, offset + PAGE_SIZE - 1)
+    if (error) throw error
+    const rows = data || []
+    total += rows.reduce((sum, t) => sum + (t.harga || 0), 0)
+    if (rows.length < PAGE_SIZE) break
+    offset += PAGE_SIZE
+  }
+  return total
+}
+
 async function renderVariantRow(produk, variant) {
   const stokCount = variant.stok_count ?? await stock.getStokCountByVarianId(variant.id)
   return ejs.renderFile(
@@ -928,7 +948,8 @@ app.get('/', isAuthenticated, async (req, res) => {
       pendingDepositsResult,
       variantsResult,
       thresholdsResult,
-      todayTrxResult,
+      todayTxnCountResult,
+      todayRevenue,
       recentTrxResult,
       activeFlowResult,
     ] = await Promise.all([
@@ -937,9 +958,10 @@ app.get('/', isAuthenticated, async (req, res) => {
       supabase.from('ProductStockThreshold').select('varian_id, threshold, is_active'),
       supabase
         .from('Trx')
-        .select('harga', { count: 'exact' })
+        .select('*', { count: 'exact', head: true })
         .gte('tanggal', todayStart.toISOString())
         .lt('tanggal', todayEnd.toISOString()),
+      sumTodayRevenue(todayStart, todayEnd),
       supabase.from('Trx').select('*').order('tanggal', { ascending: false }).limit(5),
       supabase.from('BotFlow').select('draft_updated_at').eq('is_active', true).maybeSingle(),
     ])
@@ -960,8 +982,8 @@ app.get('/', isAuthenticated, async (req, res) => {
         stok_count: stockCounts[String(variant.kode).toLowerCase()] || 0,
         threshold: thresholdsByVarianId[variant.id],
       })),
-      todayRevenue: (todayTrxResult.data || []).reduce((sum, t) => sum + (t.harga || 0), 0),
-      todayTxnCount: todayTrxResult.count ?? (todayTrxResult.data || []).length,
+      todayRevenue,
+      todayTxnCount: todayTxnCountResult.count ?? 0,
       recentTxns: recentTrxResult.data || [],
       flowDraftUpdatedAt: activeFlowResult.data?.draft_updated_at || null,
     })
