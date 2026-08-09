@@ -238,6 +238,11 @@
   font-size: 15px;
   line-height: 1.45;
   color: #111;
+  background: linear-gradient(180deg, #e8f1f8 0%, #f7f9fb 120px);
+}
+
+.phone-caption strong {
+  font-weight: 700;
 }
 
 .phone-keyboard {
