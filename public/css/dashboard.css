@@ -62,6 +62,14 @@ body {
     border-width: 0;
 }
 
+.text-muted {
+    color: var(--color-muted);
+}
+
+.text-danger {
+    color: var(--color-danger);
+}
+
 /* Sidebar Navigation */
 .sidebar {
     position: fixed;

@@ -3106,10 +3106,22 @@ app.get('/api/analitik/products', isAuthenticated, async (req, res) => {
       .sort((a, b) => b.totalTerjual - a.totalTerjual)
       .slice(0, limitNum)
 
+    const produkIds = [...new Set(Object.values(productStats).map((row) => row.produk_id).filter(Boolean))]
+    const produkById = Object.create(null)
+    if (produkIds.length > 0) {
+      const { data: produkRows } = await supabase
+        .from('Produk')
+        .select('id, nama')
+        .in('id', produkIds)
+      for (const row of produkRows || []) {
+        produkById[row.id] = row.nama
+      }
+    }
+
     const byProduct = Object.values(productStats)
       .map((row) => ({
         produk_id: row.produk_id,
-        nama: row.nama,
+        nama: (row.produk_id && produkById[row.produk_id]) ? produkById[row.produk_id] : row.nama,
         level: row.level,
         totalTerjual: row.totalTerjual,
         totalRevenue: row.totalRevenue,
