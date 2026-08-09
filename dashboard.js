@@ -16,6 +16,7 @@ const flowPreview = require('./lib/flow-preview')
 const copyLib = require('./lib/copy')
 const ejs = require('ejs')
 const { formatrupiah, formatTanggal } = require('./lib/format')
+const { buildOverviewModel } = require('./lib/dashboard-overview')
 
 const app = express()
 
@@ -912,86 +913,56 @@ app.get('/admin/audit-log', isAuthenticated, requireRole('admin'), async (req, r
 // Route: Dashboard Home
 app.get('/', isAuthenticated, async (req, res) => {
   try {
-    // Ambil semua data secara parallel
+    const todayStart = moment.tz('Asia/Jakarta').startOf('day')
+    const todayEnd = todayStart.clone().add(1, 'day')
+
     const [
-      usersResult,
-      trxResult,
-      produkResult,
-      depositResult
+      pendingDepositsResult,
+      variantsResult,
+      thresholdsResult,
+      todayTrxResult,
+      recentTrxResult,
+      activeFlowResult,
     ] = await Promise.all([
-      supabase.from('User').select('*'),
-      supabase.from('Trx').select('*').order('tanggal', { ascending: false }),
-      supabase.from('Produk').select('*'),
-      supabase.from('Deposit').select('*').eq('status', 'success')
+      supabase.from('Deposit').select('*').eq('status', 'pending').order('tanggal', { ascending: true }).limit(10),
+      supabase.from('Varian').select('id, produk_id, label, kode, harga, is_active, produk:Produk(nama, slug)').eq('is_active', true).order('urutan', { ascending: true }),
+      supabase.from('ProductStockThreshold').select('varian_id, threshold, is_active'),
+      supabase
+        .from('Trx')
+        .select('harga', { count: 'exact' })
+        .gte('tanggal', todayStart.toISOString())
+        .lt('tanggal', todayEnd.toISOString()),
+      supabase.from('Trx').select('*').order('tanggal', { ascending: false }).limit(5),
+      supabase.from('BotFlow').select('draft_updated_at').eq('is_active', true).maybeSingle(),
     ])
 
-    const users = usersResult.data || []
-    const transactions = trxResult.data || []
-    const products = produkResult.data || []
-    const deposits = depositResult.data || []
+    const variants = variantsResult.data || []
+    const stockCounts = await stock.getStokCountsByKode(variants.map((v) => v.kode))
+    const thresholdsByVarianId = Object.create(null)
+    for (const row of thresholdsResult.data || []) {
+      if (row.is_active !== false) thresholdsByVarianId[row.varian_id] = row.threshold
+    }
 
-    // Hitung statistik
-    const totalUsers = users.length
-    const totalTransactions = transactions.length
-    const totalProducts = products.length
-    
-    // Total revenue dari transaksi
-    const totalRevenue = transactions.reduce((sum, t) => sum + (t.harga || 0), 0)
-    
-    // Total deposit berhasil
-    const totalDeposit = deposits.reduce((sum, d) => sum + (d.jumlah || 0), 0)
-    
-    // Total stok tersedia (rollup semua varian aktif)
-    const catalogProducts = await catalog.listProducts({ activeOnly: false, withStock: true })
-    const totalStokTersedia = catalogProducts.reduce(
-      (sum, p) => sum + (p.variants || []).reduce((s, v) => s + (v.stok_count || 0), 0),
-      0
-    )
-    
-    // Total stok terjual
-    const totalStokTerjual = products.reduce((sum, p) => sum + (p.terjual || 0), 0)
-    
-    // Total pengeluaran user
-    const totalPengeluaran = users.reduce((sum, u) => sum + (u.pengeluaran || 0), 0)
-    
-    // Total saldo user
-    const totalSaldo = users.reduce((sum, u) => sum + (u.saldo || 0), 0)
-
-    // Transaksi hari ini
-    const today = moment.tz('Asia/Jakarta').startOf('day').toISOString()
-    const todayTransactions = transactions.filter(t => 
-      moment.tz(t.tanggal, 'Asia/Jakarta').isSameOrAfter(today)
-    )
-    const revenueToday = todayTransactions.reduce((sum, t) => sum + (t.harga || 0), 0)
-
-    // Transaksi bulan ini
-    const thisMonth = moment.tz('Asia/Jakarta').startOf('month').toISOString()
-    const monthTransactions = transactions.filter(t => 
-      moment.tz(t.tanggal, 'Asia/Jakarta').isSameOrAfter(thisMonth)
-    )
-    const revenueMonth = monthTransactions.reduce((sum, t) => sum + (t.harga || 0), 0)
+    const overview = buildOverviewModel({
+      pendingDeposits: pendingDepositsResult.data || [],
+      variants: variants.map((variant) => ({
+        ...variant,
+        produk_nama: variant.produk?.nama || '',
+        produk_slug: variant.produk?.slug || '',
+        stok_count: stockCounts[String(variant.kode).toLowerCase()] || 0,
+        threshold: thresholdsByVarianId[variant.id],
+      })),
+      todayRevenue: (todayTrxResult.data || []).reduce((sum, t) => sum + (t.harga || 0), 0),
+      todayTxnCount: todayTrxResult.count || (todayTrxResult.data || []).length,
+      recentTxns: recentTrxResult.data || [],
+      flowDraftUpdatedAt: activeFlowResult.data?.draft_updated_at || null,
+    })
 
     res.render('dashboard', {
-      req: req,
       title: `Dashboard - ${NamaBot}`,
       namaBot: NamaBot,
       username: req.session.username,
-      currentPage: 'dashboard',
-      pageTitle: `Dashboard ${NamaBot}`,
-      stats: {
-        totalUsers,
-        totalTransactions,
-        totalProducts,
-        totalRevenue,
-        totalDeposit,
-        totalStokTersedia,
-        totalStokTerjual,
-        totalPengeluaran,
-        totalSaldo,
-        revenueToday,
-        revenueMonth
-      },
-      recentTransactions: transactions.slice(0, 10),
+      overview,
       formatrupiah,
       formatTanggal
     })
