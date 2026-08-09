@@ -190,6 +190,45 @@
                     </div>
                 </div>
             </div>
+
+            <% if ((produk.variants || []).length) { %>
+            <section class="card" id="tierPanel" style="margin-top:20px;">
+                <div class="card-header">
+                    <h2 class="card-title">Harga bertingkat</h2>
+                </div>
+                <div class="card-body">
+                    <p style="color:#666;margin-bottom:12px;">
+                        Harga dasar varian dipakai jika qty di bawah semua tier.
+                        Tier: min qty → harga satuan (open-ended). Voucher tetap mengurangi total setelah tier.
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label">Varian</label>
+                        <select id="tierVarianSelect" class="form-input">
+                            <% produk.variants.forEach(v => { %>
+                                <option value="<%= v.id %>"><%= v.label %> (<%= v.kode %>) — dasar <%= formatrupiah(v.harga) %></option>
+                            <% }) %>
+                        </select>
+                    </div>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead><tr><th>Min qty</th><th>Harga satuan</th><th>Aksi</th></tr></thead>
+                            <tbody id="tierTableBody"></tbody>
+                        </table>
+                    </div>
+                    <form id="tierAddForm" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:end;">
+                        <div class="form-group" style="margin:0;">
+                            <label class="form-label">Min qty (≥2)</label>
+                            <input type="number" name="min_qty" class="form-input" min="2" required style="width:100px;">
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label class="form-label">Harga satuan</label>
+                            <input type="number" name="harga" class="form-input" min="0" required style="width:140px;">
+                        </div>
+                        <button type="submit" class="btn btn-success">+ Tambah tier</button>
+                    </form>
+                </div>
+            </section>
+            <% } %>
         </div>
     </main>
 
@@ -318,6 +357,63 @@
             const success = '<%= success || "" %>';
             if (success === 'tambah') toast.success('Produk berhasil dibuat!', 'Berhasil');
             if (success === 'edit') toast.success('Produk berhasil diperbarui!', 'Berhasil');
+
+            const tierSelect = document.getElementById('tierVarianSelect');
+            const tierTbody = document.getElementById('tierTableBody');
+            const tierAddForm = document.getElementById('tierAddForm');
+            if (!tierSelect || !tierTbody || !tierAddForm) return;
+
+            async function loadTiers() {
+                const varianId = tierSelect.value;
+                const res = await fetch(`/api/produk/${produkId}/varian/${varianId}/tiers`);
+                const data = await res.json();
+                tierTbody.innerHTML = '';
+                (data.tiers || []).forEach((t) => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${t.min_qty}</td>
+                        <td>${Number(t.harga).toLocaleString('id-ID')}</td>
+                        <td><button type="button" class="btn-icon" data-del="${t.id}" style="color:#dc3545;">🗑️</button></td>`;
+                    tierTbody.appendChild(tr);
+                });
+                if (!(data.tiers || []).length) {
+                    tierTbody.innerHTML = '<tr><td colspan="3" style="color:#888;">Belum ada tier — harga dasar dipakai.</td></tr>';
+                }
+            }
+
+            tierSelect.addEventListener('change', loadTiers);
+            tierAddForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const fd = new FormData(e.target);
+                const res = await fetch(`/api/produk/${produkId}/varian/${tierSelect.value}/tiers`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        min_qty: Number(fd.get('min_qty')),
+                        harga: Number(fd.get('harga')),
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) return toast.error(data.error || 'Gagal', 'Error');
+                e.target.reset();
+                toast.success('Tier ditambahkan', 'Berhasil');
+                loadTiers();
+            });
+
+            tierTbody.addEventListener('click', async (e) => {
+                const id = e.target.getAttribute('data-del');
+                if (!id) return;
+                if (!confirm('Hapus tier ini?')) return;
+                const res = await fetch(`/api/produk/${produkId}/varian/${tierSelect.value}/tiers/${id}`, { method: 'DELETE' });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    return toast.error(data.error || 'Gagal hapus', 'Error');
+                }
+                toast.success('Tier dihapus', 'Berhasil');
+                loadTiers();
+            });
+
+            if (tierSelect.value) loadTiers();
         });
     </script>
 </body>
