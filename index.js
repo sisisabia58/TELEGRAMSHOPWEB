@@ -13,38 +13,47 @@ process.emitWarning = function(warning, ...args) {
 // Disable deprecation warning for Buffer filename
 process.env.NTBA_FIX_350 = '1'
 
-const { createClient } = require('@supabase/supabase-js')
-const { TokenBot, NamaBot, OwnerID, ImagePath, Pakasir, ChannelLog, ChannelStore, CS, SUPABASE_URL, SUPABASE_KEY } = require("./settings.js")
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+const { TokenBot, NamaBot, OwnerID, ImagePath, Pakasir, ChannelLog, ChannelStore, CS } = require("./settings.js")
+const supabase = require('./lib/supabase')
+const runtimeSettings = require('./lib/runtime-settings')
 const pakasir = require('./pakasir.js')
 
-// Channel & Contact: dipakai bot (bisa di-override dari DB via dashboard)
+// Helper bersama dengan dashboard. Di-require di paling atas — dulu ini adalah
+// `function` declaration yang ter-hoist, sekarang binding `const`, jadi harus
+// terdefinisi sebelum ada kode lain yang memanggilnya.
+const { formatrupiah, formatWIB, formatWIBDetail, namaBulan } = require('./lib/format')
+
+// Query tabel Stok. Di bot, "hitung stok" selalu berdasarkan kode produk —
+// karena itu getStokCount dialiaskan ke getStokCountByKode. Nama-nama lokal
+// dipertahankan supaya seluruh pemanggil di file ini tidak perlu diubah.
+// Keranjang user. Dulu file ./Database/Trx/<userId>.json di disk lokal, yang
+// terhapus setiap deploy karena filesystem Railway ephemeral.
+const cart = require('./lib/cart')
+
+const stock = require('./lib/stock')
+const getStokCount = stock.getStokCountByKode
+const getStokForTransaction = stock.getStokForTransaction
+const getStokItems = stock.getStokItems
+const markStokTerjual = stock.markStokTerjual
+
+// Channel & Contact: nilai dari .env dipakai sebagai default, bisa di-override
+// dari DB via dashboard.
+//
+// Ini getter, bukan nilai tetap. Sebelumnya nilainya dibaca sekali saat boot
+// (loadChannelContactFromDb) sehingga perubahan dari dashboard tidak pernah
+// sampai ke bot yang sedang berjalan sampai bot di-restart. Dengan getter,
+// setiap pembacaan mengambil nilai terbaru dari cache runtime-settings, yang
+// di-refresh oleh poller di bawah.
 const channelContact = {
-  channelLog: ChannelLog || '',
-  channelStore: ChannelStore || '',
-  cs: CS || ''
+  get channelLog() { return runtimeSettings.get('channel_log', ChannelLog || '') },
+  get channelStore() { return runtimeSettings.get('channel_store', ChannelStore || '') },
+  get cs() { return runtimeSettings.get('cs', CS || '') }
 }
-async function loadChannelContactFromDb() {
-  try {
-    const { data } = await supabase
-      .from('NotificationSettings')
-      .select('setting_key, setting_value')
-      .in('setting_key', ['channel_log', 'channel_store', 'cs'])
-    if (data && data.length) {
-      data.forEach((row) => {
-        const v = row.setting_value?.value
-        if (v !== undefined && v !== null && v !== '') {
-          if (row.setting_key === 'channel_log') channelContact.channelLog = v
-          else if (row.setting_key === 'channel_store') channelContact.channelStore = v
-          else if (row.setting_key === 'cs') channelContact.cs = v
-        }
-      })
-    }
-  } catch (e) {
-    // ignore; tetap pakai nilai dari .env
-  }
-}
-loadChannelContactFromDb()
+
+// Muat pengaturan sekali di awal, lalu pantau perubahan dari dashboard.
+runtimeSettings.refresh(true)
+  .then(() => runtimeSettings.startPolling())
+  .catch((e) => console.error('[runtime-settings] gagal muat awal:', e.message))
 const TelegramBot = require("node-telegram-bot-api")
 const bot = new TelegramBot(TokenBot, { 
   polling: true,
@@ -61,6 +70,16 @@ const bot = new TelegramBot(TokenBot, {
   },
   // Base URL dengan fallback
   baseApiUrl: process.env.TELEGRAM_API_URL || 'https://api.telegram.org'
+})
+
+// Configure Telegram chat column commands menu (autocomplete)
+bot.setMyCommands([
+  { command: 'start', description: 'mulai bot' },
+  { command: 'stok', description: 'laporan stok produk' }
+]).then(() => {
+  console.log('✅ Telegram bot commands set successfully')
+}).catch((err) => {
+  console.error('❌ Failed to set Telegram bot commands:', err)
 })
 // Enhanced error handling for polling errors
 bot.on("polling_error", (error) => {
@@ -91,6 +110,7 @@ const fetch = require("node-fetch")
 const md5 = require("md5")
 const axios = require("axios")
 let editstok = {}
+let depositState = {}
 let msgg = {}
 let addProdukState = {}
 let addStokState = {}
@@ -256,59 +276,73 @@ function formatProductDataForFile(dataLines, formatString) {
   return formattedLines.join('\n\n')
 }
 
-function formatWIB(isoString) {
-  const date = new Date(isoString)
-  const options = {
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric', // Menampilkan tahun (e.g., 2025)
+// formatWIB / formatWIBDetail / formatrupiah / namaBulan -> lib/format.js
+// (di-require di bagian atas file)
+
+async function generateReplyKeyboard(userId) {
+  try {
+    const saldo = await cekSaldo(userId)
+
+    return {
+      keyboard: [
+        ["📦 Daftar Produk", `💰 Saldo: ${formatrupiah(saldo)}`],
+        ["📋 Riwayat Transaksi"]
+      ],
+      resize_keyboard: true
+    }
+  } catch (error) {
+    console.error('Error generating reply keyboard:', error)
+    return {
+      keyboard: [
+        ["📦 Daftar Produk"],
+        ["📋 Riwayat Transaksi"]
+      ],
+      resize_keyboard: true
+    }
   }
-  const timeOptions = {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }
-  const formattedDate = new Intl.DateTimeFormat('id-ID', options).format(date)
-  const formattedTime = new Intl.DateTimeFormat('id-ID', timeOptions).format(date)
-  return `${formattedDate} ${formattedTime}`
 }
 
-// Fungsi untuk format timestamp detail dengan detik
-function formatWIBDetail(isoString) {
-  const date = new Date(isoString)
-  const options = {
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  }
-  const timeOptions = {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }
-  const formattedDate = new Intl.DateTimeFormat('id-ID', options).format(date)
-  const formattedTime = new Intl.DateTimeFormat('id-ID', timeOptions).format(date)
-  return `${formattedDate} ${formattedTime}`
-}
-const namaBulan = [
-  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-];
+// Collapse flat product list into grouped entries for display
+// Products with same grup are merged; null grup products are individual entries
+function getProductEntries(products) {
+  const entries = []
+  const grupMap = {} // grup_name -> entry index
 
+  products.forEach(product => {
+    const grup = product.grup ? product.grup.trim() : null
+    if (!grup) {
+      // Solo product — add as individual entry
+      entries.push({ type: 'single', product })
+    } else {
+      if (grupMap[grup] !== undefined) {
+        // Append to existing group entry
+        entries[grupMap[grup]].products.push(product)
+      } else {
+        // Create new group entry
+        grupMap[grup] = entries.length
+        entries.push({ type: 'group', grup, products: [product] })
+      }
+    }
+  })
 
-function formatrupiah(nominal) {
-  const nom = new Intl.NumberFormat("id", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0
-  }).format(nominal)
-  return nom
+  return entries
 }
 
-// Fungsi untuk mem-blur data stok, hanya menampilkan 4 karakter pertama
+// Get total stok count for a group entry
+function getEntryStokCount(entry) {
+  if (entry.type === 'single') {
+    return entry.product.stok_count !== undefined ? entry.product.stok_count : (entry.product.data?.length || 0)
+  }
+  return entry.products.reduce((sum, p) => sum + (p.stok_count !== undefined ? p.stok_count : (p.data?.length || 0)), 0)
+}
+
+// Get entry display name
+function getEntryName(entry) {
+  if (entry.type === 'single') return entry.product.nama
+  return entry.grup
+}
+
+
 function blurStokData(data) {
   if (!data || data.length === 0) return '****'
   if (data.length <= 4) return '****'
@@ -444,7 +478,8 @@ ${filterOptions.periodLabel ? `📅 *Periode:* ${filterOptions.periodLabel}` : '
       }
     })
     
-    // Hapus tombol "Unduh Item" dan "Beli Lagi" - user cukup ketik nomor produk untuk membeli lagi
+    // Tombol "Unduh Item" dan "Beli Lagi" tidak ditampilkan di sini — produk
+    // dibeli lagi lewat tombol di daftar produk.
   }
   
   // Navigation buttons
@@ -706,69 +741,8 @@ async function isRegistered(id) {
 // HELPER FUNCTIONS UNTUK STOK (Tabel Terpisah)
 // ============================================
 
-// Ambil jumlah stok tersedia untuk produk tertentu
-async function getStokCount(kode) {
-  try {
-    const { count, error } = await supabase
-      .from('Stok')
-      .select('*', { count: 'exact', head: true })
-      .eq('produk_kode', kode.toLowerCase())
-      .eq('status', 'tersedia')
-    
-    if (error) {
-      console.error('Error getStokCount:', error)
-      return 0
-    }
-    return count || 0
-  } catch (error) {
-    console.error('Error getStokCount:', error)
-    return 0
-  }
-}
-
-// Ambil stok untuk transaksi (FIFO - First In First Out)
-async function getStokForTransaction(kode, jumlah) {
-  try {
-    const { data, error } = await supabase
-      .from('Stok')
-      .select('id, data')
-      .eq('produk_kode', kode.toLowerCase())
-      .eq('status', 'tersedia')
-      .limit(jumlah)
-      .order('created_at', { ascending: true })
-    
-    if (error) {
-      console.error('Error getStokForTransaction:', error)
-      return []
-    }
-    return data || []
-  } catch (error) {
-    console.error('Error getStokForTransaction:', error)
-    return []
-  }
-}
-
-// Update stok menjadi terjual
-async function markStokTerjual(stokIds, trxid) {
-  try {
-    if (!stokIds || stokIds.length === 0) return
-    
-    const { error } = await supabase
-      .from('Stok')
-      .update({ 
-        status: 'terjual',
-        terjual_at: new Date().toISOString(),
-        trx_id: trxid
-      })
-      .in('id', stokIds)
-    
-    if (error) {
-      console.error('Error markStokTerjual:', error)
-    }
-  } catch (error) {
-    console.error('Error markStokTerjual:', error)
-  }
-}
+// getStokCount / getStokForTransaction / getStokItems / markStokTerjual
+// -> lib/stock.js (di-require di bagian atas file)
 
 // ============ FUNGSI RESERVASI STOK ============
 // Fungsi untuk reserve stok agar tidak bisa dipilih user lain
@@ -891,31 +865,7 @@ async function addStokItems(produkId, produkKode, dataArray) {
   }
 }
 
-// Ambil semua stok untuk produk (untuk edit/view)
-async function getStokItems(kode, limit = null) {
-  try {
-    let query = supabase
-      .from('Stok')
-      .select('id, data, status, created_at, terjual_at, trx_id')
-      .eq('produk_kode', kode.toLowerCase())
-      .order('created_at', { ascending: true })
-    
-    if (limit) {
-      query = query.limit(limit)
-    }
-    
-    const { data, error } = await query
-    
-    if (error) {
-      console.error('Error getStokItems:', error)
-      return []
-    }
-    return data || []
-  } catch (error) {
-    console.error('Error getStokItems:', error)
-    return []
-  }
-}
+// getStokItems -> lib/stock.js (di-require di bagian atas file)
 
 // Update stok item (untuk edit)
 async function updateStokItem(stokId, newData) {
@@ -1032,6 +982,28 @@ async function sendBannerMessage(chatId, captionText, options = {}) {
     parse_mode: "Markdown",
     ...options
   })
+}
+
+// ============================================
+// EDIT OR SEND BANNER MESSAGE HELPER
+// Tries to edit existing photo caption in-place,
+// falls back to sending a new banner if message
+// doesn't exist or edit fails.
+// ============================================
+async function editOrSendBannerMessage(chatId, messageId, captionText, options = {}) {
+  if (messageId) {
+    try {
+      return await bot.editMessageCaption(captionText, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: "Markdown",
+        ...options
+      })
+    } catch (error) {
+      console.log(`[editOrSendBannerMessage] Edit failed, sending new banner: ${error.message}`)
+    }
+  }
+  return await sendBannerMessage(chatId, captionText, options)
 }
 
 // ============================================
@@ -1197,6 +1169,7 @@ Kode Deposit: \`${uniq}\`
             }
           });
           const saldoBaru = await cekSaldo(userId)
+          const replyKb = await generateReplyKeyboard(userId)
 
           await sendMessage(chatId, `✅ *DEPOSIT BERHASIL*
 =======================
@@ -1206,7 +1179,7 @@ Kode Deposit: \`${uniq}\`
 🆔 *Kode Deposit:* \`${uniq}\`
 💵 *Saldo Sekarang:* ${formatrupiah(saldoBaru)}
 =======================
-💡 Saldo telah ditambahkan ke akun Anda!`)
+💡 Saldo telah ditambahkan ke akun Anda!`, { reply_markup: replyKb })
 
           await bot.sendMessage(channelContact.channelLog, `💰 *DEPOSIT BARU*
 =======================
@@ -2995,7 +2968,6 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
   // Helper function untuk mendapatkan jumlah stok
   const getStokCount = (p) => {
     if (p.stok_count !== undefined) return p.stok_count
-    // Backward compatibility: jika belum ada stok_count, gunakan data.length
     return p.data?.length || 0
   }
   
@@ -3022,7 +2994,6 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
       sortedProducts.sort((a, b) => a.nama.localeCompare(b.nama))
       break
     default:
-      // Default: by name
       sortedProducts.sort((a, b) => a.nama.localeCompare(b.nama))
   }
   
@@ -3045,36 +3016,29 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
   } else if (filterOptions.status === 'tersedia') {
     sortedProducts = sortedProducts.filter(p => getStokCount(p) > 0)
   }
+
+  // Collapse into grouped entries
+  const allEntries = getProductEntries(sortedProducts)
   
-  // Calculate statistics
-  const totalProducts = sortedProducts.length
-  const produkTersedia = sortedProducts.filter(p => getStokCount(p) > 0).length
-  const produkHabis = sortedProducts.filter(p => getStokCount(p) === 0).length
-  const totalStok = sortedProducts.reduce((sum, p) => sum + getStokCount(p), 0)
-  const totalTerjual = sortedProducts.reduce((sum, p) => sum + (p.terjual || 0), 0)
-  const totalNilaiStok = sortedProducts.reduce((sum, p) => sum + (getStokCount(p) * (p.harga || 0)), 0)
-  
-  const totalPages = Math.ceil(sortedProducts.length / PRODUCTS_PER_PAGE)
+  const totalPages = Math.ceil(allEntries.length / PRODUCTS_PER_PAGE)
   const start = page * PRODUCTS_PER_PAGE
   const end = start + PRODUCTS_PER_PAGE
-  const items = sortedProducts.slice(start, end)
+  const items = allEntries.slice(start, end)
 
   if (callbackId) await bot.answerCallbackQuery(callbackId)
   
-  // Header yang simple sesuai screenshot
   let text = `*LIST PRODUCT*\n\n`
   
-  // Empty state jika tidak ada produk
   if (items.length === 0) {
     text += `📭 *Tidak ada produk*`
   } else {
-    items.forEach((p, idx) => {
+    items.forEach((entry, idx) => {
       const itemNum = start + idx + 1
-      const stokCount = getStokCount(p)
-      text += `[${itemNum}]. ${p.nama.toUpperCase()} ( ${stokCount} )\n`
+      const stokCount = getEntryStokCount(entry)
+      const name = getEntryName(entry).toUpperCase()
+      text += `[${itemNum}]. ${name} ( ${stokCount} )\n`
     })
     
-    // Informasi halaman dan waktu saat ini (WIB)
     const momentTz = require('moment-timezone')
     const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
     text += `\n📄 Halaman ${page + 1} / ${totalPages}\n`
@@ -3089,7 +3053,31 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
       { text: "🔙 Kembali", callback_data: "kembaliawal" }
     ])
   } else {
-    // Navigation buttons (⬅️ Sebelumnya / ➡️ Selanjutnya)
+    // One button per entry on this page — the only way to open a product from
+    // the list. Entries with no stock get no button (the buy flow rejects them
+    // anyway), matching how sendGroupCard hides sold-out variants.
+    let entryRow = []
+    items.forEach((entry, idx) => {
+      if (getEntryStokCount(entry) === 0) return
+      const itemNum = start + idx + 1
+      const name = getEntryName(entry)
+      const callback_data = entry.type === 'group'
+        ? `grup_refresh:${entry.grup}`
+        : `item:${entry.product.kode}`
+      // Telegram rejects callback_data over 64 bytes and that would fail the
+      // whole sendMessage, so drop the button rather than break the page.
+      if (Buffer.byteLength(callback_data, 'utf8') > 64) {
+        console.error(`sendProductPage: callback_data too long, skipping button: ${callback_data}`)
+        return
+      }
+      entryRow.push({ text: `${itemNum}. ${name}`, callback_data })
+      if (entryRow.length === 2) {
+        buttons.push(entryRow)
+        entryRow = []
+      }
+    })
+    if (entryRow.length > 0) buttons.push(entryRow)
+
     const navButtons = []
     if (page > 0) {
       navButtons.push({ text: '⬅️ Sebelumnya', callback_data: `produk_prev:${page}_${filterOptions.filterKey || 'all'}` })
@@ -3101,14 +3089,12 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
       buttons.push(navButtons)
     }
     
-    // Popular products button
     if (filterOptions.filterKey === 'bestseller') {
       buttons.push([{ text: "📦 Semua Produk", callback_data: "daftarproduk" }])
     } else {
       buttons.push([{ text: "🔥 PRODUK POPULER", callback_data: "produk_filter_bestseller" }])
     }
     
-    // Back button
     buttons.push([{ text: "🔙 Kembali", callback_data: "kembaliawal" }])
   }
 
@@ -3125,6 +3111,85 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
     })
   } else {
     await sendBannerMessage(chatId, text, { reply_markup })
+  }
+}
+
+// Build and send group product card
+async function sendGroupCard(chatId, grupNama, msgId = null) {
+  try {
+    const momentTz = require('moment-timezone')
+    const formattedTime = momentTz().tz("Asia/Jakarta").format("HH:mm:ss")
+
+    // Fetch all products in this group with live stock
+    let { data: grupProducts } = await supabase
+      .from("Produk")
+      .select("*")
+      .eq("grup", grupNama)
+
+    if (!grupProducts || grupProducts.length === 0) {
+      return await bot.sendMessage(chatId, `⚠️ Grup "${grupNama}" tidak ditemukan.`)
+    }
+
+    // Attach live stock counts
+    grupProducts = await Promise.all(grupProducts.map(async (p) => {
+      const stok_count = await getStokCount(p.kode)
+      return { ...p, stok_count }
+    }))
+
+    // Sort by name
+    grupProducts.sort((a, b) => a.nama.localeCompare(b.nama))
+
+    const totalTerjual = grupProducts.reduce((sum, p) => sum + (p.terjual || 0), 0)
+
+    // S&K — use from first product
+    const snkRaw = grupProducts[0].snk || ''
+    const snkDisplay = snkRaw.startsWith('http')
+      ? `[${snkRaw.replace(/https?:\/\//, '')}](${snkRaw})`
+      : snkRaw
+
+    // Build variation lines
+    let variasiLines = ''
+    grupProducts.forEach(p => {
+      if (p.stok_count > 0) {
+        variasiLines += `*${p.nama}* - ${formatrupiah(p.harga)} (Stok ${p.stok_count})\n`
+      } else {
+        variasiLines += `~${p.nama}~ - ${formatrupiah(p.harga)} _(Habis)_\n`
+      }
+    })
+
+    const text = `📦 *${grupNama}*\n\n${totalTerjual.toLocaleString('id-ID')} Terjual\nS&K / T&C : ${snkDisplay}\n\n${variasiLines}\n🕒 Diperbarui pada ${formattedTime} WIB`
+
+    // Build inline buttons — only available variants get buttons
+    const varButtons = []
+    const availableProducts = grupProducts.filter(p => p.stok_count > 0)
+    for (let i = 0; i < availableProducts.length; i += 2) {
+      const row = [{ text: availableProducts[i].nama, callback_data: `pilih_variasi:${availableProducts[i].kode}` }]
+      if (availableProducts[i + 1]) {
+        row.push({ text: availableProducts[i + 1].nama, callback_data: `pilih_variasi:${availableProducts[i + 1].kode}` })
+      }
+      varButtons.push(row)
+    }
+
+    varButtons.push([{ text: "⟳ Perbarui", callback_data: `grup_refresh:${grupNama}` }])
+    varButtons.push([{ text: "← Kembali", callback_data: "daftarproduk" }])
+
+    const reply_markup = { inline_keyboard: varButtons }
+
+    if (msgId) {
+      await bot.editMessageCaption(text, {
+        chat_id: chatId,
+        message_id: msgId,
+        parse_mode: "Markdown",
+        reply_markup
+      }).catch(async () => {
+        await sendBannerMessage(chatId, text, { reply_markup })
+      })
+    } else {
+      await sendBannerMessage(chatId, text, { reply_markup })
+    }
+  } catch (error) {
+    console.error('Error sendGroupCard:', error)
+    await bot.sendMessage(chatId, `⚠️ Terjadi kesalahan saat memuat grup produk.`)
   }
 }
 
@@ -3769,6 +3834,11 @@ Silahkan pilih menu dibawah ini!`, {
         ]
       }
     })
+
+    const replyKb = await generateReplyKeyboard(msg.from.id)
+    await bot.sendMessage(msg.from.id, `⌨️ Menu navigasi cepat diaktifkan.`, {
+      reply_markup: replyKb
+    })
   } catch (error) {
     console.error('Error in /start:', error)
     await bot.sendMessage(msg.from.id, `⚠️ Terjadi kesalahan saat memuat data. Silakan coba lagi.`)
@@ -3788,12 +3858,269 @@ Pilih bulan untuk melihat rekap transaksi tahun *${tahun}*:`, {
   })
 })
 
+// /setgrup {kode} {grup_nama} — assign a product to a group
+bot.onText(/\/setgrup/, async (msg) => {
+  if (!isOwner(msg)) return await bot.sendMessage(msg.from.id, `⚠️ Hanya bisa diakses oleh owner!`)
+  const args = msg.text.trim().split(/\s+/).slice(1)
+  if (args.length < 2) {
+    return await bot.sendMessage(msg.from.id, `📝 *FORMAT SETGRUP*\n\n\`/setgrup {kode} {nama_grup}\`\n\n*Contoh:*\n\`/setgrup netflix7d Netflix\`\n\`/setgrup netflix30d Netflix\`\n\nProduk dengan nama grup yang sama akan ditampilkan bersama.`, { parse_mode: "Markdown" })
+  }
+  const kode = args[0].toLowerCase()
+  const grupNama = args.slice(1).join(' ')
+
+  const { data: produk } = await supabase.from("Produk").select("*").eq("kode", kode).single()
+  if (!produk) return await bot.sendMessage(msg.from.id, `❌ Produk dengan kode \`${kode}\` tidak ditemukan.`, { parse_mode: "Markdown" })
+
+  await supabase.from("Produk").update({ grup: grupNama }).eq("kode", kode)
+  await bot.sendMessage(msg.from.id, `✅ *GRUP BERHASIL DISET*\n\n📦 Produk: *${produk.nama}*\n🔖 Kode: \`${kode}\`\n📁 Grup: *${grupNama}*`, { parse_mode: "Markdown" })
+})
+
+// /unsetgrup {kode} — remove a product from its group
+bot.onText(/\/unsetgrup/, async (msg) => {
+  if (!isOwner(msg)) return await bot.sendMessage(msg.from.id, `⚠️ Hanya bisa diakses oleh owner!`)
+  const kode = msg.text.trim().split(/\s+/)[1]?.toLowerCase()
+  if (!kode) {
+    return await bot.sendMessage(msg.from.id, `📝 *FORMAT UNSETGRUP*\n\n\`/unsetgrup {kode}\`\n\n*Contoh:*\n\`/unsetgrup netflix7d\``, { parse_mode: "Markdown" })
+  }
+
+  const { data: produk } = await supabase.from("Produk").select("*").eq("kode", kode).single()
+  if (!produk) return await bot.sendMessage(msg.from.id, `❌ Produk dengan kode \`${kode}\` tidak ditemukan.`, { parse_mode: "Markdown" })
+
+  await supabase.from("Produk").update({ grup: null }).eq("kode", kode)
+  await bot.sendMessage(msg.from.id, `✅ *GRUP BERHASIL DIHAPUS*\n\n📦 Produk: *${produk.nama}*\n🔖 Kode: \`${kode}\`\n📁 Produk kini berdiri sendiri (tanpa grup).`, { parse_mode: "Markdown" })
+})
+
+// /listgrup — list all groups and their products
+bot.onText(/\/listgrup/, async (msg) => {
+  if (!isOwner(msg)) return await bot.sendMessage(msg.from.id, `⚠️ Hanya bisa diakses oleh owner!`)
+
+  let { data: Produk } = await supabase.from("Produk").select("nama, kode, grup").order("grup", { ascending: true })
+  if (!Produk || Produk.length === 0) return await bot.sendMessage(msg.from.id, `⚠️ Belum ada produk.`)
+
+  const grupMap = {}
+  const solo = []
+
+  Produk.forEach(p => {
+    if (p.grup) {
+      if (!grupMap[p.grup]) grupMap[p.grup] = []
+      grupMap[p.grup].push(p)
+    } else {
+      solo.push(p)
+    }
+  })
+
+  let text = `📁 *DAFTAR GRUP PRODUK*\n\n`
+
+  Object.keys(grupMap).sort().forEach(g => {
+    text += `*${g}:*\n`
+    grupMap[g].forEach(p => {
+      text += `  • ${p.nama} (\`${p.kode}\`)\n`
+    })
+    text += `\n`
+  })
+
+  if (solo.length > 0) {
+    text += `*📦 Produk Solo (tanpa grup):*\n`
+    solo.forEach(p => {
+      text += `  • ${p.nama} (\`${p.kode}\`)\n`
+    })
+  }
+
+  await bot.sendMessage(msg.from.id, text, { parse_mode: "Markdown" })
+})
+
+bot.onText(/\/stok/, async (msg) => {
+
+  try {
+    let { data: Produk } = await supabase
+      .from("Produk")
+      .select("*")
+    
+    if (!Produk || Produk.length === 0) {
+      await bot.sendMessage(msg.from.id, `⚠️ *TIDAK ADA PRODUK*
+━━━━━━━━━━━━━━━━━━━━
+Belum ada produk yang terdaftar.
+
+━━━━━━━━━━━━━━━━━━━━
+💡 Gunakan \`/addproduk\` untuk menambah produk.`, { parse_mode: "Markdown" })
+      return
+    }
+    
+    // Hitung stok untuk setiap produk
+    const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
+      const stokCount = await getStokCount(p.kode)
+      return { ...p, stok_count: stokCount }
+    }))
+    
+    // Calculate statistics
+    let totalStok = 0
+    let totalTerjual = 0
+    let produkHabis = 0
+    let produkRendah = 0
+    
+    ProdukWithStok.forEach(p => {
+      totalStok += p.stok_count || 0
+      totalTerjual += p.terjual || 0
+      if (p.stok_count === 0) produkHabis++
+      else if (p.stok_count <= 5) produkRendah++
+    })
+    
+    let tx = `📦 *STOK PRODUK*
+━━━━━━━━━━━━━━━━━━━━
+📊 *STATISTIK*
+━━━━━━━━━━━━━━━━━━━━
+📦 Total Stok: *${totalStok}*
+💰 Total Terjual: *${totalTerjual}*
+❌ Produk Habis: *${produkHabis}*
+⚠️ Stok Rendah (≤5): *${produkRendah}*
+━━━━━━━━━━━━━━━━━━━━
+
+*DAFTAR PRODUK:*
+`
+    
+    // Sort by stock (lowest first, then by name)
+    const sortedProduk = [...ProdukWithStok].sort((a, b) => {
+      if (a.stok_count === 0 && b.stok_count > 0) return -1
+      if (a.stok_count > 0 && b.stok_count === 0) return 1
+      if (a.stok_count !== b.stok_count) return a.stok_count - b.stok_count
+      return a.nama.localeCompare(b.nama)
+    })
+    
+    sortedProduk.forEach((p) => {
+      let emoji = ""
+      let status = ""
+      if (p.stok_count === 0) {
+        emoji = "❌"
+        status = "HABIS"
+      } else if (p.stok_count <= 5) {
+        emoji = "⚠️"
+        status = "RENDAH"
+      } else if (p.stok_count <= 20) {
+        emoji = "✅"
+        status = "NORMAL"
+      } else {
+        emoji = "🟢"
+        status = "BANYAK"
+      }
+      
+      const persentase = p.terjual > 0 ? Math.round((p.terjual / (p.terjual + p.stok_count)) * 100) : 0
+      
+      tx += `${emoji} *${p.nama.toUpperCase()}*
+📊 Stok: *${p.stok_count}* | Terjual: *${p.terjual}* | ${persentase}% terjual
+🔖 Kode: \`${p.kode}\` | 💰 ${formatrupiah(p.harga)}
+━━━━━━━━━━━━━━━━━━━━\n`
+    })
+    
+    // Create inline keyboard with actions
+    const buttons = []
+    
+    // Filter buttons
+    buttons.push([
+      { text: "🔍 Filter", callback_data: "stok_filter" },
+      { text: "📊 Statistik", callback_data: "stok_statistik" }
+    ])
+    
+    // Product buttons (first 6 products, 2 per row)
+    const productRows = []
+    for (let i = 0; i < Math.min(6, sortedProduk.length); i += 2) {
+      const row = []
+      row.push({ 
+        text: `${i + 1}️⃣ ${sortedProduk[i].nama.substring(0, 15)}${sortedProduk[i].nama.length > 15 ? '...' : ''}`, 
+        callback_data: `stok_detail_${sortedProduk[i].kode}` 
+      })
+      if (sortedProduk[i + 1]) {
+        row.push({ 
+          text: `${i + 2}️⃣ ${sortedProduk[i + 1].nama.substring(0, 15)}${sortedProduk[i + 1].nama.length > 15 ? '...' : ''}`, 
+          callback_data: `stok_detail_${sortedProduk[i + 1].kode}` 
+        })
+      }
+      productRows.push(row)
+    }
+    buttons.push(...productRows)
+    
+    // Action buttons (only for owner)
+    if (msg.from.id === OwnerID) {
+      buttons.push([
+        { text: "➕ Tambah Stok", callback_data: "addstok" },
+        { text: "✏️ Edit Stok", callback_data: "stok_edit_menu" }
+      ])
+    }
+    
+    buttons.push([{ text: "🔙 Kembali", callback_data: "kembaliawal" }])
+    
+    await bot.sendMessage(msg.from.id, tx, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: buttons
+      }
+    })
+  } catch (error) {
+    console.error('Error in /stok:', error)
+    await bot.sendMessage(msg.from.id, `⚠️ Terjadi kesalahan saat memuat data stok.`)
+  }
+})
+
 
 
 bot.on("callback_query", async (query) => {
   let cmd = query.data
  //await bot.answerCallbackQuery(query.id, { text: "⏳ Harap tunggu sebentar..." })
 try {
+  // Handler: user picks a variation from a group card
+  if (cmd.startsWith('pilih_variasi:')) {
+    const kode = cmd.split(':')[1]
+    await bot.answerCallbackQuery(query.id)
+    
+    let { data: Produk } = await supabase.from("Produk").select("*")
+    const item = Produk ? Produk.find(p => p.kode.toLowerCase() === kode.toLowerCase()) : null
+    
+    if (!item) return await bot.sendMessage(query.from.id, `⚠️ Produk tidak ditemukan!`)
+    
+    const stokCount = await getStokCount(item.kode)
+    if (stokCount === 0) {
+      return await bot.answerCallbackQuery(query.id, { text: `⚠️ Stok ${item.nama} habis!`, show_alert: true })
+    }
+    
+    // Simpan kode ke keranjang, lalu lanjut ke pemilihan jumlah
+    const data = {
+      kode: item.kode,
+      jumlah: 1,
+      trxid: `TRX-${Date.now()}`,
+      voucher: '',
+      voucher_status: '',
+      variasi_nama: item.nama,
+      grup_nama: item.grup || null,
+      selectedStokIds: []
+    }
+    await cart.save(query.from.id, data)
+    
+    // Proceed to product detail card (reuse existing flow)
+    const stokItems = await getStokItems(item.kode, 1)
+    const sampleData = stokItems.length > 0 ? [stokItems[0].data] : (item.data || [])
+    const formatDetected = detectProductFormat(sampleData, item.format)
+    
+    const momentTz = require('moment-timezone')
+    const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
+    
+    await editOrSendBannerMessage(query.from.id, query.message.message_id, `tambahkan jumlah pembelian:\n\n┌──────────────────\n│ • Produk : ${item.grup ? item.grup.toUpperCase() + ' — ' : ''}${item.nama.toUpperCase()}\n│ • Stok Terjual : ${item.terjual}\n│ • Desk : ${item.deskripsi}\n└──────────────────\n\n┌──────────────────\n│ Harga: ${formatrupiah(item.harga)} — (Stok ${stokCount})\n└──────────────────\n\nCurrent Date: ${formattedTime}`, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: `${item.nama} (${stokCount})`, callback_data: "lanjut" }],
+          [{ text: "🔙 Kembali", callback_data: "daftarproduk" }]
+        ]
+      }
+    })
+    return
+  }
+
+  // Handler: refresh a group card
+  if (cmd.startsWith('grup_refresh:')) {
+    const grupNama = cmd.slice('grup_refresh:'.length)
+    await bot.answerCallbackQuery(query.id, { text: '🔄 Memperbarui data...' })
+    await sendGroupCard(query.from.id, grupNama, query.message.message_id)
+    return
+  }
+
   if (cmd.startsWith('deposit_preset:')) {
     const amount = parseInt(cmd.split(':')[1])
     await bot.answerCallbackQuery(query.id, { text: `💸 Menyiapkan deposit Rp ${formatrupiah(amount)}` })
@@ -4066,8 +4393,7 @@ ${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 
         voucher_status: "",
         selectedStokIds: [] // Tambahkan field untuk menyimpan ID stok yang dipilih
       }
-      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(data, null, 2))
-      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+      await cart.save(query.from.id, data)
       
       // Detect format - gunakan stok items untuk detect format
       const stokItems = await getStokItems(item.kode, 1)
@@ -4077,7 +4403,7 @@ ${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 
       const momentTz = require('moment-timezone')
       const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
 
-      await sendBannerMessage(query.from.id, `tambahkan jumlah pembelian:
+      await editOrSendBannerMessage(query.from.id, query.message.message_id, `tambahkan jumlah pembelian:
 
 ┌──────────────────
 │ • Produk : ${item.nama.toUpperCase()}
@@ -4106,12 +4432,12 @@ Current Date: ${formattedTime}`, {
 
 
 if (cmd === "lanjut") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
+  if (await cart.exists(query.from.id)) {
     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     let { data: Produk } = await supabase
 .from("Produk")
 .select("*")
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+    let Data = await cart.get(query.from.id)
     const item = Produk.find(i => i.kode.toLowerCase() === Data.kode.toLowerCase())
     if (!item) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
     
@@ -4141,7 +4467,7 @@ Produk *${item.nama}* tidak memiliki stok tersedia.
     // Inisialisasi selectedStokIds jika belum ada
     if (!Data.selectedStokIds) {
       Data.selectedStokIds = []
-      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(query.from.id, Data)
     }
     
     // Tampilkan stok dengan timestamp dan tombol pilih
@@ -4170,7 +4496,7 @@ Produk *${item.nama}* tidak memiliki stok tersedia.
       [{ text: "← Sebelumnya", callback_data: `item:${item.kode}` }]
     ]
     
-    await sendBannerMessage(query.from.id, stokText, {
+    await editOrSendBannerMessage(query.from.id, query.message.message_id, stokText, {
       reply_markup: {
         inline_keyboard: keyboard
       }
@@ -4181,7 +4507,7 @@ Produk *${item.nama}* tidak memiliki stok tersedia.
 }
 
 // Helper function untuk refresh tampilan stok
-async function refreshStokView(query, Data) {
+async function refreshStokView(query, Data, msgId = null) {
   const { data: Produk } = await supabase.from("Produk").select("*")
   const item = Produk.find(i => i.kode.toLowerCase() === Data.kode.toLowerCase())
   if (!item) return false
@@ -4197,7 +4523,7 @@ async function refreshStokView(query, Data) {
   
   if (!Data.selectedStokIds) {
     Data.selectedStokIds = []
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
   }
   
   const totalPembayaran = Data.selectedStokIds.length * item.harga
@@ -4224,11 +4550,7 @@ async function refreshStokView(query, Data) {
     [{ text: "← Sebelumnya", callback_data: `item:${item.kode}` }]
   ]
   
-  try {
-    await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-  } catch (e) {}
-  
-  await sendBannerMessage(query.from.id, stokText, {
+  await editOrSendBannerMessage(query.from.id, msgId || query.message?.message_id, stokText, {
     reply_markup: {
       inline_keyboard: keyboard
     }
@@ -4241,8 +4563,8 @@ async function refreshStokView(query, Data) {
 if (cmd.startsWith('toggle_stok:')) {
   const stokId = cmd.split(':')[1]
   
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     if (!Data.selectedStokIds) {
       Data.selectedStokIds = []
@@ -4255,7 +4577,7 @@ if (cmd.startsWith('toggle_stok:')) {
       Data.selectedStokIds.splice(index, 1)
       releaseReservation([stokId])
       
-      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(query.from.id, Data)
       
       await bot.answerCallbackQuery(query.id, { 
         text: '⬜ Stok dibatalkan', 
@@ -4275,7 +4597,7 @@ if (cmd.startsWith('toggle_stok:')) {
       }
       
       Data.selectedStokIds.push(stokId)
-      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(query.from.id, Data)
       
       await bot.answerCallbackQuery(query.id, { 
         text: '✅ Stok dipilih & direserve', 
@@ -4291,8 +4613,8 @@ if (cmd.startsWith('toggle_stok:')) {
 if (cmd.startsWith('stok_page:')) {
   const direction = cmd.split(':')[1]
   
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     if (!Data.stokPage) Data.stokPage = 0
     
@@ -4311,7 +4633,7 @@ if (cmd.startsWith('stok_page:')) {
       Data.stokPage++
     }
     
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
     
     await refreshStokView(query, Data)
   }
@@ -4319,8 +4641,8 @@ if (cmd.startsWith('stok_page:')) {
 
 // Handler untuk reset pilihan stok
 if (cmd === "reset_stok") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     // Release semua reservation sebelum reset
     if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
@@ -4328,7 +4650,7 @@ if (cmd === "reset_stok") {
     }
     
     Data.selectedStokIds = []
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
     
     await bot.answerCallbackQuery(query.id, { text: '🔄 Pilihan direset', show_alert: false })
     
@@ -4340,8 +4662,8 @@ if (cmd === "reset_stok") {
 if (cmd.startsWith("select_stok:")) {
   const jumlah = parseInt(cmd.split(":")[1])
   
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     if (jumlah < 0) {
       if (!Data.selectedStokIds) Data.selectedStokIds = []
@@ -4355,7 +4677,7 @@ if (cmd.startsWith("select_stok:")) {
         releaseReservation(toRemove)
       }
       
-      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(query.from.id, Data)
       
       await bot.answerCallbackQuery(query.id, { 
         text: `⬜ Dibatalkan ${toRemove.length} stok`, 
@@ -4411,7 +4733,7 @@ if (cmd.startsWith("select_stok:")) {
       }
     })
     
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
     
     const message = reserved.length < stokIdsToAdd.length 
       ? `⚠️ ${reserved.length} dari ${stokIdsToAdd.length} stok berhasil direserve (yang lain sudah dipilih user lain)`
@@ -4430,8 +4752,8 @@ if (cmd.startsWith("select_stok:")) {
 if (cmd.startsWith("checkout_payment:")) {
   const method = cmd.split(":")[1]
   
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     if (!Data.selectedStokIds || Data.selectedStokIds.length === 0) {
       await bot.answerCallbackQuery(query.id, { 
@@ -4456,14 +4778,14 @@ if (cmd.startsWith("checkout_payment:")) {
       })
       Data.selectedStokIds = validIds
       Data.jumlah = validIds.length
-      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(query.from.id, Data)
       await refreshStokView(query, Data)
       return
     }
     
     // Update jumlah sesuai dengan jumlah stok yang dipilih
     Data.jumlah = Data.selectedStokIds.length
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
     
     await bot.answerCallbackQuery(query.id)
     
@@ -4501,8 +4823,8 @@ if (cmd.startsWith("checkout_payment:")) {
 
 // Handler untuk refresh stok
 if (cmd === "refresh_stok") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     await bot.answerCallbackQuery(query.id, { text: '🔄 Stok diperbarui' })
     await refreshStokView(query, Data)
   }
@@ -4510,8 +4832,8 @@ if (cmd === "refresh_stok") {
 
 // Handler untuk konfirmasi pilihan stok
 if (cmd === "konfirmasi_stok") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     if (!Data.selectedStokIds || Data.selectedStokIds.length === 0) {
       await bot.answerCallbackQuery(query.id, { 
@@ -4524,7 +4846,7 @@ if (cmd === "konfirmasi_stok") {
     // Update jumlah sesuai dengan jumlah stok yang dipilih
     Data.jumlah = Data.selectedStokIds.length
     
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
     
     await bot.answerCallbackQuery(query.id)
     
@@ -4541,14 +4863,13 @@ if (cmd === "konfirmasi_stok") {
 }
 
 if (cmd === "reset") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     if (Data.jumlah === 1) {
       return
     } else {
       Data.jumlah = 1
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
-    Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+    await cart.save(query.from.id, Data)
      let { data: Produk } = await supabase
 .from("Produk")
 .select("*")
@@ -4589,8 +4910,8 @@ Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
 }
 
 if (cmd === "konfirmasi") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase
       .from("Produk")
       .select("*")
@@ -4617,7 +4938,7 @@ if (cmd === "konfirmasi") {
           })
           Data.selectedStokIds = validIds
           Data.jumlah = validIds.length
-          fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+          await cart.save(query.from.id, Data)
         }
         
         if (validIds.length === 0) {
@@ -4641,12 +4962,6 @@ if (cmd === "konfirmasi") {
         }
       }
       
-      try {
-        await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-      } catch (e) {
-        // Ignore if already deleted
-      }
-      
       const userSaldo = await cekSaldo(query.from.id)
       let hargaAwal = Data.jumlah * Produk[s].harga
       let { data: Voucher } = await supabase.from("Voucher").select("*")
@@ -4660,36 +4975,10 @@ if (cmd === "konfirmasi") {
       const totalBayar = hargaAwal - potongan
       const saldoSetelah = userSaldo - totalBayar
       
-      // Ambil info stok yang dipilih untuk ditampilkan
+      // Ambil info stok yang dipilih untuk ditampilkan (COMPACTED FOR 1024 CAPTION LIMIT)
       let stokInfoText = ""
       if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
-        const allStok = await getStokItems(Data.kode.toLowerCase())
-        const selectedStokDetails = allStok.filter(s => Data.selectedStokIds.includes(s.id))
-        
-        // Batasi jumlah stok yang ditampilkan untuk menghindari pesan terlalu panjang
-        const maxDisplay = 10 // Maksimal 10 stok yang ditampilkan detail
-        const stokToDisplay = selectedStokDetails.slice(0, maxDisplay)
-        const remainingCount = selectedStokDetails.length - maxDisplay
-        
-        stokInfoText = `\n📦 *Stok yang Dipilih:* (${selectedStokDetails.length} item)
-━━━━━━━━━━━━━━━━━━━━
-`
-        stokToDisplay.forEach((stok, idx) => {
-          const timestamp = formatWIBDetail(stok.created_at)
-          // Blur data stok, hanya tampilkan 4 karakter pertama
-          const dataPreview = blurStokData(stok.data)
-          stokInfoText += `${idx + 1}. \`${dataPreview}\`
-   📅 Upload: ${timestamp}
-`
-        })
-        
-        // Tampilkan summary untuk stok yang tidak ditampilkan
-        if (remainingCount > 0) {
-          stokInfoText += `\n... dan ${remainingCount} stok lainnya
-`
-        }
-        
-        stokInfoText += `━━━━━━━━━━━━━━━━━━━━\n`
+        stokInfoText = `\n📦 *Stok yang Dipilih:* ${Data.selectedStokIds.length} item\n━━━━━━━━━━━━━━━━━━━━\n`
       }
       
       // Detect format
@@ -4809,8 +5098,11 @@ ${Produk[s].snk.length > 100 ? Produk[s].snk.substring(0, 100) + '...' : Produk[
         { text: "💬 Hubungi CS", url: channelContact.cs }
       ])
       
-      await bot.sendMessage(query.from.id, confirmText, {
-        parse_mode: "Markdown",
+      // Enforce photo caption limit (1024 chars)
+      if (confirmText.length > 1000) {
+        confirmText = confirmText.substring(0, 980) + '\n\n⚠️ _(Detail dipotong)_'
+      }
+      await editOrSendBannerMessage(query.from.id, query.message.message_id, confirmText, {
         reply_markup: {
           inline_keyboard: keyboard
         }
@@ -4823,8 +5115,8 @@ ${Produk[s].snk.length > 100 ? Produk[s].snk.substring(0, 100) + '...' : Produk[
 
 // Enhanced payment method selection
 if (cmd === "pilih_payment_method") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase.from("Produk").select("*")
     
     let s = null
@@ -4909,12 +5201,11 @@ Tersedia ${availableVouchers.length} voucher:`
       
       keyboard.push([{ text: "🔙 Kembali", callback_data: "konfirmasi_kembali" }])
       
-      try {
-        await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-      } catch (e) {
-        // Ignore
+      // Enforce caption limit
+      if (paymentText.length > 1000) {
+        paymentText = paymentText.substring(0, 980) + '\n\n⚠️ _(Dipotong)_'
       }
-      await sendBannerMessage(query.from.id, paymentText, {
+      await editOrSendBannerMessage(query.from.id, query.message.message_id, paymentText, {
         reply_markup: {
           inline_keyboard: keyboard
         }
@@ -4925,8 +5216,8 @@ Tersedia ${availableVouchers.length} voucher:`
 
 // Enhanced voucher list
 if (cmd === "lihat_voucher") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase.from("Produk").select("*")
     
     let s = null
@@ -4983,13 +5274,11 @@ ${v.minimal_pembelian ? `💵 Min. pembelian: ${formatrupiah(v.minimal_pembelian
       
       keyboard.push([{ text: "🔙 Kembali", callback_data: "pilih_payment_method" }])
       
-      try {
-        await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-      } catch (e) {
-        // Ignore
+      // Enforce caption limit
+      if (voucherText.length > 1000) {
+        voucherText = voucherText.substring(0, 980) + '\n\n⚠️ _(Dipotong)_'
       }
-      await bot.sendMessage(query.from.id, voucherText, {
-        parse_mode: "Markdown",
+      await editOrSendBannerMessage(query.from.id, query.message.message_id, voucherText, {
         reply_markup: {
           inline_keyboard: keyboard
         }
@@ -5002,8 +5291,8 @@ ${v.minimal_pembelian ? `💵 Min. pembelian: ${formatrupiah(v.minimal_pembelian
 if (cmd.startsWith("apply_voucher_")) {
   const voucherKode = cmd.replace("apply_voucher_", "")
   
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase.from("Produk").select("*")
     
     let s = null
@@ -5049,19 +5338,14 @@ if (cmd.startsWith("apply_voucher_")) {
       }
       
       Data.voucher = voucherKode
-      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(query.from.id, Data)
       
       await bot.answerCallbackQuery(query.id, { 
         text: `✅ Voucher ${voucherKode} berhasil digunakan!`, 
         show_alert: true 
       })
       
-      // Return to payment method selection by re-triggering
-      try {
-        await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-      } catch (e) {
-        // Ignore
-      }
+      // Return to payment method selection by re-triggering (in-place)
       
       // Re-trigger pilih_payment_method manually
       const userSaldo = await cekSaldo(query.from.id)
@@ -5142,10 +5426,10 @@ Tersedia ${availableVouchers.length} voucher:`
 }
 
 if (cmd === "punya") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     Data.voucher_status = "waiting"
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
     try {
       await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     } catch (e) {
@@ -5166,14 +5450,13 @@ if (cmd === "punya") {
 
 // Cancel order with confirmation
 if (cmd === "batal_pesanan") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
+  if (await cart.exists(query.from.id)) {
     await bot.answerCallbackQuery(query.id)
-    await bot.sendMessage(query.from.id, `❌ *BATAL PESANAN*
+    await editOrSendBannerMessage(query.from.id, query.message.message_id, `❌ *BATAL PESANAN*
 ━━━━━━━━━━━━━━━━━━━━
 Apakah Anda yakin ingin membatalkan pesanan ini?
 
 ━━━━━━━━━━━━━━━━━━━━`, {
-      parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
           [
@@ -5188,8 +5471,8 @@ Apakah Anda yakin ingin membatalkan pesanan ini?
 
 // Confirm cancel
 if (cmd === "batal_pesanan_confirm") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     // Release reservations sebelum cancel
     if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
@@ -5202,15 +5485,14 @@ if (cmd === "batal_pesanan_confirm") {
     } catch (e) {
       // Ignore
     }
-    fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
-    await bot.sendMessage(query.from.id, `✅ *PESANAN DIBATALKAN*
-
-━━━━━━━━━━━━━━━━━━━━
-Pesanan Anda telah dibatalkan.
-
-━━━━━━━━━━━━━━━━━━━━
-💡 Klik tombol di bawah untuk melanjutkan.`, {
-      parse_mode: "Markdown",
+    await cart.clear(query.from.id)
+    await editOrSendBannerMessage(query.from.id, query.message.message_id, `✅ *PESANAN DIBATALKAN*
+ 
+ ━━━━━━━━━━━━━━━━━━━━
+ Pesanan Anda telah dibatalkan.
+ 
+ ━━━━━━━━━━━━━━━━━━━━
+ 💡 Klik tombol di bawah untuk melanjutkan.`, {
       reply_markup: {
         inline_keyboard: [
           [{ text: "🛍️ Belanja Lagi", callback_data: "daftarproduk" }],
@@ -5232,8 +5514,8 @@ if (cmd === "cek_saldo") {
 
 // Go back to confirmation
 if (cmd === "konfirmasi_kembali") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase.from("Produk").select("*")
     
     let s = null
@@ -5324,8 +5606,11 @@ ${Produk[s].snk.length > 150 ? Produk[s].snk.substring(0, 150) + '...' : Produk[
         { text: "💬 Hubungi CS", url: channelContact.cs }
       ])
       
-      await bot.sendMessage(query.from.id, confirmText, {
-        parse_mode: "Markdown",
+      // Enforce caption limit
+      if (confirmText.length > 1000) {
+        confirmText = confirmText.substring(0, 980) + '\n\n⚠️ _(Dipotong)_'
+      }
+      await editOrSendBannerMessage(query.from.id, query.message.message_id, confirmText, {
         reply_markup: {
           inline_keyboard: keyboard
         }
@@ -6023,10 +6308,10 @@ Pilih produk yang ingin ditambah stoknya:
 }
 
 if (cmd === "batalvoucher") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     Data.voucher_status = ""
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     const userSaldo = await cekSaldo(query.from.id)
     let { data: Produk } = await supabase.from("Produk").select("*")
@@ -6069,16 +6354,15 @@ ${userSaldo >= harga ? '✅ Saldo mencukupi\n' : '⚠️ Saldo tidak mencukupi\n
 
 if (cmd.startsWith("min:")) {
   let jumlah = cmd.split("min:")[1]
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     let gs = Data.jumlah-Number(jumlah)
     if (gs < 1) {
      await bot.answerCallbackQuery(query.id, { text: "⚠️ Jumlah pesanan tidak boleh kurang dari 1", show_alert: true })
      return
    }
     Data.jumlah -= Number(jumlah)
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
-     Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+    await cart.save(query.from.id, Data)
      let { data: Produk } = await supabase
 .from("Produk")
 .select("*")
@@ -6118,8 +6402,8 @@ Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
 }
 if (cmd.startsWith("plus:")) {
   let jumlah = cmd.split("plus:")[1]
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase
 .from("Produk")
 .select("*")
@@ -6131,8 +6415,7 @@ if (cmd.startsWith("plus:")) {
        return
      }
      Data.jumlah += Number(jumlah)
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
-     Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+    await cart.save(query.from.id, Data)
      let { data: Produk2 } = await supabase
 .from("Produk")
 .select("*")
@@ -6173,8 +6456,8 @@ Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
 }
 
 if (cmd === "batalbeli") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     // Release reservations sebelum cancel
     if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
@@ -6183,17 +6466,17 @@ if (cmd === "batalbeli") {
     }
     
     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-    fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+    await cart.clear(query.from.id)
     await sendMessage(query.from.id,`✅ Pesananmu berhasil dibatalkan.`)
   }
 }
 
 if (cmd === "bayarsaldo") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
+  if (await cart.exists(query.from.id)) {
     try {
       await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     } catch (e) {}
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase.from("Produk").select("*")
     let np = null
     Object.keys(Produk).forEach((f) => {
@@ -6316,7 +6599,7 @@ ${DataProduk}
 
 //Terimakasih telah percaya kepada ${NamaBot}. Kami harap layanan kami dapat membuat anda puas`
     
-    let txxx = "```txt\n<|==== SYARAT DAN KETENTUAN ====|>\n" + Produk[np].snk + "\n\n<|==== PRODUK ====|>\n" + DataProduk + "\n\n//Terimakasih telah percaya kepada "+ NamaBot + ". Kami harap layanan kami dapat membuat anda puas```"
+    let txxx = "```txt\n[GARANSI / S&K]\n" + Produk[np].snk + "\n\n[DATA PRODUK]\n" + DataProduk + "```"
     let pathtxt = `./${query.from.id}-${Produk[np].kode}-${Data.jumlah}.txt`
     fs.writeFileSync(pathtxt, txfile)
     let tggl = new Date().toISOString()
@@ -6426,6 +6709,15 @@ Terima kasih! 🙏`, {
         parse_mode: "Markdown",
         reply_markup: completionKeyboard
       })
+    }
+
+    try {
+      const replyKb = await generateReplyKeyboard(query.from.id)
+      await bot.sendMessage(query.from.id, `🛒 *Pesanan Selesai.* Saldo Anda telah diperbarui.`, {
+        reply_markup: replyKb
+      })
+    } catch (replyKbError) {
+      console.error('Error updating reply keyboard after purchase:', replyKbError)
     }
     
     // Store product data temporarily for redownload/copy (save to a temp file)
@@ -6542,8 +6834,9 @@ di *${NamaBot}*! 🙏`, {
       }
     }
     
-    // Hapus file transaksi
-    fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+    // Kosongkan keranjang (stok sudah ditandai terjual, jadi tidak ada
+    // reservasi yang perlu dilepas di sini)
+    await cart.clear(query.from.id)
     
     // Kembali ke menu utama
     let { data: Trx } = await supabase.from("Trx").select("*")
@@ -6590,11 +6883,11 @@ Silahkan pilih menu dibawah ini!`, {
 }
 
 if (cmd === "bayar") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
+  if (await cart.exists(query.from.id)) {
     try {
       await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     } catch (e) {}
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase
 .from("Produk")
 .select("*")
@@ -6701,7 +6994,10 @@ Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik s
       let pollAttempts = 0
       const maxPollAttempts = 60 // Maksimal 60 kali polling (10 menit)
       
-      while (!statusP && pollAttempts < maxPollAttempts && fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
+      // Keranjang dicek ulang setiap iterasi (sama seperti fs.existsSync dulu):
+      // kalau user membatalkan pesanan, polling ikut berhenti. Sekarang ini satu
+      // query indexed per 10 detik per pembayaran pending, bukan stat() disk.
+      while (!statusP && pollAttempts < maxPollAttempts && await cart.exists(query.from.id)) {
         await sleep(10000)
         pollAttempts++
         
@@ -6709,8 +7005,8 @@ Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik s
           statusP = true
           
           // Release reservations saat expired
-          if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-            let DataExpired = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+          if (await cart.exists(query.from.id)) {
+            let DataExpired = await cart.get(query.from.id)
             if (DataExpired.selectedStokIds && DataExpired.selectedStokIds.length > 0) {
               releaseReservation(DataExpired.selectedStokIds)
               console.log(`🔓 Release ${DataExpired.selectedStokIds.length} reserved stocks for user ${query.from.id} (expired)`)
@@ -6727,7 +7023,7 @@ Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik s
           await sendMessage(query.from.id, `Pesananmu telah expired, harap pesan kembali!`)
           await supabase.from("Payment").update({ status: 'expired' }).eq('order_id', Data.trxid).eq('status', 'pending')
           pakasir.cancelTransaction({ orderId: Data.trxid, amount: harga }).catch(() => {})
-          fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+          await cart.clear(query.from.id)
           break;
         }
         try {
@@ -6788,7 +7084,7 @@ Maaf, beberapa stok yang dipilih sudah tidak tersedia.
 *Stok Valid:* ${stokItems.length} item
 
 Silakan pesan ulang.`)
-                fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+                await cart.clear(query.from.id)
                 return
               }
             } else {
@@ -6817,7 +7113,7 @@ Maaf, stok produk tidak mencukupi untuk pesanan Anda.
 *Stok Tersedia:* ${stokCountCheck} item
 
 Silakan pesan ulang dengan jumlah yang sesuai.`)
-                fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+                await cart.clear(query.from.id)
                 return
               }
               
@@ -6847,7 +7143,7 @@ Maaf, stok produk tidak mencukupi untuk pesanan Anda.
 *Stok Tersedia:* ${stokItems.length} item
 
 Silakan pesan ulang dengan jumlah yang sesuai.`)
-                fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+                await cart.clear(query.from.id)
                 return
               }
             }
@@ -6886,7 +7182,7 @@ ${Produk[np].snk}
 ${DataProduk}
 
 //Terimakasih telah percaya kepada ${NamaBot}. Kami harap layanan kami dapat membuat anda puas`
-let txxx = "```txt\n<|==== SYARAT DAN KETENTUAN ====|>\n" + Produk[np].snk + "\n\n<|==== PRODUK ====|>\n" + DataProduk + "\n\n//Terimakasih telah percaya kepada "+ NamaBot + ". Kami harap layanan kami dapat membuat anda puas```"
+let txxx = "```txt\n[GARANSI / S&K]\n" + Produk[np].snk + "\n\n[DATA PRODUK]\n" + DataProduk + "```"
 let pathtxt = `./${query.from.id}-${Produk[np].kode}-${Data.jumlah}.txt`
 fs.writeFileSync(pathtxt, txfile)
 let tggl = new Date().toISOString()
@@ -7249,16 +7545,16 @@ Silahkan pilih menu dibawah ini!`, {
               console.error('Error refresh menu:', menuError)
             }
             
-            // Hapus file transaksi temp
+            // Kosongkan keranjang
             try {
-              if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-                let DataCleanup = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+              if (await cart.exists(query.from.id)) {
+                let DataCleanup = await cart.get(query.from.id)
                 // Release reservations jika ada
                 if (DataCleanup.selectedStokIds && DataCleanup.selectedStokIds.length > 0) {
                   releaseReservation(DataCleanup.selectedStokIds)
                   console.log(`🔓 Release ${DataCleanup.selectedStokIds.length} reserved stocks (cleanup)`)
                 }
-                fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+                await cart.clear(query.from.id)
               }
             } catch (cleanupError) {
               console.error('Error cleanup:', cleanupError)
@@ -9804,21 +10100,19 @@ Kode Deposit: \`${kodeDeposit}\`
 }
 
  if (cmd === "kembaliawal") {
-   try {
-     // Hapus file transaksi sementara jika ada
-     if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-       let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
-       
-       // Release reservations sebelum kembali ke menu awal
-       if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
-         releaseReservation(Data.selectedStokIds)
-         console.log(`🔓 Release ${Data.selectedStokIds.length} reserved stocks for user ${query.from.id} (kembaliawal)`)
-       }
-       
-       fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
-     }
-     
-     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    try {
+      // Kosongkan keranjang jika ada
+      if (await cart.exists(query.from.id)) {
+        let Data = await cart.get(query.from.id)
+        
+        // Release reservations sebelum kembali ke menu awal
+        if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
+          releaseReservation(Data.selectedStokIds)
+          console.log(`🔓 Release ${Data.selectedStokIds.length} reserved stocks for user ${query.from.id} (kembaliawal)`)
+        }
+        
+        await cart.clear(query.from.id)
+      }
      
      // Parallel queries untuk semua data (LEBIH CEPAT!)
      const [
@@ -9842,9 +10136,8 @@ Kode Deposit: \`${kodeDeposit}\`
      
      // Extract counts
      const trxCount = trxCountResult.count || 0
-     const userCount = userCountResult.count || 0
-     
-     await sendBannerMessage(query.from.id, `Halo, *${query.from.first_name}* 👋
+      const userCount = userCountResult.count || 0
+      await editOrSendBannerMessage(query.from.id, query.message.message_id, `Halo, *${query.from.first_name}* 👋
 
 Selamat datang di *${NamaBot}*
 
@@ -9904,7 +10197,7 @@ Belum ada produk yang terdaftar.
     }))
     
     const isOwnerUser = isOwner(query)
-    await sendProductPage(ProdukWithStok, query.from.id, 0, null, query.id, {}, isOwnerUser)
+    await sendProductPage(ProdukWithStok, query.from.id, 0, query.message.message_id, query.id, {}, isOwnerUser)
   }
   
   // Handler untuk menu kategori
@@ -9976,10 +10269,7 @@ Pilih kategori produk yang ingin dilihat:
     buttons.push([{ text: "🔙 Kembali", callback_data: "kembaliawal" }])
     
     await bot.answerCallbackQuery(query.id)
-    try {
-      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-    } catch (e) {}
-    await sendBannerMessage(query.from.id, text, {
+    await editOrSendBannerMessage(query.from.id, query.message.message_id, text, {
       reply_markup: {
         inline_keyboard: buttons
       }
@@ -10025,7 +10315,7 @@ Pilih kategori produk yang ingin dilihat:
     
     const isOwnerUser = isOwner(query)
     const kategoriLabel = `${getKategoriEmoji(kategori)} ${getKategoriName(kategori)}`
-    await sendProductPage(kategoriProduk, query.from.id, 0, null, query.id, {
+    await sendProductPage(kategoriProduk, query.from.id, 0, query.message.message_id, query.id, {
       kategori: kategori,
       kategoriLabel: kategoriLabel
     }, isOwnerUser)
@@ -10230,7 +10520,6 @@ ${mostExpensive ? `💰 *${formatrupiah(mostExpensive.harga)}*\n📦 ${mostExpen
 2️⃣ Pilih produk yang ingin dibeli
 3️⃣ Lihat detail produk (harga, stok, deskripsi)
 💡 Pastikan stok tersedia sebelum order
-💡 *Tips Cepat:* Anda juga bisa langsung mengetik nomor produk di chat untuk membeli (contoh: ketik \`1\` untuk membeli produk nomor 1)
 
 ━━━━━━━━━━━━━━━━━━━━
 
@@ -10526,11 +10815,42 @@ bot.on('message',async (msg) => {
         delete editKategoriState[msg.from.id]
       }
     }
+    if (command !== '/deposit' && command !== '/batal') {
+      if (depositState[msg.from.id]) {
+        delete depositState[msg.from.id]
+      }
+    }
+  }
+  
+  // Handler untuk custom nominal deposit (tanpa prefix /deposit)
+  if (depositState[msg.from.id] && depositState[msg.from.id].status === 'awaiting_custom_nominal' && text && !text.startsWith('/')) {
+    const inputText = text.trim()
+    
+    // Parse nominal
+    const jumlah = parseInt(inputText)
+    if (isNaN(jumlah) || jumlah < 1000) {
+      return await bot.sendMessage(msg.from.id, `❌ *NOMINAL TIDAK VALID*
+=======================
+Minimum deposit: *Rp 1.000*
+
+Nominal yang Anda masukkan: \`${inputText}\`
+
+=======================
+💡 Silakan kirim angka nominal minimal 1000 (contoh: \`15000\`).
+Ketik \`/batal\` untuk membatalkan.`, {
+        parse_mode: "Markdown"
+      })
+    }
+    
+    // Clear state dan jalankan transaksi deposit
+    delete depositState[msg.from.id]
+    await createDepositTransaction(msg.from.id, msg.from.username, msg.from.first_name, jumlah, msg.chat.id)
+    return
   }
   
   // PRIORITAS 1: Handler voucher (harus dijalankan pertama)
-  if (fs.existsSync(`./Database/Trx/${msg.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${msg.from.id}.json`))
+  if (await cart.exists(msg.from.id)) {
+    let Data = await cart.get(msg.from.id)
     if (Data.voucher_status === "waiting") {
       // FIX: Cek apakah text ada sebelum digunakan
       if (!text || typeof text !== 'string' || text.trim() === '') {
@@ -10549,7 +10869,7 @@ bot.on('message',async (msg) => {
       
       let voucher = text
       Data.voucher_status = ""
-      fs.writeFileSync(`./Database/Trx/${msg.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(msg.from.id, Data)
       let { data: VC } = await supabase
         .from("Voucher")
         .select("*")
@@ -10662,7 +10982,7 @@ ${Data.kode}
       
       // Voucher valid, simpan ke data transaksi
       Data.voucher = vv.kode
-      fs.writeFileSync(`./Database/Trx/${msg.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(msg.from.id, Data)
       
       let { data: Produk } = await supabase.from("Produk").select("*")
       let np = Produk.findIndex(i => i.kode.toLowerCase() === Data.kode.toLowerCase())
@@ -10700,187 +11020,76 @@ ${infoText}`, {
       return // PENTING: return agar handler lain tidak dijalankan
     }
   }
-  
-  // PRIORITAS 2: Handler untuk pembelian via nomor produk
-  // Cek apakah text adalah angka (nomor produk)
-  // Skip jika user sedang dalam mode input tertentu (editstok, addstok, dll)
-  // FIX: Tambahkan pengecekan untuk semua state mode interaktif
-  if (text && typeof text === 'string' && /^\d+$/.test(text.trim()) && !text.startsWith('/') && 
-      !(editstok[msg.from.id] && editstok[msg.from.id].status) &&
-      !(addStokState[msg.from.id] && addStokState[msg.from.id].step === 2) &&
-      !addProdukState[msg.from.id] &&
-      !editNamaState[msg.from.id] &&
-      !editKodeState[msg.from.id] &&
-      !editHargaState[msg.from.id] &&
-      !editDeskripsiState[msg.from.id] &&
-      !editSnkState[msg.from.id] &&
-      !editFormatState[msg.from.id] &&
-      !editKategoriState[msg.from.id]) {
-    const productNumber = parseInt(text.trim())
-    
-    // Ambil semua produk
-    let { data: Produk } = await supabase
-      .from("Produk")
-      .select("*")
-    
-    if (!Produk || Produk.length === 0) {
-      return // Tidak ada produk, biarkan handler lain menangani
-    }
-    
-    // Hitung stok untuk setiap produk dan urutkan sesuai dengan yang ditampilkan di daftar produk
-    const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-      const stokCount = await getStokCount(p.kode)
-      return { ...p, stok_count: stokCount }
-    }))
-    
-    // Urutkan produk sesuai dengan yang ditampilkan di sendProductPage (default: by name)
-    const sortedProducts = [...ProdukWithStok].sort((a, b) => a.nama.localeCompare(b.nama))
-    
-    // Validasi nomor produk
-    if (productNumber < 1 || productNumber > sortedProducts.length) {
-      return await bot.sendMessage(msg.from.id, `❌ *Nomor Produk Tidak Valid*
-━━━━━━━━━━━━━━━━━━━━
-Nomor \`${productNumber}\` tidak ditemukan.
 
-💡 Gunakan nomor 1-${sortedProducts.length} sesuai dengan daftar produk.
-💡 Ketik \`/start\` atau klik "📦 Daftar Produk" untuk melihat daftar produk.`, {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "📦 Lihat Daftar Produk", callback_data: "daftarproduk" }]
-          ]
-        }
-      })
-    }
+  // Handler untuk text button dari Reply Keyboard
+  if (text && typeof text === 'string' && !text.startsWith('/')) {
+    const cleanText = text.trim()
     
-    // Ambil produk berdasarkan nomor (index dimulai dari 0, jadi kurangi 1)
-    const selectedProduct = sortedProducts[productNumber - 1]
-    
-    if (!selectedProduct) {
+    // 1. Daftar Produk
+    if (cleanText === "Daftar Produk" || cleanText === "📦 Daftar Produk") {
+      let { data: Produk } = await supabase
+        .from("Produk")
+        .select("*")
+      
+      if (!Produk || Produk.length === 0) {
+        return await bot.sendMessage(msg.from.id, `⚠️ *BELUM ADA PRODUK*
+━━━━━━━━━━━━━━━━━━━━
+Belum ada produk yang terdaftar.
+
+━━━━━━━━━━━━━━━━━━━━
+💡 Hubungi admin untuk informasi lebih lanjut.`, {
+          parse_mode: "Markdown"
+        })
+      }
+      
+      const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
+        const stokCount = await getStokCount(p.kode)
+        return { ...p, stok_count: stokCount }
+      }))
+      
+      const isOwnerUser = msg.from.id === OwnerID
+      await sendProductPage(ProdukWithStok, msg.from.id, 0, null, null, {}, isOwnerUser)
       return
     }
     
-    // Cek apakah produk memiliki stok
-    if (selectedProduct.stok_count === 0) {
-      return await bot.sendMessage(msg.from.id, `⚠️ *STOK KOSONG*
-━━━━━━━━━━━━━━━━━━━━
-Produk *${selectedProduct.nama}* tidak memiliki stok tersedia.
-
-━━━━━━━━━━━━━━━━━━━━
-💡 Silakan pilih produk lain.`, {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "📦 Lihat Produk Lain", callback_data: "daftarproduk" }]
-          ]
-        }
-      })
-    }
-    
-    // Simulasi klik produk dengan callback item:${kode}
-    const itemName = selectedProduct.kode
-    let { data: Premium } = await supabase
-      .from("Premium")
-      .select("*")
-      .eq("kode", itemName.toLowerCase())
-      .single()
-    
-    if (Premium !== null) {
-      let user = Premium.user.find(x => x === msg.from.id)
-      if (!user) {
-        // Cek saldo user
-        const userSaldo = await cekSaldo(msg.from.id)
-        const minimalSaldo = 40000
-        
-        const buttons = []
-        if (userSaldo >= minimalSaldo) {
-          buttons.push([{text: "✅ Dapatkan Akses", callback_data: `buypremium:${itemName.toLowerCase()}`}])
-        } else {
-          buttons.push([{text: "💰 Deposit Saldo", callback_data: "saldomenu"}])
-        }
-        buttons.push([{text: "🔙 Kembali", callback_data: "kembaliawal"}])
-        
-        await bot.sendMessage(msg.from.id, `🔒 Produk Eksklusif
-
-Produk *${itemName.toUpperCase()}* memerlukan akses premium.
-
-━━━━━━━━━━━━━━━━━━━━
-
-💡 *Cara Mendapatkan Akses:*
-
-Anda perlu memiliki saldo mengendap minimal *${formatrupiah(minimalSaldo)}* di akun Anda.
-
-💰 *Saldo Anda Saat Ini:* ${formatrupiah(userSaldo)}
-${userSaldo >= minimalSaldo ? '✅ Saldo Anda mencukupi!' : `❌ Saldo Anda belum mencukupi (kurang ${formatrupiah(minimalSaldo - userSaldo)})`}
-
-ℹ️ *Catatan:* Saldo ini akan tetap di akun Anda, hanya digunakan sebagai jaminan akses. Saldo tidak akan dikurangi.
-
-${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 'Silakan deposit terlebih dahulu untuk mendapatkan akses:'}`, {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: buttons
-          }
-        })
-        return
+    // 2. Riwayat Transaksi
+    if (cleanText === "Riwayat Transaksi" || cleanText === "📋 Riwayat Transaksi") {
+      let { data: Trx } = await supabase
+        .from("Trx")
+        .select("*")
+      
+      if (!Trx || Trx.length === 0) {
+        return await bot.sendMessage(msg.from.id, `⚠️ Belum ada transaksi apapun!`)
       }
+      await sendPage(Trx, msg.from.id, 0)
+      return
     }
     
-    let { data: ProdukData } = await supabase
-      .from("Produk")
-      .select("*")
-    
-    const item = ProdukData.find(i => i.kode.toLowerCase() === itemName.toLowerCase())
-    
-    if (item) {
-      // Hitung stok dari tabel Stok
-      const stokCount = await getStokCount(item.kode)
-      
-      let Unique = require("crypto").randomBytes(6).toString("hex").toUpperCase()
-      let data = {
-        id: msg.from.id,
-        kode: item.kode,
-        jumlah: 1,
-        trxid: Unique,
-        voucher: "",
-        voucher_status: "",
-        selectedStokIds: []
+    // 3. Saldo Menu
+    if (cleanText.startsWith("Saldo:") || cleanText.startsWith("💰 Saldo:") || cleanText === "Saldo & Deposit" || cleanText === "‹💰› Saldo & Deposit") {
+      const saldo = await cekSaldo(msg.from.id)
+      const textResponse = `💰 *SALDO & DEPOSIT*
+=======================
+💵 *Saldo Tersedia:* ${formatrupiah(saldo)}
+=======================
+*Fitur:*
+• 💳 Top Up Saldo - Deposit saldo via QRIS
+• 📋 Riwayat Deposit - Lihat riwayat deposit
+• 💰 Cek Saldo - Lihat saldo saat ini
+=======================
+💡 Gunakan saldo untuk pembayaran yang lebih cepat!`
+
+      const reply_markup = {
+        inline_keyboard: [
+          [{text: "💳 Top Up Saldo", callback_data: "deposit_menu"}],
+          [{text: "📋 Riwayat Deposit", callback_data: "riwayatdeposit"}],
+          [{text: "🔙 Menu Utama", callback_data: "kembaliawal"}]
+        ]
       }
-      fs.writeFileSync(`./Database/Trx/${msg.from.id}.json`, JSON.stringify(data, null, 2))
-      
-      // Detect format - gunakan stok items untuk detect format
-      const stokItems = await getStokItems(item.kode, 1)
-      const sampleData = stokItems.length > 0 ? [stokItems[0].data] : (item.data || [])
-      const formatDetected = detectProductFormat(sampleData, item.format)
-      
-      const momentTz = require('moment-timezone')
-      const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
 
-      await sendBannerMessage(msg.from.id, `tambahkan jumlah pembelian:
-
-┌──────────────────
-│ • Produk : ${item.nama.toUpperCase()}
-│ • Stok Terjual : ${item.terjual}
-│ • Desk : ${item.deskripsi}
-└──────────────────
-
-┌──────────────────
-│ Variasi, Harga - (Stok):
-│ • ${item.nama}: ${formatrupiah(item.harga)} - (${stokCount})
-└──────────────────
-
-Current Date: ${formattedTime}`, {
-        reply_markup: {
-          inline_keyboard: [
-            [{text: `${item.nama} (${stokCount})`, callback_data: "lanjut"}],
-            [{text: "🔙 Kembali", callback_data: "daftarproduk"}]
-          ]
-        }
-      })
-    } else {
-      await bot.sendMessage(msg.from.id, `⚠️ Produk tidak ditemukan, mungkin sudah dihapus!`)
+      await sendBannerMessage(msg.from.id, textResponse, { reply_markup })
+      return
     }
-    
-    return // PENTING: return agar handler lain tidak dijalankan
   }
   
   // PRIORITAS 3: Handler editstok
@@ -11761,13 +11970,14 @@ cron.schedule('*/2 * * * *', async () => {
         await supabase.from('Deposit').update({ status: 'success' }).eq('kode_deposit', p.order_id)
         await addSaldo(p.user_id, p.amount)
         const saldoBaru = await cekSaldo(p.user_id)
+        const replyKb = await generateReplyKeyboard(p.user_id)
         await sendMessage(p.user_id, `✅ *DEPOSIT BERHASIL*
 =======================
 💰 *Jumlah:* ${formatrupiah(p.amount)}
 🆔 *Kode Deposit:* \`${p.order_id}\`
 💵 *Saldo Sekarang:* ${formatrupiah(saldoBaru)}
 =======================
-💡 Saldo telah ditambahkan ke akun Anda!`).catch(() => {})
+💡 Saldo telah ditambahkan ke akun Anda!`, { reply_markup: replyKb }).catch(() => {})
         if (channelContact.channelLog) {
           await bot.sendMessage(channelContact.channelLog, `💰 *DEPOSIT (REKONSILIASI)*
 =======================
