@@ -392,7 +392,57 @@
   }
 
   function buttonLabel(btn) {
-    return btn.label || btn.label_key || 'Button'
+    return btn.text || btn.label || btn.label_key || 'Button'
+  }
+
+  function formatCaptionHtml(caption) {
+    // Light Markdown-ish: *bold*, _italic~, strip remaining markers for readability
+    let s = escapeHtml(caption || '')
+    s = s.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
+    s = s.replace(/_([^_\n]+)_/g, '<em>$1</em>')
+    s = s.replace(/~([^~\n]+)~/g, '<s>$1</s>')
+    return s
+  }
+
+  function bindPreviewButton(el, btn) {
+    el.addEventListener('click', function () {
+      if (btn.go) {
+        previewStep({ nodeKey: btn.go })
+        return
+      }
+      if (btn.preview) {
+        if (btn.preview.type === 'stub') {
+          previewStep({ preview: btn.preview })
+          return
+        }
+        if (btn.preview.type === 'go' && btn.preview.key) {
+          previewStep({ nodeKey: btn.preview.key })
+          return
+        }
+        if (btn.preview.type === 'action' && btn.preview.action) {
+          // Map legacy daftarproduk → product_list node
+          const key = btn.preview.action === 'product_list' ? 'product_list' : btn.preview.action
+          previewStep({ nodeKey: key })
+          return
+        }
+        previewStep({ preview: btn.preview })
+        return
+      }
+      if (btn.stub || btn.kind === 'link' || btn.url || btn.url_from) {
+        const cap = document.getElementById('previewCaption')
+        if (cap) {
+          cap.innerHTML = formatCaptionHtml(
+            (btn.kind === 'link' || btn.url || btn.url_from)
+              ? (buttonLabel(btn) + '\n\n(Link opens in Telegram only)')
+              : (buttonLabel(btn) + '\n\nThis step runs in the live bot only.')
+          )
+        }
+        return
+      }
+      if (btn.callback) {
+        previewStep({ preview: { type: 'stub', title: 'Callback: ' + btn.callback } })
+      }
+    })
   }
 
   function buildPreviewKeyboard(buttons) {
@@ -405,68 +455,44 @@
       for (const btn of row || []) {
         const b = document.createElement('button')
         b.type = 'button'
-        b.textContent = buttonLabel(btn)
-        if (btn.go) {
-          b.dataset.go = btn.go
-        } else if (btn.callback) {
-          b.className = 'stub'
-          b.dataset.callback = btn.callback
-        } else if (btn.url_from || btn.url) {
-          b.className = 'stub'
-          b.textContent = buttonLabel(btn) + ' (link)'
+        let label = buttonLabel(btn)
+        if (btn.kind === 'link' || btn.url || btn.url_from) {
+          label += ' ↗'
+          b.classList.add('stub')
+        } else if (btn.stub) {
+          b.classList.add('stub')
         }
+        b.textContent = label
+        bindPreviewButton(b, btn)
         rowEl.appendChild(b)
       }
       kb.appendChild(rowEl)
     }
-    kb.querySelectorAll('button[data-go]').forEach((btn) => {
-      btn.addEventListener('click', function () {
-        previewGoto(btn.dataset.go)
-      })
-    })
-    kb.querySelectorAll('button[data-callback]').forEach((btn) => {
-      btn.addEventListener('click', function () {
-        document.getElementById('previewCaption').textContent =
-          'Callback: ' + btn.dataset.callback + '\n\nThis runs in the live bot only.'
-      })
-    })
   }
 
-  async function previewGoto(nodeKey) {
+  async function previewStep(payload) {
+    const body = Object.assign({ draft: state.draft }, payload || {})
     const res = await fetch('/api/bot-flow/preview-step', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ draft: state.draft, nodeKey }),
+      body: JSON.stringify(body),
     })
     const data = await res.json()
     if (!data.success) {
       setStatus(data.error || 'Preview failed', 'err')
       return
     }
-    const cap = document.getElementById('previewCaption')
-    if (data.type === 'action') {
-      if (cap) {
-        cap.textContent = 'Action: ' + data.action + '\n\nThis opens in the live bot only.'
-      }
-      const kb = document.getElementById('previewKeyboard')
-      if (kb) {
-        kb.innerHTML = ''
-        const row = document.createElement('div')
-        row.className = 'phone-row'
-        const back = document.createElement('button')
-        back.type = 'button'
-        back.textContent = '← Back to entry'
-        back.dataset.go = state.draft.entry_key || 'welcome'
-        row.appendChild(back)
-        kb.appendChild(row)
-        back.addEventListener('click', function () {
-          previewGoto(back.dataset.go)
-        })
-      }
-      return
+    const title = document.getElementById('previewTitle')
+    if (title) {
+      title.textContent = data.key || data.action || 'Preview'
     }
-    if (cap) cap.textContent = data.caption || ''
-    buildPreviewKeyboard(data.buttons)
+    const cap = document.getElementById('previewCaption')
+    if (cap) cap.innerHTML = formatCaptionHtml(data.caption || '')
+    buildPreviewKeyboard(data.buttons || [])
+  }
+
+  function previewGoto(nodeKey) {
+    return previewStep({ nodeKey: nodeKey })
   }
 
   function openPreview() {

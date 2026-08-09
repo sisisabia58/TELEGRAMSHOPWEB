@@ -12,6 +12,7 @@ const catalog = require('./lib/catalog')
 const pricing = require('./lib/pricing')
 const bulk = require('./lib/bulk')
 const flowDraft = require('./lib/flow-draft')
+const flowPreview = require('./lib/flow-preview')
 const copyLib = require('./lib/copy')
 const ejs = require('ejs')
 const { formatrupiah, formatTanggal } = require('./lib/format')
@@ -5510,6 +5511,13 @@ const FLOW_ACTIONS = [
   'product_list', 'product_card', 'kategori_menu', 'stok', 'riwayat', 'deposit_menu', 'noop',
 ]
 
+async function loadAllCopyByKey() {
+  const copyByKey = {}
+  const { data: copies } = await supabase.from('BotCopy').select('key, body')
+  for (const row of copies || []) copyByKey[row.key] = row.body
+  return copyByKey
+}
+
 async function loadActiveFlowBundle() {
   const { data: flow, error } = await supabase
     .from('BotFlow')
@@ -5524,17 +5532,7 @@ async function loadActiveFlowBundle() {
     .eq('flow_id', flow.id)
     .order('key')
   if (nErr) throw nErr
-  const screenKeys = (nodes || [])
-    .filter((n) => n.kind === 'screen' && n.screen_key)
-    .map((n) => n.screen_key)
-  const copyByKey = {}
-  if (screenKeys.length) {
-    const { data: copies } = await supabase
-      .from('BotCopy')
-      .select('key, body')
-      .in('key', screenKeys)
-    for (const row of copies || []) copyByKey[row.key] = row.body
-  }
+  const copyByKey = await loadAllCopyByKey()
   return { flow, nodes: nodes || [], copyByKey }
 }
 
@@ -5610,9 +5608,6 @@ app.post('/api/bot-flow/preview-step', isAuthenticated, async (req, res) => {
     const { flow, nodes, copyByKey } = await loadActiveFlowBundle()
     if (!flow) throw new Error('No active flow')
     const draft = req.body.draft || flow.draft || flowDraft.draftFromPublished(nodes, copyByKey, flow.entry_key)
-    const nodeKey = String(req.body.nodeKey || draft.entry_key || 'welcome')
-    const node = (draft.nodes || []).find((n) => n.key === nodeKey)
-    if (!node) return res.status(404).json({ success: false, error: 'node not found' })
     const vars = req.body.vars || {
       first_name: 'Preview',
       nama_bot: NamaBot,
@@ -5621,14 +5616,105 @@ app.post('/api/bot-flow/preview-step', isAuthenticated, async (req, res) => {
       stok_tersedia: 0,
       saldo: 'Rp0',
     }
-    if (node.kind === 'action') {
-      return res.json({ success: true, type: 'action', action: node.action, key: node.key })
+
+    // Direct preview targets (product card / list filters / qty) — no draft node required
+    const preview = req.body.preview
+    if (preview && typeof preview === 'object') {
+      if (preview.type === 'product' && preview.slug) {
+        const produk = await catalog.getProductBySlug(preview.slug)
+        return res.json({ success: true, ...flowPreview.buildProductCardView(produk, copyByKey) })
+      }
+      if (preview.type === 'product_list') {
+        const products = await catalog.listProducts({ activeOnly: true, withStock: true })
+        return res.json({
+          success: true,
+          ...flowPreview.buildProductListView(products, {
+            page: Number(preview.page) || 0,
+            filterKey: preview.filterKey || 'all',
+            kategori: preview.kategori || null,
+            copyByKey,
+          }),
+        })
+      }
+      if (preview.type === 'qty') {
+        return res.json({ success: true, ...flowPreview.buildQtyView(preview, copyByKey) })
+      }
+      if (preview.type === 'deposit_menu') {
+        return res.json({ success: true, ...flowPreview.buildDepositMenuView() })
+      }
+      if (preview.type === 'kategori') {
+        const products = await catalog.listProducts({ activeOnly: true, withStock: true })
+        return res.json({
+          success: true,
+          ...flowPreview.buildProductListView(products, {
+            page: 0,
+            filterKey: 'all',
+            kategori: preview.kategori,
+            copyByKey,
+          }),
+        })
+      }
+      if (preview.type === 'go' && preview.key) {
+        // fall through to nodeKey handling below
+        req.body.nodeKey = preview.key
+      } else if (preview.type === 'stub') {
+        return res.json({
+          success: true,
+          type: 'action',
+          action: 'stub',
+          caption: `_(Preview)_\n\n${preview.title || 'This step runs in the live bot only.'}`,
+          buttons: [[{ text: '🔙 Kembali', go: draft.entry_key || 'welcome' }]],
+        })
+      }
     }
-    const body = typeof node.body === 'string' && node.body
-      ? node.body
-      : (copyByKey[node.screen_key] || copyLib.DEFAULTS[node.screen_key] || '')
-    const caption = copyLib.render(body, vars)
-    res.json({ success: true, type: 'screen', key: node.key, caption, buttons: node.buttons || [] })
+
+    const nodeKey = String(req.body.nodeKey || draft.entry_key || 'welcome')
+    const node = (draft.nodes || []).find((n) => n.key === nodeKey)
+    if (!node) return res.status(404).json({ success: false, error: 'node not found' })
+
+    if (node.kind === 'screen') {
+      return res.json({ success: true, ...flowPreview.buildScreenView(node, copyByKey, vars) })
+    }
+
+    if (node.kind === 'action') {
+      const action = node.action
+      if (action === 'product_list') {
+        const products = await catalog.listProducts({ activeOnly: true, withStock: true })
+        return res.json({
+          success: true,
+          ...flowPreview.buildProductListView(products, {
+            page: Number(req.body.page) || 0,
+            filterKey: req.body.filterKey || 'all',
+            kategori: req.body.kategori || null,
+            copyByKey,
+          }),
+        })
+      }
+      if (action === 'kategori_menu') {
+        const products = await catalog.listProducts({ activeOnly: true, withStock: true })
+        return res.json({ success: true, ...flowPreview.buildKategoriMenuView(products, copyByKey) })
+      }
+      if (action === 'stok') {
+        const products = await catalog.listProducts({ activeOnly: true, withStock: true })
+        return res.json({ success: true, ...flowPreview.buildStokView(products) })
+      }
+      if (action === 'riwayat') {
+        return res.json({ success: true, ...flowPreview.buildRiwayatView() })
+      }
+      if (action === 'deposit_menu') {
+        return res.json({ success: true, ...flowPreview.buildDepositMenuView() })
+      }
+      return res.json({
+        success: true,
+        type: 'action',
+        action,
+        key: node.key,
+        caption: `Action: ${action}\n\nThis step is not simulated in preview yet.`,
+        buttons: [[{ text: '🔙 Kembali', go: draft.entry_key || 'welcome' }]],
+      })
+    }
+
+    res.status(400).json({ success: false, error: 'unsupported node' })
   } catch (e) {
     console.error(e)
     res.status(500).json({ success: false, error: e.message })
