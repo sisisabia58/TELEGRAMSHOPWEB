@@ -1,6 +1,7 @@
 <%
     const currentPage = 'produk';
-    const pageTitle = `📦 Stok: ${produk.nama}`;
+    const pageTitle = `📦 Stok: ${produk.nama} — ${varian.label}`;
+    const stokBase = `/produk/${produk.id}/varian/${varian.id}/stok`;
 %>
 <!DOCTYPE html>
 <html lang="id">
@@ -95,16 +96,16 @@
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                         <div style="flex: 1; min-width: 200px;">
                             <h3 style="margin: 0 0 10px 0; color: #333; font-size: 18px;">Produk: <strong><%= produk.nama %></strong></h3>
-                            <p style="margin: 0; color: #666; font-size: 14px;">Kode: <code><%= produk.kode %></code></p>
+                            <p style="margin: 0; color: #666; font-size: 14px;">Varian: <strong><%= varian.label %></strong> · Kode: <code><%= varian.kode %></code> · Harga: <%= formatrupiah(varian.harga) %></p>
                         </div>
                         <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                            <a href="/produk/<%= produk.id %>/stok/tambah" class="btn btn-success">
+                            <a href="<%= stokBase %>/tambah" class="btn btn-success">
                                 ➕ Tambah Stok
                             </a>
-                            <a href="/produk/<%= produk.id %>/stok/export<%= currentStatus !== 'all' ? '?status=' + currentStatus : '' %>" class="btn btn-primary" style="background: #17a2b8;">
+                            <a href="<%= stokBase %>/export<%= currentStatus !== 'all' ? '?status=' + currentStatus : '' %>" class="btn btn-primary" style="background: #17a2b8;">
                                 📥 Export CSV
                             </a>
-                            <a href="/produk" class="btn" style="background: #6c757d;">
+                            <a href="/produk/<%= produk.id %>" class="btn" style="background: #6c757d;">
                                 ← Kembali
                             </a>
                         </div>
@@ -116,19 +117,19 @@
             <div class="card" style="margin-bottom: 20px;">
                 <div class="card-body">
                     <div class="filter-container">
-                        <a href="/produk/<%= produk.id %>/stok" class="filter-chip <%= currentStatus === 'all' ? 'active' : '' %>">
+                        <a href="<%= stokBase %>" class="filter-chip <%= currentStatus === 'all' ? 'active' : '' %>">
                             Semua (<%= stats.total %>)
                         </a>
-                        <a href="/produk/<%= produk.id %>/stok?status=tersedia" class="filter-chip <%= currentStatus === 'tersedia' ? 'active' : '' %>">
+                        <a href="<%= stokBase %>?status=tersedia" class="filter-chip <%= currentStatus === 'tersedia' ? 'active' : '' %>">
                             ✅ Tersedia (<%= stats.tersedia %>)
                         </a>
-                        <a href="/produk/<%= produk.id %>/stok?status=terjual" class="filter-chip <%= currentStatus === 'terjual' ? 'active' : '' %>">
+                        <a href="<%= stokBase %>?status=terjual" class="filter-chip <%= currentStatus === 'terjual' ? 'active' : '' %>">
                             💰 Terjual (<%= stats.terjual %>)
                         </a>
-                        <a href="/produk/<%= produk.id %>/stok?status=expired" class="filter-chip <%= currentStatus === 'expired' ? 'active' : '' %>">
+                        <a href="<%= stokBase %>?status=expired" class="filter-chip <%= currentStatus === 'expired' ? 'active' : '' %>">
                             ⏰ Expired (<%= stats.expired %>)
                         </a>
-                        <a href="/produk/<%= produk.id %>/stok?status=dihapus" class="filter-chip <%= currentStatus === 'dihapus' ? 'active' : '' %>">
+                        <a href="<%= stokBase %>?status=dihapus" class="filter-chip <%= currentStatus === 'dihapus' ? 'active' : '' %>">
                             🗑️ Dihapus (<%= stats.dihapus %>)
                         </a>
                     </div>
@@ -194,7 +195,7 @@
                                                 <div class="empty-state-icon">📦</div>
                                                 <div class="empty-state-title">Belum ada stok</div>
                                                 <div class="empty-state-description">Mulai dengan menambahkan stok pertama</div>
-                                                <a href="/produk/<%= produk.id %>/stok/tambah" class="empty-state-action">➕ Tambah Stok</a>
+                                                <a href="<%= stokBase %>/tambah" class="empty-state-action">➕ Tambah Stok</a>
                                             </div>
                                         </td>
                                     </tr>
@@ -233,10 +234,10 @@
                                             <td><%= formatTanggal(s.created_at) %></td>
                                             <td>
                                                 <div class="table-actions">
-                                                    <a href="/produk/<%= produk.id %>/stok/edit/<%= s.id %>" class="btn-icon" title="Edit">
+                                                    <a href="<%= stokBase %>/edit/<%= s.id %>" class="btn-icon" title="Edit">
                                                         ✏️
                                                     </a>
-                                                    <a href="/produk/<%= produk.id %>/stok/hapus/<%= s.id %>" class="btn-icon" title="Hapus" style="color: #dc3545;">
+                                                    <a href="<%= stokBase %>/hapus/<%= s.id %>" class="btn-icon" title="Hapus" style="color: #dc3545;">
                                                         🗑️
                                                     </a>
                                                 </div>

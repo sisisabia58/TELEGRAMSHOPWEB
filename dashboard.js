@@ -8,6 +8,8 @@ const pakasir = require('./pakasir.js')
 const supabase = require('./lib/supabase')
 const runtimeSettings = require('./lib/runtime-settings')
 const stock = require('./lib/stock')
+const catalog = require('./lib/catalog')
+const ejs = require('ejs')
 const { formatrupiah, formatTanggal } = require('./lib/format')
 
 const app = express()
@@ -79,14 +81,22 @@ const redirectIfAuthenticated = (req, res, next) => {
 
 // formatrupiah / formatTanggal -> lib/format.js (di-require di bagian atas file)
 
-// Hitung stok dari tabel Stok.
-//
-// Di dashboard, produk selalu diacu lewat id (parameter route :id), jadi
-// hitungannya berdasarkan produk_id. Perhatikan bahwa bot menghitung
-// berdasarkan produk_kode. Dulu KEDUA fungsi ini bernama getStokCount dengan
-// parameter berbeda, sehingga salah panggil tidak error, hanya menghasilkan 0.
-// Sekarang keduanya ada di lib/stock.js dengan nama yang menyebut kuncinya.
-const getStokCount = stock.getStokCountByProdukId
+async function loadProdukVarian(produkId, varianId) {
+  const produk = await catalog.getProductById(produkId)
+  if (!produk) return null
+  const varian = (produk.variants || []).find((v) => v.id === varianId)
+  if (!varian) return null
+  return { produk, varian }
+}
+
+async function renderVariantRow(produk, variant) {
+  const stokCount = variant.stok_count ?? await stock.getStokCountByVarianId(variant.id)
+  return ejs.renderFile(
+    path.join(__dirname, 'views', 'partials', 'variant-row.ejs'),
+    { produk, variant: { ...variant, stok_count: stokCount }, formatrupiah },
+    { async: true }
+  )
+}
 
 // Helper: Send Telegram message to Feed Channel
 async function sendFeedMessage(text, type = 'stock') {
@@ -826,12 +836,12 @@ app.get('/', isAuthenticated, async (req, res) => {
     // Total deposit berhasil
     const totalDeposit = deposits.reduce((sum, d) => sum + (d.jumlah || 0), 0)
     
-    // Total stok tersedia (dari tabel Stok)
-    let totalStokTersedia = 0
-    for (const p of products) {
-      const stokCount = await getStokCount(p.id)
-      totalStokTersedia += stokCount
-    }
+    // Total stok tersedia (rollup semua varian aktif)
+    const catalogProducts = await catalog.listProducts({ activeOnly: false, withStock: true })
+    const totalStokTersedia = catalogProducts.reduce(
+      (sum, p) => sum + (p.variants || []).reduce((s, v) => s + (v.stok_count || 0), 0),
+      0
+    )
     
     // Total stok terjual
     const totalStokTerjual = products.reduce((sum, p) => sum + (p.terjual || 0), 0)
@@ -887,20 +897,12 @@ app.get('/', isAuthenticated, async (req, res) => {
 // Route: Daftar Produk
 app.get('/produk', isAuthenticated, async (req, res) => {
   try {
-    const { data: products, error } = await supabase
-      .from('Produk')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (error) throw error
-
-    // Hitung stok untuk setiap produk dari tabel Stok
-    const productsWithStok = await Promise.all(
-      (products || []).map(async (p) => {
-        const stokCount = await getStokCount(p.id)
-        return { ...p, stok_count: stokCount }
-      })
-    )
+    const list = await catalog.listProducts({ activeOnly: false, withStock: true })
+    const products = list.map((p) => ({
+      ...p,
+      variant_count: p.variants.length,
+      total_stock: (p.variants || []).reduce((sum, v) => sum + (v.stok_count || 0), 0),
+    }))
 
     res.render('produk', {
       title: `Produk - ${NamaBot}`,
@@ -908,11 +910,11 @@ app.get('/produk', isAuthenticated, async (req, res) => {
       username: req.session.username,
       currentPage: 'produk',
       pageTitle: '📦 Daftar Produk',
-      products: productsWithStok || [],
+      products,
       formatrupiah,
       success: req.query.success || null,
       error: req.query.error || null,
-      req: req
+      req: req,
     })
   } catch (error) {
     console.error('Error loading products:', error)
@@ -920,7 +922,7 @@ app.get('/produk', isAuthenticated, async (req, res) => {
   }
 })
 
-// Route: Form Tambah Produk
+// Route: Form Tambah Produk (+ varian awal)
 app.get('/produk/tambah', isAuthenticated, (req, res) => {
   res.render('produk-form', {
     title: `Tambah Produk - ${NamaBot}`,
@@ -930,91 +932,13 @@ app.get('/produk/tambah', isAuthenticated, (req, res) => {
     produk: null,
     action: 'tambah',
     error: null,
-    req: req
+    req: req,
   })
 })
 
-// Route: Proses Tambah Produk
+// Route: Proses Tambah Produk + varian awal
 app.post('/produk/tambah', isAuthenticated, async (req, res) => {
-  try {
-    const { nama, kode, harga, deskripsi, snk, format } = req.body
-    
-    // Validasi
-    if (!nama || !kode || !harga || !deskripsi || !snk) {
-      return res.render('produk-form', {
-        title: `Tambah Produk - ${NamaBot}`,
-        namaBot: NamaBot,
-        username: req.session.username,
-        currentPage: 'produk',
-        produk: req.body,
-        action: 'tambah',
-        error: 'Semua field wajib diisi!',
-        req: req
-      })
-    }
-
-    // Convert kode ke lowercase
-    const kodeLower = kode.toLowerCase().trim()
-    
-    // Convert harga ke integer
-    const hargaInt = parseInt(harga)
-    if (isNaN(hargaInt) || hargaInt < 0) {
-      return res.render('produk-form', {
-        title: `Tambah Produk - ${NamaBot}`,
-        namaBot: NamaBot,
-        username: req.session.username,
-        currentPage: 'produk',
-        produk: req.body,
-        action: 'tambah',
-        error: 'Harga harus berupa angka positif!',
-        req: req
-      })
-    }
-
-    // Cek apakah kode sudah ada
-    const { data: existing } = await supabase
-      .from('Produk')
-      .select('kode')
-      .eq('kode', kodeLower)
-      .single()
-
-    if (existing) {
-      return res.render('produk-form', {
-        title: `Tambah Produk - ${NamaBot}`,
-        namaBot: NamaBot,
-        username: req.session.username,
-        currentPage: 'produk',
-        produk: req.body,
-        action: 'tambah',
-        error: 'Kode produk sudah digunakan!',
-        req: req
-      })
-    }
-
-    // Insert produk baru
-    const { data, error } = await supabase
-      .from('Produk')
-      .insert([{
-        nama: nama.trim(),
-        kode: kodeLower,
-        harga: hargaInt,
-        deskripsi: deskripsi.trim(),
-        snk: snk.trim(),
-        format: format ? format.trim() : null,
-        kategori: req.body.kategori ? req.body.kategori.trim().toLowerCase() : 'umum',
-        grup: req.body.grup ? req.body.grup.trim() : null,
-        data: [],
-        terjual: 0
-      }])
-      .select()
-      .single()
-
-    if (error) throw error
-
-    console.log(`[${new Date().toISOString()}] Produk ditambahkan: ${nama} (${kodeLower}) oleh ${req.session.username}`)
-    res.redirect('/produk?success=tambah')
-  } catch (error) {
-    console.error('Error adding product:', error)
+  const renderForm = (error) =>
     res.render('produk-form', {
       title: `Tambah Produk - ${NamaBot}`,
       namaBot: NamaBot,
@@ -1022,156 +946,88 @@ app.post('/produk/tambah', isAuthenticated, async (req, res) => {
       currentPage: 'produk',
       produk: req.body,
       action: 'tambah',
-      error: error.message || 'Gagal menambahkan produk!',
-      req: req
+      error,
+      req: req,
     })
-  }
-})
 
-// Route: Form Edit Produk
-app.get('/produk/edit/:id', isAuthenticated, async (req, res) => {
   try {
-    const { id } = req.params
-    
-    const { data: produk, error } = await supabase
-      .from('Produk')
-      .select('*')
-      .eq('id', id)
-      .single()
+    const {
+      nama,
+      kategori,
+      deskripsi,
+      snk,
+      banner_url,
+      varian_label,
+      varian_kode,
+      harga,
+      format,
+    } = req.body
 
-    if (error || !produk) {
-      return res.redirect('/produk?error=notfound')
+    if (!nama || !deskripsi || !snk || !varian_kode || !harga) {
+      return renderForm('Nama, deskripsi, SNK, kode varian, dan harga wajib diisi!')
     }
 
-    res.render('produk-form', {
-      title: `Edit Produk - ${NamaBot}`,
-      namaBot: NamaBot,
-      username: req.session.username,
-      currentPage: 'produk',
-      produk: produk,
-      action: 'edit',
-      error: null,
-      req: req
-    })
-  } catch (error) {
-    console.error('Error loading product:', error)
-    res.redirect('/produk?error=load')
-  }
-})
-
-// Route: Proses Edit Produk
-app.post('/produk/edit/:id', isAuthenticated, async (req, res) => {
-  try {
-    const { id } = req.params
-    const { nama, kode, harga, deskripsi, snk, format } = req.body
-    
-    // Validasi
-    if (!nama || !kode || !harga || !deskripsi || !snk) {
-      const { data: produk } = await supabase
-        .from('Produk')
-        .select('*')
-        .eq('id', id)
-        .single()
-      
-      return res.render('produk-form', {
-        title: `Edit Produk - ${NamaBot}`,
-        namaBot: NamaBot,
-        username: req.session.username,
-        currentPage: 'produk',
-        produk: { ...produk, ...req.body },
-        action: 'edit',
-        error: 'Semua field wajib diisi!',
-        req: req
-      })
-    }
-
-    // Convert kode ke lowercase
-    const kodeLower = kode.toLowerCase().trim()
-    
-    // Convert harga ke integer
-    const hargaInt = parseInt(harga)
+    const kodeLower = String(varian_kode).toLowerCase().trim()
+    const hargaInt = parseInt(harga, 10)
     if (isNaN(hargaInt) || hargaInt < 0) {
-      const { data: produk } = await supabase
-        .from('Produk')
-        .select('*')
-        .eq('id', id)
-        .single()
-      
-      return res.render('produk-form', {
-        title: `Edit Produk - ${NamaBot}`,
-        namaBot: NamaBot,
-        username: req.session.username,
-        currentPage: 'produk',
-        produk: { ...produk, ...req.body },
-        action: 'edit',
-        error: 'Harga harus berupa angka positif!',
-        req: req
-      })
+      return renderForm('Harga harus berupa angka positif!')
     }
 
-    // Cek apakah kode sudah ada (kecuali produk yang sedang diedit)
-    const { data: existing } = await supabase
-      .from('Produk')
-      .select('id, kode')
+    const { data: existingVarian } = await supabase
+      .from('Varian')
+      .select('id')
       .eq('kode', kodeLower)
+      .maybeSingle()
+
+    if (existingVarian) {
+      return renderForm('Kode varian sudah digunakan!')
+    }
+
+    const slug = catalog.slugify(nama)
+    const { data: produk, error: produkError } = await supabase
+      .from('Produk')
+      .insert([
+        {
+          nama: nama.trim(),
+          slug,
+          kategori: kategori ? kategori.trim().toLowerCase() : 'umum',
+          deskripsi: deskripsi.trim(),
+          snk: snk.trim(),
+          banner_url: banner_url ? banner_url.trim() : null,
+          is_active: true,
+          urutan: 0,
+        },
+      ])
+      .select()
       .single()
 
-    if (existing && existing.id !== id) {
-      const { data: produk } = await supabase
-        .from('Produk')
-        .select('*')
-        .eq('id', id)
-        .single()
-      
-      return res.render('produk-form', {
-        title: `Edit Produk - ${NamaBot}`,
-        namaBot: NamaBot,
-        username: req.session.username,
-        currentPage: 'produk',
-        produk: { ...produk, ...req.body },
-        action: 'edit',
-        error: 'Kode produk sudah digunakan!',
-        req: req
-      })
-    }
+    if (produkError) throw produkError
 
-    // Update produk
-    const { error } = await supabase
-      .from('Produk')
-      .update({
-        nama: nama.trim(),
+    const { error: varianError } = await supabase.from('Varian').insert([
+      {
+        produk_id: produk.id,
+        label: (varian_label || 'Default').trim(),
         kode: kodeLower,
         harga: hargaInt,
-        deskripsi: deskripsi.trim(),
-        snk: snk.trim(),
         format: format ? format.trim() : null,
-        kategori: req.body.kategori ? req.body.kategori.trim().toLowerCase() : 'umum',
-        grup: req.body.grup ? req.body.grup.trim() : null
-      })
-      .eq('id', id)
+        urutan: 1,
+        is_active: true,
+        terjual: 0,
+      },
+    ])
 
-    if (error) throw error
+    if (varianError) {
+      await supabase.from('Produk').delete().eq('id', produk.id)
+      throw varianError
+    }
 
-    console.log(`[${new Date().toISOString()}] Produk diedit: ${nama} (${kodeLower}) oleh ${req.session.username}`)
-    res.redirect('/produk?success=edit')
+    console.log(
+      `[${new Date().toISOString()}] Produk ditambahkan: ${nama} (${kodeLower}) oleh ${req.session.username}`
+    )
+    res.redirect(`/produk/${produk.id}?success=tambah`)
   } catch (error) {
-    console.error('Error updating product:', error)
-    const { data: produk } = await supabase
-      .from('Produk')
-      .select('*')
-      .eq('id', id)
-      .single()
-    
-    res.render('produk-form', {
-      title: `Edit Produk - ${NamaBot}`,
-      namaBot: NamaBot,
-      username: req.session.username,
-      currentPage: 'produk',
-      produk: { ...produk, ...req.body },
-      action: 'edit',
-      error: error.message || 'Gagal mengupdate produk!',
-      req: req
-    })
+    console.error('Error adding product:', error)
+    renderForm(error.message || 'Gagal menambahkan produk!')
   }
 })
 
@@ -1179,14 +1035,9 @@ app.post('/produk/edit/:id', isAuthenticated, async (req, res) => {
 app.get('/produk/hapus/:id', isAuthenticated, async (req, res) => {
   try {
     const { id } = req.params
-    
-    const { data: produk, error } = await supabase
-      .from('Produk')
-      .select('*')
-      .eq('id', id)
-      .single()
+    const produk = await catalog.getProductById(id)
 
-    if (error || !produk) {
+    if (!produk) {
       return res.redirect('/produk?error=notfound')
     }
 
@@ -1194,8 +1045,8 @@ app.get('/produk/hapus/:id', isAuthenticated, async (req, res) => {
       title: `Hapus Produk - ${NamaBot}`,
       namaBot: NamaBot,
       username: req.session.username,
-      produk: produk,
-      formatrupiah
+      produk,
+      formatrupiah,
     })
   } catch (error) {
     console.error('Error loading product:', error)
@@ -1207,13 +1058,7 @@ app.get('/produk/hapus/:id', isAuthenticated, async (req, res) => {
 app.post('/produk/hapus/:id', isAuthenticated, async (req, res) => {
   try {
     const { id } = req.params
-    
-    // Hapus produk
-    const { error } = await supabase
-      .from('Produk')
-      .delete()
-      .eq('id', id)
-
+    const { error } = await supabase.from('Produk').delete().eq('id', id)
     if (error) throw error
 
     console.log(`[${new Date().toISOString()}] Produk dihapus: ID ${id} oleh ${req.session.username}`)
@@ -1224,39 +1069,254 @@ app.post('/produk/hapus/:id', isAuthenticated, async (req, res) => {
   }
 })
 
-// ============================================
-// ROUTE: MANAJEMEN STOK
-// ============================================
-
-// Route: Daftar Stok per Produk
-app.get('/produk/:id/stok', isAuthenticated, async (req, res) => {
+// Route: Detail Produk
+app.get('/produk/:id', isAuthenticated, async (req, res) => {
   try {
     const { id } = req.params
-    
-    // Ambil produk
-    const { data: produk, error: produkError } = await supabase
-      .from('Produk')
-      .select('*')
-      .eq('id', id)
-      .single()
+    if (id === 'tambah' || id === 'hapus' || id === 'edit') {
+      return res.redirect('/produk')
+    }
 
-    if (produkError || !produk) {
+    const produk = await catalog.getProductById(id)
+    if (!produk) {
       return res.redirect('/produk?error=notfound')
     }
 
-    // Ambil filter
+    res.render('produk-detail', {
+      title: `${produk.nama} - ${NamaBot}`,
+      namaBot: NamaBot,
+      username: req.session.username,
+      currentPage: 'produk',
+      produk,
+      formatrupiah,
+      success: req.query.success || null,
+      error: req.query.error || null,
+      req: req,
+    })
+  } catch (error) {
+    console.error('Error loading product detail:', error)
+    res.redirect('/produk?error=load')
+  }
+})
+
+// Route: Update Produk
+app.post('/produk/:id', isAuthenticated, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { nama, kategori, deskripsi, snk, banner_url, is_active, urutan } = req.body
+
+    if (!nama || !deskripsi || !snk) {
+      return res.redirect(`/produk/${id}?error=validation`)
+    }
+
+    const slug = catalog.slugify(nama)
+    const { error } = await supabase
+      .from('Produk')
+      .update({
+        nama: nama.trim(),
+        slug,
+        kategori: kategori ? kategori.trim().toLowerCase() : 'umum',
+        deskripsi: deskripsi.trim(),
+        snk: snk.trim(),
+        banner_url: banner_url ? banner_url.trim() : null,
+        is_active: is_active === 'on' || is_active === 'true' || is_active === true,
+        urutan: parseInt(urutan, 10) || 0,
+      })
+      .eq('id', id)
+
+    if (error) throw error
+
+    console.log(`[${new Date().toISOString()}] Produk diedit: ${nama} oleh ${req.session.username}`)
+    res.redirect(`/produk/${id}?success=edit`)
+  } catch (error) {
+    console.error('Error updating product:', error)
+    res.redirect(`/produk/${req.params.id}?error=update`)
+  }
+})
+
+// API: Tambah Varian
+app.post('/api/produk/:id/varian', isAuthenticated, async (req, res) => {
+  try {
+    const produkId = req.params.id
+    const { label, kode, harga, format } = req.body
+
+    if (!label || !kode || harga === undefined || harga === '') {
+      return res.status(400).json({ error: 'Label, kode, dan harga wajib diisi' })
+    }
+
+    const kodeLower = String(kode).toLowerCase().trim()
+    const hargaInt = parseInt(harga, 10)
+    if (isNaN(hargaInt) || hargaInt < 0) {
+      return res.status(400).json({ error: 'Harga tidak valid' })
+    }
+
+    const { data: existing } = await supabase
+      .from('Varian')
+      .select('id')
+      .eq('kode', kodeLower)
+      .maybeSingle()
+
+    if (existing) {
+      return res.status(400).json({ error: 'Kode varian sudah digunakan' })
+    }
+
+    const count = await catalog.variantCount(produkId)
+    const { data: varian, error } = await supabase
+      .from('Varian')
+      .insert([
+        {
+          produk_id: produkId,
+          label: label.trim(),
+          kode: kodeLower,
+          harga: hargaInt,
+          format: format ? format.trim() : null,
+          urutan: count + 1,
+          is_active: true,
+          terjual: 0,
+        },
+      ])
+      .select()
+      .single()
+
+    if (error) throw error
+
+    const produk = await catalog.getProductById(produkId)
+    if (req.headers.accept && req.headers.accept.includes('text/html')) {
+      const html = await renderVariantRow(produk, varian)
+      return res.type('html').send(html)
+    }
+
+    res.json({ success: true, varian })
+  } catch (error) {
+    console.error('Error creating variant:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// API: Update Varian (inline edit / reorder)
+app.patch('/api/produk/:id/varian/:varianId', isAuthenticated, async (req, res) => {
+  try {
+    const { id: produkId, varianId } = req.params
+    const body = req.body || {}
+
+    const { data: current, error: fetchError } = await supabase
+      .from('Varian')
+      .select('*')
+      .eq('id', varianId)
+      .eq('produk_id', produkId)
+      .single()
+
+    if (fetchError || !current) {
+      return res.status(404).json({ error: 'Varian tidak ditemukan' })
+    }
+
+    if (body.action === 'up' || body.action === 'down') {
+      const { data: siblings } = await supabase
+        .from('Varian')
+        .select('id, urutan')
+        .eq('produk_id', produkId)
+        .order('urutan', { ascending: true })
+
+      const list = siblings || []
+      const idx = list.findIndex((v) => v.id === varianId)
+      const swapIdx = body.action === 'up' ? idx - 1 : idx + 1
+      if (idx >= 0 && swapIdx >= 0 && swapIdx < list.length) {
+        const a = list[idx]
+        const b = list[swapIdx]
+        await supabase.from('Varian').update({ urutan: b.urutan }).eq('id', a.id)
+        await supabase.from('Varian').update({ urutan: a.urutan }).eq('id', b.id)
+      }
+    } else {
+      const update = {}
+      if (body.label !== undefined) update.label = String(body.label).trim()
+      if (body.kode !== undefined) {
+        const kodeLower = String(body.kode).toLowerCase().trim()
+        const { data: dup } = await supabase
+          .from('Varian')
+          .select('id')
+          .eq('kode', kodeLower)
+          .neq('id', varianId)
+          .maybeSingle()
+        if (dup) return res.status(400).json({ error: 'Kode varian sudah digunakan' })
+        update.kode = kodeLower
+      }
+      if (body.harga !== undefined) {
+        const hargaInt = parseInt(body.harga, 10)
+        if (isNaN(hargaInt) || hargaInt < 0) {
+          return res.status(400).json({ error: 'Harga tidak valid' })
+        }
+        update.harga = hargaInt
+      }
+      if (body.format !== undefined) update.format = body.format ? String(body.format).trim() : null
+      if (body.is_active !== undefined) {
+        update.is_active = body.is_active === true || body.is_active === 'true' || body.is_active === 'on'
+      }
+      if (body.urutan !== undefined) update.urutan = parseInt(body.urutan, 10) || 0
+
+      if (Object.keys(update).length) {
+        const { error: updateError } = await supabase.from('Varian').update(update).eq('id', varianId)
+        if (updateError) throw updateError
+      }
+    }
+
+    const produk = await catalog.getProductById(produkId)
+    const variant = (produk?.variants || []).find((v) => v.id === varianId)
+    if (!variant) {
+      return res.status(404).json({ error: 'Varian tidak ditemukan' })
+    }
+
+    const html = await renderVariantRow(produk, variant)
+    res.type('html').send(html)
+  } catch (error) {
+    console.error('Error updating variant:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// API: Hapus Varian
+app.delete('/api/produk/:id/varian/:varianId', isAuthenticated, async (req, res) => {
+  try {
+    const { id: produkId, varianId } = req.params
+    const n = await catalog.variantCount(produkId)
+    if (n <= 1) {
+      return res.status(400).json({ error: 'Produk harus punya minimal 1 varian' })
+    }
+
+    const { error } = await supabase
+      .from('Varian')
+      .delete()
+      .eq('id', varianId)
+      .eq('produk_id', produkId)
+
+    if (error) throw error
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting variant:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ============================================
+// ROUTE: MANAJEMEN STOK (per varian)
+// ============================================
+
+app.get('/produk/:produkId/varian/:varianId/stok', isAuthenticated, async (req, res) => {
+  try {
+    const { produkId, varianId } = req.params
+    const ctx = await loadProdukVarian(produkId, varianId)
+    if (!ctx) return res.redirect('/produk?error=notfound')
+
+    const { produk, varian } = ctx
     const { status, page } = req.query
-    const currentPage = parseInt(page) || 1
+    const currentPage = parseInt(page, 10) || 1
     const limit = 50
     const offset = (currentPage - 1) * limit
 
-    // Build query stok
     let stokQuery = supabase
       .from('Stok')
       .select('*', { count: 'exact' })
-      .eq('produk_id', id)
+      .eq('varian_id', varianId)
 
-    // Filter by status
     if (status && status !== 'all') {
       stokQuery = stokQuery.eq('status', status)
     }
@@ -1269,33 +1329,30 @@ app.get('/produk/:id/stok', isAuthenticated, async (req, res) => {
 
     const totalPages = Math.ceil((count || 0) / limit)
 
-    // Hitung statistik stok
-    const { data: allStok } = await supabase
-      .from('Stok')
-      .select('status')
-      .eq('produk_id', id)
+    const { data: allStok } = await supabase.from('Stok').select('status').eq('varian_id', varianId)
 
     const stats = {
-      tersedia: allStok?.filter(s => s.status === 'tersedia').length || 0,
-      terjual: allStok?.filter(s => s.status === 'terjual').length || 0,
-      expired: allStok?.filter(s => s.status === 'expired').length || 0,
-      dihapus: allStok?.filter(s => s.status === 'dihapus').length || 0,
-      total: allStok?.length || 0
+      tersedia: allStok?.filter((s) => s.status === 'tersedia').length || 0,
+      terjual: allStok?.filter((s) => s.status === 'terjual').length || 0,
+      expired: allStok?.filter((s) => s.status === 'expired').length || 0,
+      dihapus: allStok?.filter((s) => s.status === 'dihapus').length || 0,
+      total: allStok?.length || 0,
     }
 
     res.render('produk-stok', {
-      title: `Manajemen Stok - ${produk.nama}`,
+      title: `Stok — ${produk.nama} / ${varian.label}`,
       namaBot: NamaBot,
       username: req.session.username,
-      produk: produk,
+      produk,
+      varian,
       stokItems: stokItems || [],
-      stats: stats,
-      currentPage: currentPage,
-      totalPages: totalPages,
+      stats,
+      currentPage,
+      totalPages,
       currentStatus: status || 'all',
       formatrupiah,
       formatTanggal,
-      req: req
+      req: req,
     })
   } catch (error) {
     console.error('Error loading stock:', error)
@@ -1303,28 +1360,19 @@ app.get('/produk/:id/stok', isAuthenticated, async (req, res) => {
   }
 })
 
-// Route: Form Tambah Stok
-app.get('/produk/:id/stok/tambah', isAuthenticated, async (req, res) => {
+app.get('/produk/:produkId/varian/:varianId/stok/tambah', isAuthenticated, async (req, res) => {
   try {
-    const { id } = req.params
-    
-    const { data: produk, error } = await supabase
-      .from('Produk')
-      .select('*')
-      .eq('id', id)
-      .single()
-
-    if (error || !produk) {
-      return res.redirect('/produk?error=notfound')
-    }
+    const ctx = await loadProdukVarian(req.params.produkId, req.params.varianId)
+    if (!ctx) return res.redirect('/produk?error=notfound')
 
     res.render('produk-stok-tambah', {
-      title: `Tambah Stok - ${produk.nama}`,
+      title: `Tambah Stok — ${ctx.produk.nama} / ${ctx.varian.label}`,
       namaBot: NamaBot,
       username: req.session.username,
-      produk: produk,
+      produk: ctx.produk,
+      varian: ctx.varian,
       error: null,
-      req: req
+      req: req,
     })
   } catch (error) {
     console.error('Error loading product:', error)
@@ -1332,194 +1380,134 @@ app.get('/produk/:id/stok/tambah', isAuthenticated, async (req, res) => {
   }
 })
 
-// Route: Proses Tambah Stok
-app.post('/produk/:id/stok/tambah', isAuthenticated, async (req, res) => {
-  try {
-    const { id } = req.params
-    const { data_stok } = req.body
-    
-    if (!data_stok || !data_stok.trim()) {
-      const { data: produk } = await supabase
-        .from('Produk')
-        .select('*')
-        .eq('id', id)
-        .single()
-      
-      return res.render('produk-stok-tambah', {
-        title: `Tambah Stok - ${produk.nama}`,
-        namaBot: NamaBot,
-        username: req.session.username,
-        produk: produk,
-        error: 'Data stok tidak boleh kosong!',
-        req: req
-      })
-    }
+app.post('/produk/:produkId/varian/:varianId/stok/tambah', isAuthenticated, async (req, res) => {
+  const { produkId, varianId } = req.params
 
-    // Split data stok (baris baru)
-    const dataArray = data_stok.split(/[\n\r]+/)
-      .map(item => item.trim())
-      .filter(item => item !== '')
-
-    if (dataArray.length === 0) {
-      const { data: produk } = await supabase
-        .from('Produk')
-        .select('*')
-        .eq('id', id)
-        .single()
-      
-      return res.render('produk-stok-tambah', {
-        title: `Tambah Stok - ${produk.nama}`,
-        namaBot: NamaBot,
-        username: req.session.username,
-        produk: produk,
-        error: 'Tidak ada data stok yang valid!',
-        req: req
-      })
-    }
-
-    // Ambil produk
-    const { data: produk, error: produkError } = await supabase
-      .from('Produk')
-      .select('*')
-      .eq('id', id)
-      .single()
-
-    if (produkError || !produk) {
-      return res.redirect('/produk?error=notfound')
-    }
-
-    // Insert stok items
-    const stokItems = dataArray.map(data => ({
-      produk_id: id,
-      produk_kode: produk.kode.toLowerCase(),
-      data: data.trim(),
-      status: 'tersedia'
-    }))
-
-    const { error: insertError } = await supabase
-      .from('Stok')
-      .insert(stokItems)
-
-    if (insertError) throw insertError
-
-    // Kirim notifikasi stok baru ke feed channel
-    const totalStok = await getStokCount(id)
-    const formattedPrice = formatrupiah(produk.harga)
-    await sendFeedMessage(
-      `📢 ${dataArray.length} new stock added for ${produk.nama}!\n\n` +
-      `✨ Available: ${totalStok} items\n` +
-      `🪙 Price: ${formattedPrice}`,
-      'stock'
-    ).catch(err => console.error('Error sending stock feed message:', err))
-
-    console.log(`[${new Date().toISOString()}] Stok ditambahkan: ${dataArray.length} item untuk produk ${produk.nama} (${produk.kode}) oleh ${req.session.username}`)
-    res.redirect(`/produk/${id}/stok?success=tambah`)
-  } catch (error) {
-    console.error('Error adding stock:', error)
-    const { data: produk } = await supabase
-      .from('Produk')
-      .select('*')
-      .eq('id', id)
-      .single()
-    if (!produk) return res.redirect('/produk?error=load')
-    res.render('produk-stok-tambah', {
-      title: `Tambah Stok - ${produk.nama}`,
+  const renderError = async (error) => {
+    const ctx = await loadProdukVarian(produkId, varianId)
+    if (!ctx) return res.redirect('/produk?error=notfound')
+    return res.render('produk-stok-tambah', {
+      title: `Tambah Stok — ${ctx.produk.nama} / ${ctx.varian.label}`,
       namaBot: NamaBot,
       username: req.session.username,
-      produk: produk,
-      error: error.message || 'Gagal menambahkan stok!',
-      req: req
+      produk: ctx.produk,
+      varian: ctx.varian,
+      error,
+      req: req,
     })
+  }
+
+  try {
+    const { data_stok } = req.body
+    if (!data_stok || !data_stok.trim()) {
+      return renderError('Data stok tidak boleh kosong!')
+    }
+
+    const ctx = await loadProdukVarian(produkId, varianId)
+    if (!ctx) return res.redirect('/produk?error=notfound')
+
+    const { produk, varian } = ctx
+    const dataArray = data_stok
+      .split(/[\n\r]+/)
+      .map((item) => item.trim())
+      .filter((item) => item !== '')
+
+    if (dataArray.length === 0) {
+      return renderError('Tidak ada data stok yang valid!')
+    }
+
+    const stokItems = dataArray.map((data) => ({
+      varian_id: varian.id,
+      varian_kode: String(varian.kode).toLowerCase(),
+      data: data.trim(),
+      status: 'tersedia',
+    }))
+
+    const { error: insertError } = await supabase.from('Stok').insert(stokItems)
+    if (insertError) throw insertError
+
+    const totalStok = await stock.getStokCountByVarianId(varian.id)
+    const formattedPrice = formatrupiah(varian.harga)
+    await sendFeedMessage(
+      `📢 ${dataArray.length} new stock added for ${produk.nama} (${varian.label})!\n\n` +
+        `✨ Available: ${totalStok} items\n` +
+        `🪙 Price: ${formattedPrice}`,
+      'stock'
+    ).catch((err) => console.error('Error sending stock feed message:', err))
+
+    console.log(
+      `[${new Date().toISOString()}] Stok ditambahkan: ${dataArray.length} item untuk ${produk.nama} / ${varian.kode} oleh ${req.session.username}`
+    )
+    res.redirect(`/produk/${produkId}/varian/${varianId}/stok?success=tambah`)
+  } catch (error) {
+    console.error('Error adding stock:', error)
+    renderError(error.message || 'Gagal menambahkan stok!')
   }
 })
 
-// Route: Form Edit Stok Item
-app.get('/produk/:produkId/stok/edit/:stokId', isAuthenticated, async (req, res) => {
+app.get('/produk/:produkId/varian/:varianId/stok/edit/:stokId', isAuthenticated, async (req, res) => {
   try {
-    const { produkId, stokId } = req.params
-    
-    const { data: produk, error: produkError } = await supabase
-      .from('Produk')
-      .select('*')
-      .eq('id', produkId)
-      .single()
-
-    if (produkError || !produk) {
-      return res.redirect('/produk?error=notfound')
-    }
+    const { produkId, varianId, stokId } = req.params
+    const ctx = await loadProdukVarian(produkId, varianId)
+    if (!ctx) return res.redirect('/produk?error=notfound')
 
     const { data: stokItem, error: stokError } = await supabase
       .from('Stok')
       .select('*')
       .eq('id', stokId)
-      .eq('produk_id', produkId)
+      .eq('varian_id', varianId)
       .single()
 
     if (stokError || !stokItem) {
-      return res.redirect(`/produk/${produkId}/stok?error=notfound`)
+      return res.redirect(`/produk/${produkId}/varian/${varianId}/stok?error=notfound`)
     }
 
     res.render('produk-stok-edit', {
-      title: `Edit Stok - ${produk.nama}`,
+      title: `Edit Stok — ${ctx.produk.nama} / ${ctx.varian.label}`,
       namaBot: NamaBot,
       username: req.session.username,
-      produk: produk,
-      stokItem: stokItem,
-      error: null
+      produk: ctx.produk,
+      varian: ctx.varian,
+      stokItem,
+      error: null,
+      req: req,
     })
   } catch (error) {
     console.error('Error loading stock item:', error)
-    res.redirect(`/produk/${req.params.produkId}/stok?error=load`)
+    res.redirect(`/produk/${req.params.produkId}/varian/${req.params.varianId}/stok?error=load`)
   }
 })
 
-// Route: Proses Edit Stok Item
-app.post('/produk/:produkId/stok/edit/:stokId', isAuthenticated, async (req, res) => {
+app.post('/produk/:produkId/varian/:varianId/stok/edit/:stokId', isAuthenticated, async (req, res) => {
   try {
-    const { produkId, stokId } = req.params
+    const { produkId, varianId, stokId } = req.params
     const { data_stok, status } = req.body
-    
+
     if (!data_stok || !data_stok.trim()) {
-      const { data: produk } = await supabase
-        .from('Produk')
-        .select('*')
-        .eq('id', produkId)
-        .single()
-      
-      const { data: stokItem } = await supabase
-        .from('Stok')
-        .select('*')
-        .eq('id', stokId)
-        .single()
-      
+      const ctx = await loadProdukVarian(produkId, varianId)
+      const { data: stokItem } = await supabase.from('Stok').select('*').eq('id', stokId).single()
       return res.render('produk-stok-edit', {
-        title: `Edit Stok - ${produk.nama}`,
+        title: `Edit Stok — ${ctx?.produk?.nama || 'Produk'}`,
         namaBot: NamaBot,
         username: req.session.username,
-        produk: produk,
-        stokItem: stokItem,
-        error: 'Data stok tidak boleh kosong!'
+        produk: ctx?.produk,
+        varian: ctx?.varian,
+        stokItem,
+        error: 'Data stok tidak boleh kosong!',
+        req: req,
       })
     }
 
-    // Ambil status lama
-    const { data: stokItemLama } = await supabase
-      .from('Stok')
-      .select('status')
-      .eq('id', stokId)
-      .single()
+    const { data: stokItemLama } = await supabase.from('Stok').select('status').eq('id', stokId).single()
 
-    // Validasi status
     const validStatus = ['tersedia', 'terjual', 'expired', 'dihapus']
     const newStatus = validStatus.includes(status) ? status : 'tersedia'
 
-    // Update stok item
     const updateData = {
       data: data_stok.trim(),
-      status: newStatus
+      status: newStatus,
     }
 
-    // Jika status diubah ke terjual, set terjual_at
     if (newStatus === 'terjual' && stokItemLama?.status !== 'terjual') {
       updateData.terjual_at = new Date().toISOString()
     } else if (newStatus !== 'terjual') {
@@ -1530,127 +1518,101 @@ app.post('/produk/:produkId/stok/edit/:stokId', isAuthenticated, async (req, res
       .from('Stok')
       .update(updateData)
       .eq('id', stokId)
-      .eq('produk_id', produkId)
+      .eq('varian_id', varianId)
 
     if (error) throw error
 
     console.log(`[${new Date().toISOString()}] Stok item diedit: ID ${stokId} oleh ${req.session.username}`)
-    res.redirect(`/produk/${produkId}/stok?success=edit`)
+    res.redirect(`/produk/${produkId}/varian/${varianId}/stok?success=edit`)
   } catch (error) {
     console.error('Error updating stock:', error)
-    res.redirect(`/produk/${req.params.produkId}/stok?error=edit`)
+    res.redirect(`/produk/${req.params.produkId}/varian/${req.params.varianId}/stok?error=edit`)
   }
 })
 
-// Route: Hapus Stok Item
-app.get('/produk/:produkId/stok/hapus/:stokId', isAuthenticated, async (req, res) => {
+app.get('/produk/:produkId/varian/:varianId/stok/hapus/:stokId', isAuthenticated, async (req, res) => {
   try {
-    const { produkId, stokId } = req.params
-    
-    const { data: produk, error: produkError } = await supabase
-      .from('Produk')
-      .select('*')
-      .eq('id', produkId)
-      .single()
-
-    if (produkError || !produk) {
-      return res.redirect('/produk?error=notfound')
-    }
+    const { produkId, varianId, stokId } = req.params
+    const ctx = await loadProdukVarian(produkId, varianId)
+    if (!ctx) return res.redirect('/produk?error=notfound')
 
     const { data: stokItem, error: stokError } = await supabase
       .from('Stok')
       .select('*')
       .eq('id', stokId)
-      .eq('produk_id', produkId)
+      .eq('varian_id', varianId)
       .single()
 
     if (stokError || !stokItem) {
-      return res.redirect(`/produk/${produkId}/stok?error=notfound`)
+      return res.redirect(`/produk/${produkId}/varian/${varianId}/stok?error=notfound`)
     }
 
     res.render('produk-stok-hapus', {
-      title: `Hapus Stok - ${produk.nama}`,
+      title: `Hapus Stok — ${ctx.produk.nama} / ${ctx.varian.label}`,
       namaBot: NamaBot,
       username: req.session.username,
-      produk: produk,
-      stokItem: stokItem
+      produk: ctx.produk,
+      varian: ctx.varian,
+      stokItem,
+      req: req,
     })
   } catch (error) {
     console.error('Error loading stock item:', error)
-    res.redirect(`/produk/${req.params.produkId}/stok?error=load`)
+    res.redirect(`/produk/${req.params.produkId}/varian/${req.params.varianId}/stok?error=load`)
   }
 })
 
-// Route: Proses Hapus Stok Item
-app.post('/produk/:produkId/stok/hapus/:stokId', isAuthenticated, async (req, res) => {
+app.post('/produk/:produkId/varian/:varianId/stok/hapus/:stokId', isAuthenticated, async (req, res) => {
   try {
-    const { produkId, stokId } = req.params
-    
-    // Hapus stok item
-    const { error } = await supabase
-      .from('Stok')
-      .delete()
-      .eq('id', stokId)
-      .eq('produk_id', produkId)
-
+    const { produkId, varianId, stokId } = req.params
+    const { error } = await supabase.from('Stok').delete().eq('id', stokId).eq('varian_id', varianId)
     if (error) throw error
 
     console.log(`[${new Date().toISOString()}] Stok item dihapus: ID ${stokId} oleh ${req.session.username}`)
-    res.redirect(`/produk/${produkId}/stok?success=hapus`)
+    res.redirect(`/produk/${produkId}/varian/${varianId}/stok?success=hapus`)
   } catch (error) {
     console.error('Error deleting stock:', error)
-    res.redirect(`/produk/${req.params.produkId}/stok?error=hapus`)
+    res.redirect(`/produk/${req.params.produkId}/varian/${req.params.varianId}/stok?error=hapus`)
   }
 })
 
-// Route: Export Stok ke CSV
-app.get('/produk/:id/stok/export', isAuthenticated, async (req, res) => {
+app.get('/produk/:produkId/varian/:varianId/stok/export', isAuthenticated, async (req, res) => {
   try {
-    const { id } = req.params
+    const { produkId, varianId } = req.params
     const { status } = req.query
-    
-    // Ambil produk
-    const { data: produk, error: produkError } = await supabase
-      .from('Produk')
-      .select('*')
-      .eq('id', id)
-      .single()
+    const ctx = await loadProdukVarian(produkId, varianId)
+    if (!ctx) return res.status(404).send('Produk/varian tidak ditemukan')
 
-    if (produkError || !produk) {
-      return res.status(404).send('Produk tidak ditemukan')
-    }
-
-    // Build query
-    let stokQuery = supabase
-      .from('Stok')
-      .select('*')
-      .eq('produk_id', id)
+    const { produk, varian } = ctx
+    let stokQuery = supabase.from('Stok').select('*').eq('varian_id', varianId)
 
     if (status && status !== 'all') {
       stokQuery = stokQuery.eq('status', status)
     }
 
-    const { data: stokItems, error } = await stokQuery
-      .order('created_at', { ascending: false })
-
+    const { data: stokItems, error } = await stokQuery.order('created_at', { ascending: false })
     if (error) throw error
 
-    // Generate CSV
     const csvHeader = 'No,Data Stok,Status,Terjual At,Trx ID,Created At\n'
-    const csvRows = (stokItems || []).map((s, index) => {
-      const data = (s.data || '').replace(/"/g, '""')
-      const terjualAt = s.terjual_at ? moment.tz(s.terjual_at, 'Asia/Jakarta').format('YYYY-MM-DD HH:mm:ss') : ''
-      const createdAt = moment.tz(s.created_at, 'Asia/Jakarta').format('YYYY-MM-DD HH:mm:ss')
-      const trxId = (s.trx_id || '').replace(/"/g, '""')
-      return `${index + 1},"${data}","${s.status}","${terjualAt}","${trxId}","${createdAt}"`
-    }).join('\n')
+    const csvRows = (stokItems || [])
+      .map((s, index) => {
+        const data = (s.data || '').replace(/"/g, '""')
+        const terjualAt = s.terjual_at
+          ? moment.tz(s.terjual_at, 'Asia/Jakarta').format('YYYY-MM-DD HH:mm:ss')
+          : ''
+        const createdAt = moment.tz(s.created_at, 'Asia/Jakarta').format('YYYY-MM-DD HH:mm:ss')
+        const trxId = (s.trx_id || '').replace(/"/g, '""')
+        return `${index + 1},"${data}","${s.status}","${terjualAt}","${trxId}","${createdAt}"`
+      })
+      .join('\n')
 
     const csv = csvHeader + csvRows
-
-    // Set headers untuk download
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename=stok-${produk.kode}-${moment.tz('Asia/Jakarta').format('YYYY-MM-DD')}.csv`)
-    res.send('\ufeff' + csv) // BOM untuk Excel
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=stok-${varian.kode}-${moment.tz('Asia/Jakarta').format('YYYY-MM-DD')}.csv`
+    )
+    res.send('\ufeff' + csv)
   } catch (error) {
     console.error('Error exporting stock:', error)
     res.status(500).send('Error exporting stock: ' + error.message)
@@ -5759,14 +5721,20 @@ app.get('/bulk', isAuthenticated, (req, res) => {
 // Route: API - Get Produk List (untuk bulk operations)
 app.get('/api/produk/list', isAuthenticated, async (req, res) => {
   try {
-    const { data: products, error } = await supabase
-      .from('Produk')
-      .select('id, nama, kode, harga')
-      .order('nama', { ascending: true })
-    
-    if (error) throw error
-    
-    res.json({ success: true, products: products || [] })
+    const list = await catalog.listProducts({ activeOnly: false, withStock: false })
+    const products = list.map((p) => ({
+      id: p.id,
+      nama: p.nama,
+      slug: p.slug,
+      variants: (p.variants || []).map((v) => ({
+        id: v.id,
+        label: v.label,
+        kode: v.kode,
+        harga: v.harga,
+      })),
+    }))
+
+    res.json({ success: true, products })
   } catch (error) {
     console.error('Error getting produk list:', error)
     res.status(500).json({ success: false, error: error.message })
@@ -6061,42 +6029,40 @@ app.post('/bulk/produk/update-harga', isAuthenticated, async (req, res) => {
 // Route: Bulk Tambah Stok
 app.post('/bulk/stok/tambah', isAuthenticated, async (req, res) => {
   try {
-    const { produk_id, data_stok } = req.body
+    const { varian_id, data_stok } = req.body
 
-    if (!produk_id || !data_stok) {
-      return res.json({ success: false, error: 'Produk ID dan data stok wajib diisi' })
+    if (!varian_id || !data_stok) {
+      return res.json({ success: false, error: 'Varian ID dan data stok wajib diisi' })
     }
 
-    // Ambil produk
-    const { data: produk, error: produkError } = await supabase
-      .from('Produk')
-      .select('*')
-      .eq('id', produk_id)
+    const { data: varian, error: varianError } = await supabase
+      .from('Varian')
+      .select('*, produk:Produk(*)')
+      .eq('id', varian_id)
       .single()
 
-    if (produkError || !produk) {
-      return res.json({ success: false, error: 'Produk tidak ditemukan' })
+    if (varianError || !varian) {
+      return res.json({ success: false, error: 'Varian tidak ditemukan' })
     }
 
-    // Split data stok (baris baru atau comma)
+    const produk = varian.produk || { nama: 'Produk' }
+
     const dataArray = data_stok
       .split(/[\n\r,]+/)
-      .map(item => item.trim())
-      .filter(item => item !== '')
+      .map((item) => item.trim())
+      .filter((item) => item !== '')
 
     if (dataArray.length === 0) {
       return res.json({ success: false, error: 'Tidak ada data stok yang valid' })
     }
 
-    // Insert stok items
-    const stokItems = dataArray.map(data => ({
-      produk_id: produk_id,
-      produk_kode: produk.kode.toLowerCase(),
+    const stokItems = dataArray.map((data) => ({
+      varian_id: varian.id,
+      varian_kode: String(varian.kode).toLowerCase(),
       data: data.trim(),
-      status: 'tersedia'
+      status: 'tersedia',
     }))
 
-    // Insert dalam batch (Supabase limit biasanya 1000 per batch)
     const batchSize = 500
     let successCount = 0
     let failedCount = 0
@@ -6104,37 +6070,34 @@ app.post('/bulk/stok/tambah', isAuthenticated, async (req, res) => {
 
     for (let i = 0; i < stokItems.length; i += batchSize) {
       const batch = stokItems.slice(i, i + batchSize)
-      const { error: insertError } = await supabase
-        .from('Stok')
-        .insert(batch)
+      const { error: insertError } = await supabase.from('Stok').insert(batch)
 
       if (insertError) {
         failedCount += batch.length
         errors.push({
           batch: Math.floor(i / batchSize) + 1,
-          error: insertError.message
+          error: insertError.message,
         })
       } else {
         successCount += batch.length
       }
     }
 
-    await logActivity(req, 'BULK_ADD_STOK', 'Stok', produk_id, {
+    await logActivity(req, 'BULK_ADD_STOK', 'Stok', varian_id, {
       produk_nama: produk.nama,
-      produk_kode: produk.kode,
-      jumlah: successCount
+      varian_kode: varian.kode,
+      jumlah: successCount,
     })
 
     if (successCount > 0) {
-      // Kirim notifikasi stok baru ke feed channel
-      const totalStok = await getStokCount(produk_id)
-      const formattedPrice = formatrupiah(produk.harga)
+      const totalStok = await stock.getStokCountByVarianId(varian.id)
+      const formattedPrice = formatrupiah(varian.harga)
       await sendFeedMessage(
-        `📢 ${successCount} new stock added for ${produk.nama}!\n\n` +
-        `✨ Available: ${totalStok} items\n` +
-        `🪙 Price: ${formattedPrice}`,
+        `📢 ${successCount} new stock added for ${produk.nama} (${varian.label})!\n\n` +
+          `✨ Available: ${totalStok} items\n` +
+          `🪙 Price: ${formattedPrice}`,
         'stock'
-      ).catch(err => console.error('Error sending stock feed message:', err))
+      ).catch((err) => console.error('Error sending stock feed message:', err))
     }
 
     res.json({
@@ -6143,8 +6106,8 @@ app.post('/bulk/stok/tambah', isAuthenticated, async (req, res) => {
         total: dataArray.length,
         success: successCount,
         failed: failedCount,
-        errors: errors
-      }
+        errors: errors,
+      },
     })
   } catch (error) {
     console.error('Error bulk adding stock:', error)

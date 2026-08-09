@@ -1,0 +1,324 @@
+<%
+    const currentPage = 'produk';
+    const pageTitle = `📦 ${produk.nama}`;
+    const kategoriList = [
+        ['umum', '📦 Umum'],
+        ['game', '🎮 Game'],
+        ['streaming', '📺 Streaming'],
+        ['software', '💻 Software'],
+        ['social media', '📱 Social Media'],
+        ['voucher', '🎟️ Voucher'],
+        ['education', '📚 Education']
+    ];
+    const kategoriTerpilih = (produk.kategori || 'umum').toLowerCase();
+    if (!kategoriList.some(([nilai]) => nilai === kategoriTerpilih)) {
+        kategoriList.push([kategoriTerpilih, `⚠️ ${kategoriTerpilih} (tidak dikenali bot)`]);
+    }
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+    <style>
+        .variant-table .variant-field { padding: 6px 8px; font-size: 13px; }
+        .variant-actions { flex-wrap: wrap; }
+        @media (max-width: 768px) {
+            .variant-table thead { display: none; }
+            .variant-table tbody tr.variant-row {
+                display: block;
+                border: 1px solid #e9ecef;
+                border-radius: 10px;
+                margin-bottom: 12px;
+                padding: 12px;
+                background: #fff;
+            }
+            .variant-table tbody tr.variant-row td {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 10px;
+                padding: 8px 0;
+                border: none;
+            }
+            .variant-table tbody tr.variant-row td::before {
+                content: attr(data-label);
+                font-weight: 600;
+                color: #666;
+                flex-shrink: 0;
+            }
+            .variant-table tbody tr.variant-row td[data-label="Aksi"] {
+                justify-content: flex-end;
+                border-top: 1px solid #eee;
+                margin-top: 8px;
+                padding-top: 12px;
+            }
+            .variant-table .variant-field { flex: 1; max-width: 60%; }
+        }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <%- include('partials/sidebar') %>
+
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/produk" class="btn-top">← Daftar Produk</a>
+                <a href="/produk/hapus/<%= produk.id %>" class="btn-top" style="color:#dc3545;">🗑️ Hapus</a>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header">
+                    <h2 class="card-title">Informasi Produk</h2>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="/produk/<%= produk.id %>" data-loading>
+                        <div class="form-group">
+                            <label class="form-label">Nama Produk <span class="required">*</span></label>
+                            <input type="text" name="nama" class="form-input" value="<%= produk.nama %>" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Slug</label>
+                            <input type="text" class="form-input" value="<%= produk.slug %>" disabled>
+                            <div class="form-help">Slug diperbarui otomatis dari nama saat disimpan.</div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Kategori</label>
+                            <select name="kategori" class="form-input">
+                                <% kategoriList.forEach(([nilai, label]) => { %>
+                                    <option value="<%= nilai %>" <%= kategoriTerpilih === nilai ? 'selected' : '' %>><%= label %></option>
+                                <% }) %>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Deskripsi <span class="required">*</span></label>
+                            <textarea name="deskripsi" class="form-textarea" rows="4" required><%= produk.deskripsi %></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Syarat & Ketentuan <span class="required">*</span></label>
+                            <textarea name="snk" class="form-textarea" rows="4" required><%= produk.snk %></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Banner URL</label>
+                            <input type="url" name="banner_url" class="form-input" value="<%= produk.banner_url || '' %>" placeholder="https://...">
+                        </div>
+                        <div style="display:flex;gap:20px;flex-wrap:wrap;">
+                            <div class="form-group" style="flex:1;min-width:140px;">
+                                <label class="form-label">Urutan</label>
+                                <input type="number" name="urutan" class="form-input" value="<%= produk.urutan || 0 %>" min="0">
+                            </div>
+                            <div class="form-group" style="flex:1;min-width:140px;">
+                                <label class="form-label">Status</label>
+                                <label style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+                                    <input type="checkbox" name="is_active" <%= produk.is_active !== false ? 'checked' : '' %>>
+                                    Aktif di bot
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">💾 Simpan Produk</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+                    <h2 class="card-title" style="margin:0;">Varian (<%= (produk.variants || []).length %>)</h2>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table class="variant-table">
+                            <thead>
+                                <tr>
+                                    <th>Label</th>
+                                    <th>Kode</th>
+                                    <th>Harga</th>
+                                    <th>Stok</th>
+                                    <th>Terjual</th>
+                                    <th>Aktif</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="variantTableBody">
+                                <% (produk.variants || []).forEach(variant => { %>
+                                    <%- include('partials/variant-row', { produk, variant, formatrupiah }) %>
+                                <% }) %>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style="margin-top:24px;padding-top:24px;border-top:1px solid #eee;">
+                        <h3 style="margin:0 0 16px;font-size:16px;">➕ Tambah Varian</h3>
+                        <form id="addVariantForm" class="variant-add-form" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;align-items:end;">
+                            <div class="form-group" style="margin:0;">
+                                <label class="form-label">Label</label>
+                                <input type="text" name="label" class="form-input" required placeholder="1 Bulan">
+                            </div>
+                            <div class="form-group" style="margin:0;">
+                                <label class="form-label">Kode</label>
+                                <input type="text" name="kode" class="form-input" required pattern="[a-z0-9-]+" placeholder="netflix-1b">
+                            </div>
+                            <div class="form-group" style="margin:0;">
+                                <label class="form-label">Harga</label>
+                                <input type="number" name="harga" class="form-input" required min="0">
+                            </div>
+                            <div class="form-group" style="margin:0;">
+                                <label class="form-label">Format</label>
+                                <input type="text" name="format" class="form-input" placeholder="Opsional">
+                            </div>
+                            <button type="submit" class="btn btn-success">Tambah</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top">↑</button>
+    </div>
+
+    <script src="/js/inline-edit.js"></script>
+    <script src="/js/notifications.js"></script>
+    <script>
+        const produkId = '<%= produk.id %>';
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+
+        function variantRowSelector(variantId) {
+            return `tr.variant-row[data-variant-id="${variantId}"]`;
+        }
+
+        function bindVariantRow(row) {
+            const variantId = row.dataset.variantId;
+            const patchUrl = `/api/produk/${produkId}/varian/${variantId}`;
+
+            row.querySelectorAll('.variant-field').forEach((input) => {
+                input.addEventListener('change', async () => {
+                    const field = input.dataset.field;
+                    try {
+                        await patchAndSwap(patchUrl, { [field]: input.value }, variantRowSelector(variantId));
+                        bindAllVariantRows();
+                        toast.success('Varian diperbarui', 'Berhasil');
+                    } catch (e) {
+                        toast.error(e.message, 'Error');
+                    }
+                });
+            });
+
+            const activeCb = row.querySelector('.variant-active');
+            if (activeCb) {
+                activeCb.addEventListener('change', async () => {
+                    try {
+                        await patchAndSwap(patchUrl, { is_active: activeCb.checked }, variantRowSelector(variantId));
+                        bindAllVariantRows();
+                    } catch (e) {
+                        toast.error(e.message, 'Error');
+                        activeCb.checked = !activeCb.checked;
+                    }
+                });
+            }
+
+            const upBtn = row.querySelector('.variant-move-up');
+            if (upBtn) {
+                upBtn.addEventListener('click', async () => {
+                    try {
+                        await patchAndSwap(patchUrl, { action: 'up' }, variantRowSelector(variantId));
+                        location.reload();
+                    } catch (e) {
+                        toast.error(e.message, 'Error');
+                    }
+                });
+            }
+
+            const downBtn = row.querySelector('.variant-move-down');
+            if (downBtn) {
+                downBtn.addEventListener('click', async () => {
+                    try {
+                        await patchAndSwap(patchUrl, { action: 'down' }, variantRowSelector(variantId));
+                        location.reload();
+                    } catch (e) {
+                        toast.error(e.message, 'Error');
+                    }
+                });
+            }
+
+            const delBtn = row.querySelector('.variant-delete');
+            if (delBtn) {
+                delBtn.addEventListener('click', async () => {
+                    if (!confirm('Hapus varian ini?')) return;
+                    try {
+                        const res = await fetch(`/api/produk/${produkId}/varian/${variantId}`, { method: 'DELETE' });
+                        if (!res.ok) {
+                            const err = await res.json().catch(() => ({}));
+                            throw new Error(err.error || res.statusText);
+                        }
+                        row.remove();
+                        toast.success('Varian dihapus', 'Berhasil');
+                    } catch (e) {
+                        toast.error(e.message, 'Error');
+                    }
+                });
+            }
+        }
+
+        function bindAllVariantRows() {
+            document.querySelectorAll('tr.variant-row').forEach(bindVariantRow);
+        }
+
+        document.getElementById('addVariantForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.target);
+            const body = Object.fromEntries(fd.entries());
+            try {
+                const res = await fetch(`/api/produk/${produkId}/varian`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Accept: 'text/html' },
+                    body: JSON.stringify(body),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || res.statusText);
+                }
+                const html = await res.text();
+                document.getElementById('variantTableBody').insertAdjacentHTML('beforeend', html);
+                e.target.reset();
+                bindAllVariantRows();
+                toast.success('Varian ditambahkan', 'Berhasil');
+            } catch (err) {
+                toast.error(err.message, 'Error');
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            bindAllVariantRows();
+            const success = '<%= success || "" %>';
+            if (success === 'tambah') toast.success('Produk berhasil dibuat!', 'Berhasil');
+            if (success === 'edit') toast.success('Produk berhasil diperbarui!', 'Berhasil');
+        });
+    </script>
+</body>
+</html>
