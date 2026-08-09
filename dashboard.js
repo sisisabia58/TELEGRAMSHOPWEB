@@ -59,14 +59,21 @@ app.post('/webhook/pakasir', async (req, res) => {
 // Session configuration
 const session = require('express-session')
 
+const sessionSecret = process.env.SESSION_SECRET
+if (!sessionSecret && process.env.NODE_ENV === 'production') {
+  console.error('FATAL: SESSION_SECRET is required in production')
+  process.exit(1)
+}
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key-change-this-in-production',
+  secret: sessionSecret || 'dev-only-change-me',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false, // Set true jika menggunakan HTTPS
-    maxAge: 24 * 60 * 60 * 1000 // 24 jam
-  }
+    secure: process.env.SECURE_COOKIES === 'true' || process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 24 * 60 * 60 * 1000,
+  },
 }))
 
 // Middleware untuk check authentication

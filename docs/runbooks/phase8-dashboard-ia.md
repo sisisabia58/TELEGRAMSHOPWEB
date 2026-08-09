@@ -5,6 +5,8 @@
 3. Confirm purple gradient gone; sidebar sections work.
 4. Mobile ≤768px: bottom tabs visible.
 5. Open `/`, `/stok`, `/pricing`.
-6. SESSION_SECRET set in Railway for production.
+6. **Session env vars** (Railway → dashboard service → Variables):
+   - `SESSION_SECRET` — required in production; app exits on boot if missing when `NODE_ENV=production`. Use a long random string (e.g. `openssl rand -hex 32`).
+   - `SECURE_COOKIES` — optional override; set to `true` to force `Secure` cookies outside production. In production, secure cookies are enabled automatically (`NODE_ENV=production`).
 
 See plan: `docs/superpowers/plans/2026-08-09-dashboard-ia-mobile.md`.
