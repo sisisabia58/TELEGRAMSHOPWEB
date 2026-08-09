@@ -1,0 +1,127 @@
+<%
+    const currentPage = 'settings-bot-flow';
+    const pageTitle = '🔀 Bot Flow';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+    <style>
+        .flow-key { font-family: monospace; font-size: 14px; }
+        .flow-kind { color: #666; font-weight: normal; font-size: 13px; }
+        .form-textarea, .form-select, .form-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        .form-textarea { resize: vertical; font-family: monospace; font-size: 13px; }
+        .success-banner { background: #d4edda; color: #155724; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; }
+        .error-banner { background: #f8d7da; color: #721c24; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; }
+        .toggle-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <%- include('partials/sidebar') %>
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+        <div class="container">
+            <% if (success === 'toggle') { %>
+                <div class="success-banner">✅ Flow engine toggle disimpan. Bot memuat ulang dalam ~10 detik.</div>
+            <% } else if (success) { %>
+                <div class="success-banner">✅ Node flow berhasil disimpan.</div>
+            <% } %>
+            <% if (error) { %>
+                <div class="error-banner">⚠️ <%= error %></div>
+            <% } %>
+
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header"><h2 class="card-title">Flow Engine</h2></div>
+                <div class="card-body">
+                    <p style="color:#666;margin-top:0;">Atur navigasi bot (tombol menu). Checkout tetap di kode. Default: <strong>OFF</strong>.</p>
+                    <form method="POST" action="/settings/bot-flow/toggle">
+                        <div class="toggle-row">
+                            <input type="checkbox" id="enabled" name="enabled" value="true" <%= enabled ? 'checked' : '' %>>
+                            <label for="enabled"><strong>Aktifkan flow engine</strong></label>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Simpan toggle</button>
+                    </form>
+                    <% if (flow) { %>
+                        <p style="color:#888;font-size:13px;margin-bottom:0;">Flow aktif: <code><%= flow.name %></code> — entry: <code><%= flow.entry_key %></code></p>
+                    <% } %>
+                </div>
+            </div>
+
+            <% nodes.forEach(node => { %>
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header">
+                        <h2 class="card-title">
+                            <code class="flow-key"><%= node.key %></code>
+                            <span class="flow-kind">(<%= node.kind %>)</span>
+                        </h2>
+                    </div>
+                    <div class="card-body">
+                        <% if (node.description) { %>
+                            <p style="color:#666;"><%= node.description %></p>
+                        <% } %>
+                        <form method="POST" action="/settings/bot-flow/nodes/<%= encodeURIComponent(node.key) %>">
+                            <div style="margin-bottom:12px;">
+                                <label>Kind</label>
+                                <select name="kind" class="form-select" required>
+                                    <option value="screen" <%= node.kind === 'screen' ? 'selected' : '' %>>screen</option>
+                                    <option value="action" <%= node.kind === 'action' ? 'selected' : '' %>>action</option>
+                                </select>
+                            </div>
+                            <div style="margin-bottom:12px;">
+                                <label>screen_key (untuk kind=screen)</label>
+                                <input type="text" name="screen_key" class="form-input" value="<%= node.screen_key || '' %>" placeholder="screen.welcome">
+                            </div>
+                            <div style="margin-bottom:12px;">
+                                <label>action (untuk kind=action)</label>
+                                <select name="action" class="form-select">
+                                    <option value="">—</option>
+                                    <% actions.forEach(a => { %>
+                                        <option value="<%= a %>" <%= node.action === a ? 'selected' : '' %>><%= a %></option>
+                                    <% }) %>
+                                </select>
+                            </div>
+                            <div style="margin-bottom:12px;">
+                                <label>description</label>
+                                <input type="text" name="description" class="form-input" value="<%= node.description || '' %>">
+                            </div>
+                            <div style="margin-bottom:12px;">
+                                <label>buttons (JSON)</label>
+                                <textarea name="buttons" class="form-textarea" rows="10" required><%= JSON.stringify(node.buttons || [], null, 2) %></textarea>
+                                <p style="color:#888;font-size:12px;">Setiap tombol: satu dari <code>go</code>, <code>callback</code>, <code>url_from</code>, <code>url</code>. Label via <code>label_key</code> (BotCopy) atau <code>label</code>.</p>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Simpan node</button>
+                        </form>
+                    </div>
+                </div>
+            <% }) %>
+        </div>
+    </main>
+</body>
+</html>
