@@ -13,9 +13,9 @@
 |-------|-----------|------------------|
 | 0 — Bug fixes, lib/, hygiene | _(done in prior PRs)_ | **Done** (number grid gone; `lib/{supabase,format,stock,runtime-settings}`; grup migration; kategori on form) |
 | 1 — Cart → Postgres | _(done in prior PRs)_ | **Done** (`BotSession`, `lib/cart.js`, tests). Leftover: delete `Database/Trx/` vestiges |
-| 2 — Product → Variant → Stock | [2026-08-09-product-variant-stock.md](./2026-08-09-product-variant-stock.md) | **Next — detailed plan ready** |
-| 3 — Tiered pricing | _write after Phase 2 ships_ | Not started |
-| 4 — Bulk upload rework | _write after Phase 2 ships_ | Not started |
+| 2 — Product → Variant → Stock | [2026-08-09-product-variant-stock.md](./2026-08-09-product-variant-stock.md) | **Done** (schema live; fixtures seeded) |
+| 3 — Tiered pricing | [2026-08-09-tiered-pricing.md](./2026-08-09-tiered-pricing.md) | **In progress** |
+| 4 — Bulk upload rework | _write after Phase 3 ships_ | Not started |
 | 5 — Copy registry (screen/msg) | _write after Phase 0 cache exists_ | Not started |
 | 6 — Flow engine | _depends on 1 + 5_ | Not started |
 | 7 — Bot command retirement | _depends on 2 + 4 + 6_ | Not started |
