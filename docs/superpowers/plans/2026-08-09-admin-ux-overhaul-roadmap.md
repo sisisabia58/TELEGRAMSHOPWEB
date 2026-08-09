@@ -21,7 +21,7 @@
 | 6b — Visual flow builder | [2026-08-09-visual-flow-builder.md](./2026-08-09-visual-flow-builder.md) | **Done** |
 | 6c — E2E buyer preview | [../runbooks/phase6c-e2e-preview.md](../runbooks/phase6c-e2e-preview.md) | **Done** |
 | 6d — SendPulse-like editor UI | [../runbooks/phase6d-sendpulse-ui.md](../runbooks/phase6d-sendpulse-ui.md) | **Done** |
-| 7 — Bot command retirement | _depends on 2 + 4 + 6_ | Not started |
+| 7 — Bot command retirement | [2026-08-09-bot-command-retirement.md](./2026-08-09-bot-command-retirement.md) | **Plan ready** |
 | 8 — Dashboard IA + mobile | _depends on 2 + 3 + 6_ | Not started |
 | 9 — Copy err/btn | _depends on 5 + 7_ | Not started |
 
