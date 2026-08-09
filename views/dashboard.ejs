@@ -1,133 +1,18 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title><%= title %></title>
-    <link rel="stylesheet" href="/css/dashboard.css">
+    <%- include('partials/head') %>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="/js/ui-utils.js"></script>
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
     
-    <!-- Sidebar Navigation -->
-    <nav class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <h2>📊 <%= namaBot %></h2>
-            <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
-        </div>
-        
-        <div class="nav-group">
-            <div class="nav-group-title">Main</div>
-            <a href="/" class="nav-item active">
-                <span class="nav-item-icon">📊</span>
-                <span>Dashboard</span>
-            </a>
-        </div>
-        
-        <div class="nav-group">
-            <div class="nav-group-title">Products</div>
-            <a href="/produk" class="nav-item">
-                <span class="nav-item-icon">📦</span>
-                <span>Produk</span>
-            </a>
-            <a href="/voucher" class="nav-item">
-                <span class="nav-item-icon">🎫</span>
-                <span>Voucher</span>
-            </a>
-        </div>
-        
-        <div class="nav-group">
-            <div class="nav-group-title">Transactions</div>
-            <a href="/transaksi" class="nav-item">
-                <span class="nav-item-icon">🛍️</span>
-                <span>Transaksi</span>
-            </a>
-            <a href="/deposit" class="nav-item">
-                <span class="nav-item-icon">💵</span>
-                <span>Deposit</span>
-            </a>
-            <a href="/user" class="nav-item">
-                <span class="nav-item-icon">👥</span>
-                <span>User</span>
-            </a>
-        </div>
-        
-        <div class="nav-group">
-            <div class="nav-group-title">Tools</div>
-            <a href="/bulk" class="nav-item">
-                <span class="nav-item-icon">⚡</span>
-                <span>Bulk Operations</span>
-            </a>
-            <a href="/communication/broadcast" class="nav-item">
-                <span class="nav-item-icon">📢</span>
-                <span>Communication</span>
-            </a>
-        </div>
-        
-        <div class="nav-group">
-            <div class="nav-group-title">Reports</div>
-            <a href="/analitik" class="nav-item">
-                <span class="nav-item-icon">📈</span>
-                <span>Analytics</span>
-            </a>
-            <a href="/laporan" class="nav-item">
-                <span class="nav-item-icon">📄</span>
-                <span>Reports</span>
-            </a>
-        </div>
-        
-        <div class="nav-group">
-            <div class="nav-group-title">Settings</div>
-            <a href="/settings/general" class="nav-item">
-                <span class="nav-item-icon">⚙️</span>
-                <span>General Settings</span>
-            </a>
-            <a href="/settings/notifications" class="nav-item">
-                <span class="nav-item-icon">🔔</span>
-                <span>Notifications</span>
-            </a>
-        </div>
-        
-        <% if (req.session.role === 'admin') { %>
-        <div class="nav-group">
-            <div class="nav-group-title">Admin</div>
-            <a href="/admin/users" class="nav-item">
-                <span class="nav-item-icon">👤</span>
-                <span>Admin Users</span>
-            </a>
-            <a href="/admin/login-history" class="nav-item">
-                <span class="nav-item-icon">🔐</span>
-                <span>Login History</span>
-            </a>
-            <a href="/admin/audit-log" class="nav-item">
-                <span class="nav-item-icon">📋</span>
-                <span>Audit Log</span>
-            </a>
-        </div>
-        <% } %>
-    </nav>
+    <%- include('partials/sidebar') %>
     
     <!-- Main Content -->
     <main class="main-content" id="main-content">
         <!-- Top Bar -->
-        <div class="top-bar">
-            <div class="top-bar-left">
-                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
-                <h1 style="font-size: 24px; color: #333; margin: 0;">Dashboard <%= namaBot %></h1>
-            </div>
-            <div class="top-bar-right">
-                <div class="user-info">
-                    <span>👤 <%= username || 'Admin' %></span>
-                    <% if (req.session.role) { %>
-                        <span class="user-badge"><%= req.session.role %></span>
-                    <% } %>
-                </div>
-                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
-                <a href="/logout" class="btn-top btn-logout">Logout</a>
-            </div>
-        </div>
+        <%- include('partials/topbar') %>
         
         <!-- Page Content -->
         <div class="container">
@@ -251,6 +136,7 @@
             </div>
         </div>
     </main>
+    <%- include('partials/mobile-tabs') %>
     
     <!-- Quick Actions -->
     <div class="quick-actions">

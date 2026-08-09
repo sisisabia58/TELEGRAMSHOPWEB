@@ -1,10 +1,11 @@
+<%
+    const currentPage = 'voucher';
+    const pageTitle = '🎟️ Detail Voucher';
+%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title><%= title %></title>
-    <link rel="stylesheet" href="/css/dashboard.css">
+    <%- include('partials/head') %>
     <style>
         .detail-container {
             background: white;
@@ -73,114 +74,97 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-                <div>
-                    <h1>🎟️ Detail Voucher</h1>
-                    <nav>
-                        <a href="/">Dashboard</a>
-                        <a href="/produk">Produk</a>
-                        <a href="/transaksi">Transaksi</a>
-                        <a href="/user">User</a>
-                        <a href="/deposit">Deposit</a>
-                        <a href="/analitik">Analitik</a>
-                        <a href="/laporan">Laporan</a>
-                        <a href="/voucher">Voucher</a>
-                    </nav>
-                </div>
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <span style="color: #666; font-size: 14px;">
-                        👤 <%= username || 'Admin' %>
-                    </span>
-                    <a href="/logout" style="padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">
-                        Logout
-                    </a>
-                </div>
-            </div>
-        </header>
-
-        <div class="detail-container">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <%- include('partials/sidebar') %>
+    <main class="main-content" id="main-content">
+        <%
+            const topbarExtra = `<a href="/voucher" class="btn-top">← Voucher</a>`
+        %>
+        <%- include('partials/topbar') %>
+        <div class="container">
+            <div class="detail-container">
             <div class="info-grid">
-                <div class="info-card">
-                    <h3>Kode Voucher</h3>
-                    <p><code style="font-size: 24px;"><%= voucher.kode %></code></p>
-                </div>
-                <div class="info-card">
-                    <h3>Potongan</h3>
-                    <p style="color: #28a745; font-size: 24px;"><%= formatrupiah(voucher.potongan) %></p>
-                </div>
-                <div class="info-card">
-                    <h3>Limit Penggunaan</h3>
-                    <p><%= voucher.limit %></p>
-                </div>
-                <div class="info-card">
-                    <h3>Jumlah Penggunaan</h3>
-                    <p><%= stats.jumlahPenggunaan %></p>
-                </div>
-                <div class="info-card">
-                    <h3>Sisa Limit</h3>
-                    <p style="color: <%= stats.sisaLimit > 0 ? '#28a745' : '#dc3545' %>;"><%= stats.sisaLimit %></p>
-                </div>
-                <div class="info-card">
-                    <h3>Status</h3>
-                    <p>
-                        <% if (stats.status === 'baru') { %>
-                            <span class="status-badge status-baru">🆕 Baru</span>
-                        <% } else if (stats.status === 'aktif') { %>
-                            <span class="status-badge status-aktif">✅ Aktif</span>
-                        <% } else { %>
-                            <span class="status-badge status-habis">⛔ Habis</span>
-                        <% } %>
-                    </p>
-                </div>
+            <div class="info-card">
+            <h3>Kode Voucher</h3>
+            <p><code style="font-size: 24px;"><%= voucher.kode %></code></p>
+            </div>
+            <div class="info-card">
+            <h3>Potongan</h3>
+            <p style="color: #28a745; font-size: 24px;"><%= formatrupiah(voucher.potongan) %></p>
+            </div>
+            <div class="info-card">
+            <h3>Limit Penggunaan</h3>
+            <p><%= voucher.limit %></p>
+            </div>
+            <div class="info-card">
+            <h3>Jumlah Penggunaan</h3>
+            <p><%= stats.jumlahPenggunaan %></p>
+            </div>
+            <div class="info-card">
+            <h3>Sisa Limit</h3>
+            <p style="color: <%= stats.sisaLimit > 0 ? '#28a745' : '#dc3545' %>;"><%= stats.sisaLimit %></p>
+            </div>
+            <div class="info-card">
+            <h3>Status</h3>
+            <p>
+            <% if (stats.status === 'baru') { %>
+            <span class="status-badge status-baru">🆕 Baru</span>
+            <% } else if (stats.status === 'aktif') { %>
+            <span class="status-badge status-aktif">✅ Aktif</span>
+            <% } else { %>
+            <span class="status-badge status-habis">⛔ Habis</span>
+            <% } %>
+            </p>
+            </div>
             </div>
 
             <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
-                <h3 style="margin-bottom: 15px;">Produk yang Berlaku</h3>
-                <div class="products-list">
-                    <% if (produkInfo.length === 0 || (produkInfo[0] && produkInfo[0].kode === 'all')) { %>
-                        <span class="product-tag" style="background: #28a745;">Semua Produk</span>
-                    <% } else { %>
-                        <% produkInfo.forEach(p => { %>
-                            <span class="product-tag"><%= p.nama %> (<code><%= p.kode %></code>)</span>
-                        <% }) %>
-                    <% } %>
-                </div>
+            <h3 style="margin-bottom: 15px;">Produk yang Berlaku</h3>
+            <div class="products-list">
+            <% if (produkInfo.length === 0 || (produkInfo[0] && produkInfo[0].kode === 'all')) { %>
+            <span class="product-tag" style="background: #28a745;">Semua Produk</span>
+            <% } else { %>
+            <% produkInfo.forEach(p => { %>
+            <span class="product-tag"><%= p.nama %> (<code><%= p.kode %></code>)</span>
+            <% }) %>
+            <% } %>
+            </div>
             </div>
 
             <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
-                <h3 style="margin-bottom: 15px;">User yang Menggunakan</h3>
-                <% if (Array.isArray(voucher.user) && voucher.user.length > 0) { %>
-                    <p>Total: <strong><%= voucher.user.length %></strong> user</p>
-                    <div style="margin-top: 10px;">
-                        <% voucher.user.slice(0, 20).forEach(userId => { %>
-                            <a href="/user/<%= userId %>" style="display: inline-block; background: #667eea; color: white; padding: 5px 12px; border-radius: 6px; text-decoration: none; font-size: 12px; margin: 5px 5px 5px 0;">
-                                User <%= userId %>
-                            </a>
-                        <% }) %>
-                        <% if (voucher.user.length > 20) { %>
-                            <span style="color: #666; font-size: 12px;">... dan <%= voucher.user.length - 20 %> user lainnya</span>
-                        <% } %>
-                    </div>
-                <% } else { %>
-                    <p style="color: #666;">Belum ada user yang menggunakan voucher ini</p>
-                <% } %>
+            <h3 style="margin-bottom: 15px;">User yang Menggunakan</h3>
+            <% if (Array.isArray(voucher.user) && voucher.user.length > 0) { %>
+            <p>Total: <strong><%= voucher.user.length %></strong> user</p>
+            <div style="margin-top: 10px;">
+            <% voucher.user.slice(0, 20).forEach(userId => { %>
+            <a href="/user/<%= userId %>" style="display: inline-block; background: #667eea; color: white; padding: 5px 12px; border-radius: 6px; text-decoration: none; font-size: 12px; margin: 5px 5px 5px 0;">
+            User <%= userId %>
+            </a>
+            <% }) %>
+            <% if (voucher.user.length > 20) { %>
+            <span style="color: #666; font-size: 12px;">... dan <%= voucher.user.length - 20 %> user lainnya</span>
+            <% } %>
+            </div>
+            <% } else { %>
+            <p style="color: #666;">Belum ada user yang menggunakan voucher ini</p>
+            <% } %>
             </div>
 
             <div style="display: flex; gap: 10px; margin-top: 30px;">
-                <a href="/voucher/edit/<%= voucher.id %>" class="btn" style="background: #667eea; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: 600;">
-                    ✏️ Edit Voucher
-                </a>
-                <a href="/voucher/hapus/<%= voucher.id %>" class="btn" style="background: #dc3545; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: 600;">
-                    🗑️ Hapus Voucher
-                </a>
-                <a href="/voucher" class="btn" style="background: #6c757d; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: 600;">
-                    ← Kembali
-                </a>
+            <a href="/voucher/edit/<%= voucher.id %>" class="btn" style="background: #667eea; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: 600;">
+            ✏️ Edit Voucher
+            </a>
+            <a href="/voucher/hapus/<%= voucher.id %>" class="btn" style="background: #dc3545; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: 600;">
+            🗑️ Hapus Voucher
+            </a>
+            <a href="/voucher" class="btn" style="background: #6c757d; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: 600;">
+            ← Kembali
+            </a>
+            </div>
             </div>
         </div>
-    </div>
+    </main>
+    <%- include('partials/mobile-tabs') %>
 </body>
 </html>
 

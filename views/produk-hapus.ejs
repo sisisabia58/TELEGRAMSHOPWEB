@@ -1,10 +1,11 @@
+<%
+    const currentPage = 'produk';
+    const pageTitle = '🗑️ Hapus Produk';
+%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title><%= title %></title>
-    <link rel="stylesheet" href="/css/dashboard.css">
+    <%- include('partials/head') %>
     <style>
         .confirm-container {
             background: white;
@@ -67,53 +68,40 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-                <div>
-                    <h1>🗑️ Hapus Produk</h1>
-                    <nav>
-                        <a href="/">Dashboard</a>
-                        <a href="/produk">Produk</a>
-                        <a href="/transaksi">Transaksi</a>
-                        <a href="/user">User</a>
-                    </nav>
-                </div>
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <span style="color: #666; font-size: 14px;">
-                        👤 <%= username || 'Admin' %>
-                    </span>
-                    <a href="/logout" style="padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">
-                        Logout
-                    </a>
-                </div>
-            </div>
-        </header>
-
-        <div class="confirm-container">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <%- include('partials/sidebar') %>
+    <main class="main-content" id="main-content">
+        <%
+            const topbarExtra = `<a href="/produk" class="btn-top">← Produk</a>`
+        %>
+        <%- include('partials/topbar') %>
+        <div class="container">
+            <div class="confirm-container">
             <div class="warning-box">
-                <h3>⚠️ Peringatan!</h3>
-                <p>Anda akan menghapus produk ini. Tindakan ini tidak dapat dibatalkan!</p>
+            <h3>⚠️ Peringatan!</h3>
+            <p>Anda akan menghapus produk ini. Tindakan ini tidak dapat dibatalkan!</p>
             </div>
 
             <div class="product-info">
-                <h3>Informasi Produk:</h3>
-                <p><strong>Nama:</strong> <%= produk.nama %></p>
-                <p><strong>Kategori:</strong> <%= produk.kategori || 'umum' %></p>
-                <p><strong>Varian:</strong> <%= (produk.variants || []).length %></p>
-                <p><strong>Total Stok:</strong> <%= (produk.variants || []).reduce((s, v) => s + (v.stok_count || 0), 0) %></p>
+            <h3>Informasi Produk:</h3>
+            <p><strong>Nama:</strong> <%= produk.nama %></p>
+            <p><strong>Kategori:</strong> <%= produk.kategori || 'umum' %></p>
+            <p><strong>Varian:</strong> <%= (produk.variants || []).length %></p>
+            <p><strong>Total Stok:</strong> <%= (produk.variants || []).reduce((s, v) => s + (v.stok_count || 0), 0) %></p>
             </div>
 
             <form method="POST" action="/produk/hapus/<%= produk.id %>">
-                <div class="form-actions">
-                    <button type="submit" class="btn-delete">
-                        🗑️ Ya, Hapus Produk
-                    </button>
-                    <a href="/produk" class="btn-cancel">❌ Batal</a>
-                </div>
+            <div class="form-actions">
+            <button type="submit" class="btn-delete">
+            🗑️ Ya, Hapus Produk
+            </button>
+            <a href="/produk" class="btn-cancel">❌ Batal</a>
+            </div>
             </form>
+            </div>
         </div>
-    </div>
+    </main>
+    <%- include('partials/mobile-tabs') %>
 </body>
 </html>
 

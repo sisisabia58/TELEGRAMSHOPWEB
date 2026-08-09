@@ -876,6 +876,8 @@ app.get('/', isAuthenticated, async (req, res) => {
       title: `Dashboard - ${NamaBot}`,
       namaBot: NamaBot,
       username: req.session.username,
+      currentPage: 'dashboard',
+      pageTitle: `Dashboard ${NamaBot}`,
       stats: {
         totalUsers,
         totalTransactions,

@@ -6,8 +6,8 @@
   <div class="top-bar-right">
     <% if (typeof topbarExtra !== 'undefined') { %><%- topbarExtra %><% } %>
     <div class="user-info">
-      <span><%= username || 'Admin' %></span>
-      <% if (req.session && req.session.role) { %>
+      <span><%= typeof username !== 'undefined' ? username : 'Admin' %></span>
+      <% if (typeof req !== 'undefined' && req.session && req.session.role) { %>
         <span class="user-badge"><%= req.session.role %></span>
       <% } %>
     </div>
