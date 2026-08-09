@@ -4,14 +4,14 @@
     <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
   </div>
 
-  <div class="nav-group" data-section="overview">
+  <div class="nav-group open" data-section="overview">
     <button type="button" class="nav-group-toggle">Overview</button>
     <div class="nav-group-items">
       <a href="/" class="nav-item <%= currentPage === 'dashboard' ? 'active' : '' %>">Home</a>
     </div>
   </div>
 
-  <div class="nav-group" data-section="catalog">
+  <div class="nav-group open" data-section="catalog">
     <button type="button" class="nav-group-toggle">Catalog</button>
     <div class="nav-group-items">
       <a href="/produk" class="nav-item <%= currentPage === 'produk' ? 'active' : '' %>">Products</a>
@@ -21,7 +21,7 @@
     </div>
   </div>
 
-  <div class="nav-group" data-section="bot">
+  <div class="nav-group open" data-section="bot">
     <button type="button" class="nav-group-toggle">Bot</button>
     <div class="nav-group-items">
       <a href="/settings/bot-flow" class="nav-item <%= currentPage === 'settings-bot-flow' ? 'active' : '' %>">Flow Builder</a>
@@ -31,7 +31,7 @@
     </div>
   </div>
 
-  <div class="nav-group" data-section="customers">
+  <div class="nav-group open" data-section="customers">
     <button type="button" class="nav-group-toggle">Customers</button>
     <div class="nav-group-items">
       <a href="/user" class="nav-item <%= currentPage === 'user' ? 'active' : '' %>">Users</a>
@@ -41,7 +41,7 @@
     </div>
   </div>
 
-  <div class="nav-group" data-section="insights">
+  <div class="nav-group open" data-section="insights">
     <button type="button" class="nav-group-toggle">Insights</button>
     <div class="nav-group-items">
       <a href="/analitik" class="nav-item <%= currentPage === 'analitik' ? 'active' : '' %>">Analytics</a>
@@ -49,7 +49,7 @@
     </div>
   </div>
 
-  <div class="nav-group" data-section="system">
+  <div class="nav-group open" data-section="system">
     <button type="button" class="nav-group-toggle">System</button>
     <div class="nav-group-items">
       <a href="/settings/general" class="nav-item <%= currentPage === 'settings-general' ? 'active' : '' %>">General</a>
@@ -61,7 +61,7 @@
   </div>
 
   <% if (typeof req !== 'undefined' && req.session && req.session.role === 'admin') { %>
-  <div class="nav-group" data-section="admin">
+  <div class="nav-group open" data-section="admin">
     <button type="button" class="nav-group-toggle">Admin</button>
     <div class="nav-group-items">
       <a href="/admin/users" class="nav-item <%= currentPage === 'admin-users' ? 'active' : '' %>">Admin Users</a>
@@ -71,3 +71,4 @@
   </div>
   <% } %>
 </nav>
+<script src="/js/nav.js" defer></script>
