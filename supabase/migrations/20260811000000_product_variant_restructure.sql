@@ -1,6 +1,10 @@
 -- Destructive by design: pre-launch, test data only.
 -- Leaves User, Deposit, Payment, Voucher, Premium, Admin/*, BotSession, Notification* alone.
 
+-- Supabase hosts uuid-ossp in the extensions schema; ensure defaults resolve.
+SET search_path TO public, extensions;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
+
 DROP TABLE IF EXISTS "ProductStockThreshold" CASCADE;
 DROP TABLE IF EXISTS "Stok" CASCADE;
 DROP TABLE IF EXISTS "Trx" CASCADE;
