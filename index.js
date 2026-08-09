@@ -26,6 +26,10 @@ const { formatrupiah, formatWIB, formatWIBDetail, namaBulan } = require('./lib/f
 // Query tabel Stok. Di bot, "hitung stok" selalu berdasarkan kode produk —
 // karena itu getStokCount dialiaskan ke getStokCountByKode. Nama-nama lokal
 // dipertahankan supaya seluruh pemanggil di file ini tidak perlu diubah.
+// Keranjang user. Dulu file ./Database/Trx/<userId>.json di disk lokal, yang
+// terhapus setiap deploy karena filesystem Railway ephemeral.
+const cart = require('./lib/cart')
+
 const stock = require('./lib/stock')
 const getStokCount = stock.getStokCountByKode
 const getStokForTransaction = stock.getStokForTransaction
@@ -4077,7 +4081,7 @@ try {
       return await bot.answerCallbackQuery(query.id, { text: `⚠️ Stok ${item.nama} habis!`, show_alert: true })
     }
     
-    // Save kode to Trx file and proceed to quantity selection
+    // Simpan kode ke keranjang, lalu lanjut ke pemilihan jumlah
     const data = {
       kode: item.kode,
       jumlah: 1,
@@ -4088,7 +4092,7 @@ try {
       grup_nama: item.grup || null,
       selectedStokIds: []
     }
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(data, null, 2))
+    await cart.save(query.from.id, data)
     
     // Proceed to product detail card (reuse existing flow)
     const stokItems = await getStokItems(item.kode, 1)
@@ -4389,7 +4393,7 @@ ${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 
         voucher_status: "",
         selectedStokIds: [] // Tambahkan field untuk menyimpan ID stok yang dipilih
       }
-      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(data, null, 2))
+      await cart.save(query.from.id, data)
       
       // Detect format - gunakan stok items untuk detect format
       const stokItems = await getStokItems(item.kode, 1)
@@ -4428,12 +4432,12 @@ Current Date: ${formattedTime}`, {
 
 
 if (cmd === "lanjut") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
+  if (await cart.exists(query.from.id)) {
     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     let { data: Produk } = await supabase
 .from("Produk")
 .select("*")
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+    let Data = await cart.get(query.from.id)
     const item = Produk.find(i => i.kode.toLowerCase() === Data.kode.toLowerCase())
     if (!item) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
     
@@ -4463,7 +4467,7 @@ Produk *${item.nama}* tidak memiliki stok tersedia.
     // Inisialisasi selectedStokIds jika belum ada
     if (!Data.selectedStokIds) {
       Data.selectedStokIds = []
-      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(query.from.id, Data)
     }
     
     // Tampilkan stok dengan timestamp dan tombol pilih
@@ -4519,7 +4523,7 @@ async function refreshStokView(query, Data, msgId = null) {
   
   if (!Data.selectedStokIds) {
     Data.selectedStokIds = []
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
   }
   
   const totalPembayaran = Data.selectedStokIds.length * item.harga
@@ -4559,8 +4563,8 @@ async function refreshStokView(query, Data, msgId = null) {
 if (cmd.startsWith('toggle_stok:')) {
   const stokId = cmd.split(':')[1]
   
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     if (!Data.selectedStokIds) {
       Data.selectedStokIds = []
@@ -4573,7 +4577,7 @@ if (cmd.startsWith('toggle_stok:')) {
       Data.selectedStokIds.splice(index, 1)
       releaseReservation([stokId])
       
-      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(query.from.id, Data)
       
       await bot.answerCallbackQuery(query.id, { 
         text: '⬜ Stok dibatalkan', 
@@ -4593,7 +4597,7 @@ if (cmd.startsWith('toggle_stok:')) {
       }
       
       Data.selectedStokIds.push(stokId)
-      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(query.from.id, Data)
       
       await bot.answerCallbackQuery(query.id, { 
         text: '✅ Stok dipilih & direserve', 
@@ -4609,8 +4613,8 @@ if (cmd.startsWith('toggle_stok:')) {
 if (cmd.startsWith('stok_page:')) {
   const direction = cmd.split(':')[1]
   
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     if (!Data.stokPage) Data.stokPage = 0
     
@@ -4629,7 +4633,7 @@ if (cmd.startsWith('stok_page:')) {
       Data.stokPage++
     }
     
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
     
     await refreshStokView(query, Data)
   }
@@ -4637,8 +4641,8 @@ if (cmd.startsWith('stok_page:')) {
 
 // Handler untuk reset pilihan stok
 if (cmd === "reset_stok") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     // Release semua reservation sebelum reset
     if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
@@ -4646,7 +4650,7 @@ if (cmd === "reset_stok") {
     }
     
     Data.selectedStokIds = []
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
     
     await bot.answerCallbackQuery(query.id, { text: '🔄 Pilihan direset', show_alert: false })
     
@@ -4658,8 +4662,8 @@ if (cmd === "reset_stok") {
 if (cmd.startsWith("select_stok:")) {
   const jumlah = parseInt(cmd.split(":")[1])
   
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     if (jumlah < 0) {
       if (!Data.selectedStokIds) Data.selectedStokIds = []
@@ -4673,7 +4677,7 @@ if (cmd.startsWith("select_stok:")) {
         releaseReservation(toRemove)
       }
       
-      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(query.from.id, Data)
       
       await bot.answerCallbackQuery(query.id, { 
         text: `⬜ Dibatalkan ${toRemove.length} stok`, 
@@ -4729,7 +4733,7 @@ if (cmd.startsWith("select_stok:")) {
       }
     })
     
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
     
     const message = reserved.length < stokIdsToAdd.length 
       ? `⚠️ ${reserved.length} dari ${stokIdsToAdd.length} stok berhasil direserve (yang lain sudah dipilih user lain)`
@@ -4748,8 +4752,8 @@ if (cmd.startsWith("select_stok:")) {
 if (cmd.startsWith("checkout_payment:")) {
   const method = cmd.split(":")[1]
   
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     if (!Data.selectedStokIds || Data.selectedStokIds.length === 0) {
       await bot.answerCallbackQuery(query.id, { 
@@ -4774,14 +4778,14 @@ if (cmd.startsWith("checkout_payment:")) {
       })
       Data.selectedStokIds = validIds
       Data.jumlah = validIds.length
-      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(query.from.id, Data)
       await refreshStokView(query, Data)
       return
     }
     
     // Update jumlah sesuai dengan jumlah stok yang dipilih
     Data.jumlah = Data.selectedStokIds.length
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
     
     await bot.answerCallbackQuery(query.id)
     
@@ -4819,8 +4823,8 @@ if (cmd.startsWith("checkout_payment:")) {
 
 // Handler untuk refresh stok
 if (cmd === "refresh_stok") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     await bot.answerCallbackQuery(query.id, { text: '🔄 Stok diperbarui' })
     await refreshStokView(query, Data)
   }
@@ -4828,8 +4832,8 @@ if (cmd === "refresh_stok") {
 
 // Handler untuk konfirmasi pilihan stok
 if (cmd === "konfirmasi_stok") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     if (!Data.selectedStokIds || Data.selectedStokIds.length === 0) {
       await bot.answerCallbackQuery(query.id, { 
@@ -4842,7 +4846,7 @@ if (cmd === "konfirmasi_stok") {
     // Update jumlah sesuai dengan jumlah stok yang dipilih
     Data.jumlah = Data.selectedStokIds.length
     
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
     
     await bot.answerCallbackQuery(query.id)
     
@@ -4859,14 +4863,13 @@ if (cmd === "konfirmasi_stok") {
 }
 
 if (cmd === "reset") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     if (Data.jumlah === 1) {
       return
     } else {
       Data.jumlah = 1
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
-    Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+    await cart.save(query.from.id, Data)
      let { data: Produk } = await supabase
 .from("Produk")
 .select("*")
@@ -4907,8 +4910,8 @@ Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
 }
 
 if (cmd === "konfirmasi") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase
       .from("Produk")
       .select("*")
@@ -4935,7 +4938,7 @@ if (cmd === "konfirmasi") {
           })
           Data.selectedStokIds = validIds
           Data.jumlah = validIds.length
-          fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+          await cart.save(query.from.id, Data)
         }
         
         if (validIds.length === 0) {
@@ -5112,8 +5115,8 @@ ${Produk[s].snk.length > 100 ? Produk[s].snk.substring(0, 100) + '...' : Produk[
 
 // Enhanced payment method selection
 if (cmd === "pilih_payment_method") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase.from("Produk").select("*")
     
     let s = null
@@ -5213,8 +5216,8 @@ Tersedia ${availableVouchers.length} voucher:`
 
 // Enhanced voucher list
 if (cmd === "lihat_voucher") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase.from("Produk").select("*")
     
     let s = null
@@ -5288,8 +5291,8 @@ ${v.minimal_pembelian ? `💵 Min. pembelian: ${formatrupiah(v.minimal_pembelian
 if (cmd.startsWith("apply_voucher_")) {
   const voucherKode = cmd.replace("apply_voucher_", "")
   
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase.from("Produk").select("*")
     
     let s = null
@@ -5335,7 +5338,7 @@ if (cmd.startsWith("apply_voucher_")) {
       }
       
       Data.voucher = voucherKode
-      fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(query.from.id, Data)
       
       await bot.answerCallbackQuery(query.id, { 
         text: `✅ Voucher ${voucherKode} berhasil digunakan!`, 
@@ -5423,10 +5426,10 @@ Tersedia ${availableVouchers.length} voucher:`
 }
 
 if (cmd === "punya") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     Data.voucher_status = "waiting"
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
     try {
       await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     } catch (e) {
@@ -5447,7 +5450,7 @@ if (cmd === "punya") {
 
 // Cancel order with confirmation
 if (cmd === "batal_pesanan") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
+  if (await cart.exists(query.from.id)) {
     await bot.answerCallbackQuery(query.id)
     await editOrSendBannerMessage(query.from.id, query.message.message_id, `❌ *BATAL PESANAN*
 ━━━━━━━━━━━━━━━━━━━━
@@ -5468,8 +5471,8 @@ Apakah Anda yakin ingin membatalkan pesanan ini?
 
 // Confirm cancel
 if (cmd === "batal_pesanan_confirm") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     // Release reservations sebelum cancel
     if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
@@ -5482,7 +5485,7 @@ if (cmd === "batal_pesanan_confirm") {
     } catch (e) {
       // Ignore
     }
-    fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+    await cart.clear(query.from.id)
     await editOrSendBannerMessage(query.from.id, query.message.message_id, `✅ *PESANAN DIBATALKAN*
  
  ━━━━━━━━━━━━━━━━━━━━
@@ -5511,8 +5514,8 @@ if (cmd === "cek_saldo") {
 
 // Go back to confirmation
 if (cmd === "konfirmasi_kembali") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase.from("Produk").select("*")
     
     let s = null
@@ -6305,10 +6308,10 @@ Pilih produk yang ingin ditambah stoknya:
 }
 
 if (cmd === "batalvoucher") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     Data.voucher_status = ""
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
+    await cart.save(query.from.id, Data)
     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     const userSaldo = await cekSaldo(query.from.id)
     let { data: Produk } = await supabase.from("Produk").select("*")
@@ -6351,16 +6354,15 @@ ${userSaldo >= harga ? '✅ Saldo mencukupi\n' : '⚠️ Saldo tidak mencukupi\n
 
 if (cmd.startsWith("min:")) {
   let jumlah = cmd.split("min:")[1]
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     let gs = Data.jumlah-Number(jumlah)
     if (gs < 1) {
      await bot.answerCallbackQuery(query.id, { text: "⚠️ Jumlah pesanan tidak boleh kurang dari 1", show_alert: true })
      return
    }
     Data.jumlah -= Number(jumlah)
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
-     Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+    await cart.save(query.from.id, Data)
      let { data: Produk } = await supabase
 .from("Produk")
 .select("*")
@@ -6400,8 +6402,8 @@ Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
 }
 if (cmd.startsWith("plus:")) {
   let jumlah = cmd.split("plus:")[1]
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase
 .from("Produk")
 .select("*")
@@ -6413,8 +6415,7 @@ if (cmd.startsWith("plus:")) {
        return
      }
      Data.jumlah += Number(jumlah)
-    fs.writeFileSync(`./Database/Trx/${query.from.id}.json`, JSON.stringify(Data, null, 2))
-     Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+    await cart.save(query.from.id, Data)
      let { data: Produk2 } = await supabase
 .from("Produk")
 .select("*")
@@ -6455,8 +6456,8 @@ Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
 }
 
 if (cmd === "batalbeli") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+  if (await cart.exists(query.from.id)) {
+    let Data = await cart.get(query.from.id)
     
     // Release reservations sebelum cancel
     if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
@@ -6465,17 +6466,17 @@ if (cmd === "batalbeli") {
     }
     
     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-    fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+    await cart.clear(query.from.id)
     await sendMessage(query.from.id,`✅ Pesananmu berhasil dibatalkan.`)
   }
 }
 
 if (cmd === "bayarsaldo") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
+  if (await cart.exists(query.from.id)) {
     try {
       await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     } catch (e) {}
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase.from("Produk").select("*")
     let np = null
     Object.keys(Produk).forEach((f) => {
@@ -6833,8 +6834,9 @@ di *${NamaBot}*! 🙏`, {
       }
     }
     
-    // Hapus file transaksi
-    fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+    // Kosongkan keranjang (stok sudah ditandai terjual, jadi tidak ada
+    // reservasi yang perlu dilepas di sini)
+    await cart.clear(query.from.id)
     
     // Kembali ke menu utama
     let { data: Trx } = await supabase.from("Trx").select("*")
@@ -6881,11 +6883,11 @@ Silahkan pilih menu dibawah ini!`, {
 }
 
 if (cmd === "bayar") {
-  if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
+  if (await cart.exists(query.from.id)) {
     try {
       await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     } catch (e) {}
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+    let Data = await cart.get(query.from.id)
     let { data: Produk } = await supabase
 .from("Produk")
 .select("*")
@@ -6992,7 +6994,10 @@ Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik s
       let pollAttempts = 0
       const maxPollAttempts = 60 // Maksimal 60 kali polling (10 menit)
       
-      while (!statusP && pollAttempts < maxPollAttempts && fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
+      // Keranjang dicek ulang setiap iterasi (sama seperti fs.existsSync dulu):
+      // kalau user membatalkan pesanan, polling ikut berhenti. Sekarang ini satu
+      // query indexed per 10 detik per pembayaran pending, bukan stat() disk.
+      while (!statusP && pollAttempts < maxPollAttempts && await cart.exists(query.from.id)) {
         await sleep(10000)
         pollAttempts++
         
@@ -7000,8 +7005,8 @@ Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik s
           statusP = true
           
           // Release reservations saat expired
-          if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-            let DataExpired = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+          if (await cart.exists(query.from.id)) {
+            let DataExpired = await cart.get(query.from.id)
             if (DataExpired.selectedStokIds && DataExpired.selectedStokIds.length > 0) {
               releaseReservation(DataExpired.selectedStokIds)
               console.log(`🔓 Release ${DataExpired.selectedStokIds.length} reserved stocks for user ${query.from.id} (expired)`)
@@ -7018,7 +7023,7 @@ Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik s
           await sendMessage(query.from.id, `Pesananmu telah expired, harap pesan kembali!`)
           await supabase.from("Payment").update({ status: 'expired' }).eq('order_id', Data.trxid).eq('status', 'pending')
           pakasir.cancelTransaction({ orderId: Data.trxid, amount: harga }).catch(() => {})
-          fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+          await cart.clear(query.from.id)
           break;
         }
         try {
@@ -7079,7 +7084,7 @@ Maaf, beberapa stok yang dipilih sudah tidak tersedia.
 *Stok Valid:* ${stokItems.length} item
 
 Silakan pesan ulang.`)
-                fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+                await cart.clear(query.from.id)
                 return
               }
             } else {
@@ -7108,7 +7113,7 @@ Maaf, stok produk tidak mencukupi untuk pesanan Anda.
 *Stok Tersedia:* ${stokCountCheck} item
 
 Silakan pesan ulang dengan jumlah yang sesuai.`)
-                fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+                await cart.clear(query.from.id)
                 return
               }
               
@@ -7138,7 +7143,7 @@ Maaf, stok produk tidak mencukupi untuk pesanan Anda.
 *Stok Tersedia:* ${stokItems.length} item
 
 Silakan pesan ulang dengan jumlah yang sesuai.`)
-                fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+                await cart.clear(query.from.id)
                 return
               }
             }
@@ -7540,16 +7545,16 @@ Silahkan pilih menu dibawah ini!`, {
               console.error('Error refresh menu:', menuError)
             }
             
-            // Hapus file transaksi temp
+            // Kosongkan keranjang
             try {
-              if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-                let DataCleanup = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+              if (await cart.exists(query.from.id)) {
+                let DataCleanup = await cart.get(query.from.id)
                 // Release reservations jika ada
                 if (DataCleanup.selectedStokIds && DataCleanup.selectedStokIds.length > 0) {
                   releaseReservation(DataCleanup.selectedStokIds)
                   console.log(`🔓 Release ${DataCleanup.selectedStokIds.length} reserved stocks (cleanup)`)
                 }
-                fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+                await cart.clear(query.from.id)
               }
             } catch (cleanupError) {
               console.error('Error cleanup:', cleanupError)
@@ -10096,9 +10101,9 @@ Kode Deposit: \`${kodeDeposit}\`
 
  if (cmd === "kembaliawal") {
     try {
-      // Hapus file transaksi sementara jika ada
-      if (fs.existsSync(`./Database/Trx/${query.from.id}.json`)) {
-        let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${query.from.id}.json`))
+      // Kosongkan keranjang jika ada
+      if (await cart.exists(query.from.id)) {
+        let Data = await cart.get(query.from.id)
         
         // Release reservations sebelum kembali ke menu awal
         if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
@@ -10106,7 +10111,7 @@ Kode Deposit: \`${kodeDeposit}\`
           console.log(`🔓 Release ${Data.selectedStokIds.length} reserved stocks for user ${query.from.id} (kembaliawal)`)
         }
         
-        fs.unlinkSync(`./Database/Trx/${query.from.id}.json`)
+        await cart.clear(query.from.id)
       }
      
      // Parallel queries untuk semua data (LEBIH CEPAT!)
@@ -10844,8 +10849,8 @@ Ketik \`/batal\` untuk membatalkan.`, {
   }
   
   // PRIORITAS 1: Handler voucher (harus dijalankan pertama)
-  if (fs.existsSync(`./Database/Trx/${msg.from.id}.json`)) {
-    let Data = JSON.parse(fs.readFileSync(`./Database/Trx/${msg.from.id}.json`))
+  if (await cart.exists(msg.from.id)) {
+    let Data = await cart.get(msg.from.id)
     if (Data.voucher_status === "waiting") {
       // FIX: Cek apakah text ada sebelum digunakan
       if (!text || typeof text !== 'string' || text.trim() === '') {
@@ -10864,7 +10869,7 @@ Ketik \`/batal\` untuk membatalkan.`, {
       
       let voucher = text
       Data.voucher_status = ""
-      fs.writeFileSync(`./Database/Trx/${msg.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(msg.from.id, Data)
       let { data: VC } = await supabase
         .from("Voucher")
         .select("*")
@@ -10977,7 +10982,7 @@ ${Data.kode}
       
       // Voucher valid, simpan ke data transaksi
       Data.voucher = vv.kode
-      fs.writeFileSync(`./Database/Trx/${msg.from.id}.json`, JSON.stringify(Data, null, 2))
+      await cart.save(msg.from.id, Data)
       
       let { data: Produk } = await supabase.from("Produk").select("*")
       let np = Produk.findIndex(i => i.kode.toLowerCase() === Data.kode.toLowerCase())
