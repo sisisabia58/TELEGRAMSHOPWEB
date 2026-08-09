@@ -131,7 +131,9 @@
                 </div>
                 <div class="card-body">
                     <p style="color: #666; margin-bottom: 20px;">
-                        Import produk dari file CSV atau Excel. <a href="/bulk/produk/template" style="color: #17a2b8;">Download template</a>
+                        Import katalog (produk + varian) dari file CSV atau Excel.
+                        Satu baris = satu varian; baris dengan slug produk sama digabung.
+                        <a href="/bulk/produk/template" style="color: #17a2b8;">Download template</a>
                     </p>
             
             <form id="importForm" enctype="multipart/form-data">
@@ -154,27 +156,49 @@
                 </div>
             </div>
 
-            <!-- Bulk Update Harga -->
+            <!-- Bulk Import Harga Tier -->
             <div class="card" style="margin-bottom: 30px;">
                 <div class="card-header">
-                    <h2 class="card-title">💰 Bulk Update Harga Produk</h2>
+                    <h2 class="card-title">📊 Bulk Import Harga Tier</h2>
                 </div>
                 <div class="card-body">
                     <p style="color: #666; margin-bottom: 20px;">
-                        Update harga untuk multiple produk sekaligus
+                        Upsert tier per <code>varian_kode</code> (min_qty ≥ 2).
+                        <a href="/bulk/tiers/template" style="color: #17a2b8;">Download template</a>
+                    </p>
+                    <form id="tierImportForm" enctype="multipart/form-data">
+                        <div class="upload-area" id="tierUploadArea">
+                            <input type="file" id="tierFileInput" name="file" accept=".csv,.xlsx,.xls" style="display: none;" required>
+                            <p style="font-size: 18px; margin-bottom: 10px;">📁 Klik atau drag & drop file tier</p>
+                            <p style="color: #666; font-size: 14px;">CSV/Excel: varian_kode,min_qty,harga</p>
+                        </div>
+                        <button type="submit" class="btn btn-success" style="margin-top: 20px;">📥 Import Tiers</button>
+                    </form>
+                    <div class="results-container" id="tierImportResults"></div>
+                </div>
+            </div>
+
+            <!-- Bulk Update Harga -->
+            <div class="card" style="margin-bottom: 30px;">
+                <div class="card-header">
+                    <h2 class="card-title">💰 Bulk Update Harga Varian</h2>
+                </div>
+                <div class="card-body">
+                    <p style="color: #666; margin-bottom: 20px;">
+                        Update harga dasar (<code>Varian.harga</code>) untuk beberapa varian sekaligus. Tier tidak berubah.
                     </p>
             
             <form id="updateHargaForm">
                     <div class="form-group">
-                        <label class="form-label">Pilih Produk <span class="required">*</span></label>
-                        <div id="produkList" class="checkbox-list">
-                            <p style="text-align: center; color: #999;">Loading produk...</p>
+                        <label class="form-label">Pilih Varian <span class="required">*</span></label>
+                        <div id="varianList" class="checkbox-list">
+                            <p style="text-align: center; color: #999;">Loading varian...</p>
                         </div>
                         <div style="margin-top: 10px;">
-                            <button type="button" onclick="selectAllProduk()" class="btn" style="background: #6c757d; padding: 5px 15px; margin-right: 10px;">
+                            <button type="button" onclick="selectAllVarian()" class="btn" style="background: #6c757d; padding: 5px 15px; margin-right: 10px;">
                                 Pilih Semua
                             </button>
-                            <button type="button" onclick="deselectAllProduk()" class="btn" style="background: #6c757d; padding: 5px 15px;">
+                            <button type="button" onclick="deselectAllVarian()" class="btn" style="background: #6c757d; padding: 5px 15px;">
                                 Batal Pilih
                             </button>
                         </div>
@@ -209,7 +233,7 @@
                 </div>
                 <div class="card-body">
                     <p style="color: #666; margin-bottom: 20px;">
-                        Tambah stok untuk produk tertentu (multiple items sekaligus)
+                        Tambah stok untuk varian tertentu (multiple items sekaligus)
                     </p>
             
             <form id="bulkStokForm">
@@ -217,6 +241,12 @@
                         <label class="form-label">Pilih Produk <span class="required">*</span></label>
                         <select name="produk_id" id="produk_id_stok" class="form-select" required>
                             <option value="">-- Pilih Produk --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Pilih Varian <span class="required">*</span></label>
+                        <select name="varian_id" id="varian_id_stok" class="form-select" required>
+                            <option value="">-- Pilih Varian --</option>
                         </select>
                     </div>
                     
@@ -331,48 +361,58 @@
             }).format(nominal)
         }
 
-        // Load produk list
+        let cachedProducts = []
+
+        // Load produk + varian list
         async function loadProdukList() {
             try {
                 const response = await fetch('/api/produk/list')
                 const data = await response.json()
                 
                 if (data.success) {
-                    const container = document.getElementById('produkList')
+                    cachedProducts = data.products || []
+                    const container = document.getElementById('varianList')
                     container.innerHTML = ''
                     
-                    data.products.forEach(produk => {
-                        const div = document.createElement('div')
-                        div.className = 'checkbox-item'
-                        div.innerHTML = `
-                            <label style="display: flex; align-items: center; cursor: pointer;">
-                                <input type="checkbox" name="produk_ids[]" value="${produk.id}" style="margin-right: 10px;">
-                                <span><strong>${produk.nama}</strong> (${produk.kode}) - ${formatRupiah(produk.harga)}</span>
-                            </label>
-                        `
-                        container.appendChild(div)
+                    cachedProducts.forEach(produk => {
+                        (produk.variants || []).forEach(variant => {
+                            const div = document.createElement('div')
+                            div.className = 'checkbox-item'
+                            div.innerHTML = `
+                                <label style="display: flex; align-items: center; cursor: pointer;">
+                                    <input type="checkbox" name="varian_ids[]" value="${variant.id}" style="margin-right: 10px;">
+                                    <span><strong>${produk.nama}</strong> — ${variant.label} (${variant.kode}) - ${formatRupiah(variant.harga)}</span>
+                                </label>
+                            `
+                            container.appendChild(div)
+                        })
                     })
+
+                    if (!container.children.length) {
+                        container.innerHTML = '<p style="text-align: center; color: #999;">Belum ada varian</p>'
+                    }
                 }
             } catch (error) {
                 console.error('Error loading produk:', error)
-                document.getElementById('produkList').innerHTML = '<p style="color: #dc3545;">Error loading produk: ' + error.message + '</p>'
+                document.getElementById('varianList').innerHTML = '<p style="color: #dc3545;">Error loading varian: ' + error.message + '</p>'
             }
         }
 
-        // Load produk untuk dropdown
+        // Load produk dropdown + variant cascade
         async function loadProdukDropdown() {
             try {
                 const response = await fetch('/api/produk/list')
                 const data = await response.json()
                 
                 if (data.success) {
+                    cachedProducts = data.products || []
                     const select = document.getElementById('produk_id_stok')
                     select.innerHTML = '<option value="">-- Pilih Produk --</option>'
                     
-                    data.products.forEach(produk => {
+                    cachedProducts.forEach(produk => {
                         const option = document.createElement('option')
                         option.value = produk.id
-                        option.textContent = `${produk.nama} (${produk.kode})`
+                        option.textContent = produk.nama
                         select.appendChild(option)
                     })
                 }
@@ -380,6 +420,18 @@
                 console.error('Error loading produk:', error)
             }
         }
+
+        document.getElementById('produk_id_stok').addEventListener('change', (e) => {
+            const p = cachedProducts.find((x) => x.id === e.target.value)
+            const sel = document.getElementById('varian_id_stok')
+            sel.innerHTML = '<option value="">-- Pilih Varian --</option>'
+            ;(p?.variants || []).forEach((v) => {
+                const opt = document.createElement('option')
+                opt.value = v.id
+                opt.textContent = `${v.label} (${v.kode}) — ${formatRupiah(v.harga)}`
+                sel.appendChild(opt)
+            })
+        })
 
         // File upload handling
         const uploadArea = document.getElementById('uploadArea')
@@ -411,6 +463,65 @@
                     <p style="font-size: 18px; margin-bottom: 10px;">✅ File dipilih: ${e.target.files[0].name}</p>
                     <p style="color: #666; font-size: 14px;">Klik untuk memilih file lain</p>
                 `
+            }
+        })
+
+        const tierUploadArea = document.getElementById('tierUploadArea')
+        const tierFileInput = document.getElementById('tierFileInput')
+        tierUploadArea.addEventListener('click', () => tierFileInput.click())
+        tierUploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault()
+            tierUploadArea.classList.add('dragover')
+        })
+        tierUploadArea.addEventListener('dragleave', () => tierUploadArea.classList.remove('dragover'))
+        tierUploadArea.addEventListener('drop', (e) => {
+            e.preventDefault()
+            tierUploadArea.classList.remove('dragover')
+            if (e.dataTransfer.files.length > 0) {
+                tierFileInput.files = e.dataTransfer.files
+                tierUploadArea.innerHTML = `
+                    <p style="font-size: 18px; margin-bottom: 10px;">✅ File dipilih: ${e.dataTransfer.files[0].name}</p>
+                    <p style="color: #666; font-size: 14px;">Klik untuk memilih file lain</p>
+                `
+            }
+        })
+        tierFileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                tierUploadArea.innerHTML = `
+                    <p style="font-size: 18px; margin-bottom: 10px;">✅ File dipilih: ${e.target.files[0].name}</p>
+                    <p style="color: #666; font-size: 14px;">Klik untuk memilih file lain</p>
+                `
+            }
+        })
+
+        document.getElementById('tierImportForm').addEventListener('submit', async (e) => {
+            e.preventDefault()
+            const formData = new FormData()
+            formData.append('file', tierFileInput.files[0])
+            const resultsContainer = document.getElementById('tierImportResults')
+            resultsContainer.style.display = 'block'
+            resultsContainer.innerHTML = '<p>Processing...</p>'
+            try {
+                const response = await fetch('/bulk/tiers/import', { method: 'POST', body: formData })
+                const data = await response.json()
+                if (data.success) {
+                    resultsContainer.innerHTML = `
+                        <h3>Hasil Import Tier</h3>
+                        <p><strong>Total:</strong> ${data.results.total} |
+                        <strong>Berhasil:</strong> <span style="color: #28a745;">${data.results.success}</span> |
+                        <strong>Gagal:</strong> <span style="color: #dc3545;">${data.results.failed}</span></p>
+                        ${data.results.details.failed.length > 0 ? `
+                            <h4>Gagal:</h4>
+                            ${data.results.details.failed.map(f => `
+                                <div class="result-item result-failed">Row ${f.row}: ${f.error}</div>
+                            `).join('')}
+                        ` : ''}
+                    `
+                } else {
+                    alert('Error: ' + data.error)
+                }
+            } catch (error) {
+                alert('Error: ' + error.message)
             }
         })
 
@@ -454,7 +565,7 @@
                             <h4>Gagal:</h4>
                             ${data.results.details.failed.map(f => `
                                 <div class="result-item result-failed">
-                                    Row ${f.row}: ${f.error}
+                                    ${f.row ? `Row ${f.row}: ` : ''}${f.error || f.kode || ''}
                                 </div>
                             `).join('')}
                         ` : ''}
@@ -463,7 +574,7 @@
                             <h4>Dilewati:</h4>
                             ${data.results.details.skipped.map(s => `
                                 <div class="result-item result-skipped">
-                                    Row ${s.row}: ${s.reason}
+                                    ${s.kode || s.row || ''}: ${s.reason || 'dilewati'}
                                 </div>
                             `).join('')}
                         ` : ''}
@@ -489,15 +600,15 @@
             e.preventDefault()
             
             const formData = new FormData(e.target)
-            const produkIds = Array.from(document.querySelectorAll('input[name="produk_ids[]"]:checked')).map(cb => cb.value)
+            const varianIds = Array.from(document.querySelectorAll('input[name="varian_ids[]"]:checked')).map(cb => cb.value)
             
-            if (produkIds.length === 0) {
-                alert('Pilih minimal 1 produk')
+            if (varianIds.length === 0) {
+                alert('Pilih minimal 1 varian')
                 return
             }
             
             const data = {
-                produk_ids: produkIds,
+                varian_ids: varianIds,
                 update_type: formData.get('update_type'),
                 value: formData.get('value')
             }
@@ -526,7 +637,7 @@
                             <h4>Berhasil:</h4>
                             ${result.results.details.success.map(s => `
                                 <div class="result-item result-success">
-                                    ${s.nama} (${s.kode}): ${formatRupiah(s.harga_lama)} → ${formatRupiah(s.harga_baru)}
+                                    ${s.label || s.kode} (${s.kode}): ${formatRupiah(s.harga_lama)} → ${formatRupiah(s.harga_baru)}
                                 </div>
                             `).join('')}
                         ` : ''}
@@ -549,7 +660,7 @@
             
             const formData = new FormData(e.target)
             const data = {
-                produk_id: formData.get('produk_id'),
+                varian_id: formData.get('varian_id'),
                 data_stok: formData.get('data_stok')
             }
             
@@ -732,12 +843,12 @@
         })
 
         // Helper functions
-        function selectAllProduk() {
-            document.querySelectorAll('input[name="produk_ids[]"]').forEach(cb => cb.checked = true)
+        function selectAllVarian() {
+            document.querySelectorAll('input[name="varian_ids[]"]').forEach(cb => cb.checked = true)
         }
 
-        function deselectAllProduk() {
-            document.querySelectorAll('input[name="produk_ids[]"]').forEach(cb => cb.checked = false)
+        function deselectAllVarian() {
+            document.querySelectorAll('input[name="varian_ids[]"]').forEach(cb => cb.checked = false)
         }
 
         function selectAllDeposit() {
