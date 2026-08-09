@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <%- include('partials/head') %>
+    <style>
+        .catalog-summary {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        .catalog-summary .stat-card {
+            flex: 1;
+            min-width: 140px;
+        }
+        .table-card .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .catalog-meta {
+            color: var(--color-muted);
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <%- include('partials/sidebar') %>
+
+    <main class="main-content" id="main-content">
+        <%- include('partials/topbar') %>
+
+        <div class="container">
+            <%
+                const totalVariants = rows.length;
+                const outCount = rows.filter(r => r.stok_count === 0).length;
+                const lowCount = rows.filter(r => r.stok_count > 0 && r.stok_count < 10).length;
+            %>
+            <div class="catalog-summary">
+                <div class="stat-card">
+                    <div class="stat-icon">📦</div>
+                    <div class="stat-info">
+                        <h3>Total Varian</h3>
+                        <p class="stat-value"><%= totalVariants %></p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⚠️</div>
+                    <div class="stat-info">
+                        <h3>Habis</h3>
+                        <p class="stat-value" style="color: var(--color-danger);"><%= outCount %></p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">📉</div>
+                    <div class="stat-info">
+                        <h3>Stok Rendah</h3>
+                        <p class="stat-value" style="color: var(--color-warning);"><%= lowCount %></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card table-card">
+                <div class="card-header">
+                    <h2 class="card-title">Stock by Variant</h2>
+                    <span class="catalog-meta">Sorted low/out first</span>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Produk</th>
+                                    <th>Varian</th>
+                                    <th>Kode</th>
+                                    <th>Stok</th>
+                                    <th>Status</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (rows.length === 0) { %>
+                                    <tr>
+                                        <td colspan="6">
+                                            <div class="empty-state">
+                                                <div class="empty-state-icon">📦</div>
+                                                <div class="empty-state-title">Belum ada varian</div>
+                                                <div class="empty-state-description">Tambahkan produk dan varian untuk mulai mengelola stok</div>
+                                                <a href="/produk/tambah" class="empty-state-action">➕ Tambah Produk</a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% } else { %>
+                                    <% rows.forEach(row => { %>
+                                        <%
+                                            const badgeClass = row.stok_count === 0
+                                                ? 'badge-danger'
+                                                : (row.stok_count < 10 ? 'badge-warning' : 'badge-success');
+                                        %>
+                                        <tr>
+                                            <td><strong><%= row.produk_nama %></strong></td>
+                                            <td><%= row.label %></td>
+                                            <td><code><%= row.kode %></code></td>
+                                            <td><span class="badge <%= badgeClass %>"><%= row.stok_count %></span></td>
+                                            <td>
+                                                <% if (row.is_active) { %>
+                                                    <span class="badge badge-success">Aktif</span>
+                                                <% } else { %>
+                                                    <span class="badge badge-danger">Nonaktif</span>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <div class="table-actions">
+                                                    <a href="/produk/<%= row.produk_id %>/varian/<%= row.varian_id %>/stok" class="btn-icon" title="Kelola stok">📦</a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <% }) %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    <%- include('partials/mobile-tabs') %>
+
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
+            ↑
+        </button>
+    </div>
+
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('sidebar');
+            const toggleBtn = document.querySelector('.sidebar-toggle');
+
+            if (window.innerWidth <= 768 &&
+                sidebar.classList.contains('open') &&
+                !sidebar.contains(e.target) &&
+                !toggleBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth > 768) {
+                sidebar.classList.remove('open');
+            }
+        });
+    </script>
+</body>
+</html>

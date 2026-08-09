@@ -1000,6 +1000,93 @@ app.get('/produk', isAuthenticated, async (req, res) => {
   }
 })
 
+app.get('/stok', isAuthenticated, async (req, res) => {
+  try {
+    const products = await catalog.listProducts({ activeOnly: false, withStock: true })
+    const rows = []
+    for (const p of products) {
+      for (const v of p.variants || []) {
+        rows.push({
+          produk_id: p.id,
+          produk_nama: p.nama,
+          varian_id: v.id,
+          label: v.label,
+          kode: v.kode,
+          stok_count: v.stok_count || 0,
+          is_active: v.is_active !== false,
+        })
+      }
+    }
+    rows.sort((a, b) => a.stok_count - b.stok_count || a.produk_nama.localeCompare(b.produk_nama))
+    res.render('stok', {
+      title: `Stock - ${NamaBot}`,
+      namaBot: NamaBot,
+      username: req.session.username,
+      currentPage: 'stok',
+      pageTitle: 'Stock',
+      rows,
+      req,
+    })
+  } catch (e) {
+    console.error(e)
+    res.status(500).send(e.message)
+  }
+})
+
+app.get('/pricing', isAuthenticated, async (req, res) => {
+  try {
+    const products = await catalog.listProducts({ activeOnly: false, withStock: false })
+    const rows = []
+    const varianIds = []
+    for (const p of products) {
+      for (const v of p.variants || []) {
+        rows.push({
+          produk_id: p.id,
+          produk_nama: p.nama,
+          varian_id: v.id,
+          label: v.label,
+          kode: v.kode,
+          harga: v.harga || 0,
+          is_active: v.is_active !== false,
+        })
+        varianIds.push(v.id)
+      }
+    }
+
+    const tierCounts = Object.create(null)
+    if (varianIds.length) {
+      const { data: tiers, error } = await supabase
+        .from('HargaTier')
+        .select('varian_id')
+        .in('varian_id', varianIds)
+      if (error) throw error
+      for (const t of tiers || []) {
+        tierCounts[t.varian_id] = (tierCounts[t.varian_id] || 0) + 1
+      }
+    }
+
+    for (const row of rows) {
+      row.tier_count = tierCounts[row.varian_id] || 0
+    }
+
+    rows.sort((a, b) => a.produk_nama.localeCompare(b.produk_nama) || a.label.localeCompare(b.label))
+
+    res.render('pricing', {
+      title: `Pricing - ${NamaBot}`,
+      namaBot: NamaBot,
+      username: req.session.username,
+      currentPage: 'pricing',
+      pageTitle: 'Pricing',
+      rows,
+      formatrupiah,
+      req,
+    })
+  } catch (e) {
+    console.error(e)
+    res.status(500).send(e.message)
+  }
+})
+
 // Route: Form Tambah Produk (+ varian awal)
 app.get('/produk/tambah', isAuthenticated, (req, res) => {
   res.render('produk-form', {
