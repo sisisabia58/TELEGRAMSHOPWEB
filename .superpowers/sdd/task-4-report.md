@@ -113,4 +113,4 @@ ok 3 - buildOverviewModel wires draft notice
 
 ### Commit
 
-- (pending) - `fix(phase8): correct stok triage CTA label`
+- `04b1306` - `fix(phase8): correct stok triage CTA label`
