@@ -297,39 +297,39 @@
                 <!-- Per-Product Threshold Settings -->
                 <div class="card settings-section">
                     <div class="card-header">
-                        <h2 class="card-title">📦 Per-Product Threshold Settings</h2>
+                        <h2 class="card-title">📦 Per-Variant Threshold Settings</h2>
                     </div>
                     <div class="card-body">
                         <div class="product-threshold-list">
-                            <% if (products.length === 0) { %>
+                            <% if (variants.length === 0) { %>
                                 <div class="empty-state">
                                     <div class="empty-state-icon">📦</div>
-                                    <div class="empty-state-title">Belum ada produk</div>
+                                    <div class="empty-state-title">Belum ada varian</div>
                                 </div>
                             <% } else { %>
-                                <% products.forEach(p => { %>
+                                <% variants.forEach(v => { %>
                                     <div class="product-threshold-item">
                                         <div style="flex: 1;">
-                                            <strong><%= p.nama %></strong>
-                                            <div style="font-size: 12px; color: #666;"><code><%= p.kode %></code></div>
+                                            <strong><%= v.produk?.nama || 'Produk' %> — <%= v.label %></strong>
+                                            <div style="font-size: 12px; color: #666;"><code><%= v.kode %></code></div>
                                         </div>
                                         <div style="display: flex; align-items: center; gap: 10px;">
                                             <input type="number" 
                                                 class="form-input" 
                                                 style="width: 100px;" 
-                                                data-produk-id="<%= p.id %>"
-                                                value="<%= productThresholds[p.id]?.threshold || settings.lowStockThreshold %>"
+                                                data-varian-id="<%= v.id %>"
+                                                value="<%= productThresholds[v.id]?.threshold || settings.lowStockThreshold %>"
                                                 min="0"
                                                 placeholder="Threshold">
                                             <button type="button" 
                                                 class="btn btn-primary" 
-                                                onclick="saveProductThreshold('<%= p.id %>')">
+                                                onclick="saveProductThreshold('<%= v.id %>')">
                                                 💾 Save
                                             </button>
-                                            <% if (productThresholds[p.id]) { %>
+                                            <% if (productThresholds[v.id]) { %>
                                                 <button type="button" 
                                                     class="btn btn-danger" 
-                                                    onclick="deleteProductThreshold('<%= p.id %>')">
+                                                    onclick="deleteProductThreshold('<%= v.id %>')">
                                                     🗑️
                                                 </button>
                                             <% } %>
@@ -391,8 +391,8 @@
         });
         
         // Save product threshold
-        async function saveProductThreshold(produkId) {
-            const input = document.querySelector(`input[data-produk-id="${produkId}"]`);
+        async function saveProductThreshold(varianId) {
+            const input = document.querySelector(`input[data-varian-id="${varianId}"]`);
             const threshold = parseInt(input.value);
             
             if (isNaN(threshold) || threshold < 0) {
@@ -407,7 +407,7 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        produk_id: produkId,
+                        varian_id: varianId,
                         threshold: threshold,
                         is_active: true
                     })
@@ -427,11 +427,11 @@
         }
         
         // Delete product threshold
-        async function deleteProductThreshold(produkId) {
-            if (!confirm('Yakin hapus custom threshold untuk produk ini?')) return;
+        async function deleteProductThreshold(varianId) {
+            if (!confirm('Yakin hapus custom threshold untuk varian ini?')) return;
             
             try {
-                const response = await fetch(`/api/settings/notifications/product-threshold/${produkId}`, {
+                const response = await fetch(`/api/settings/notifications/product-threshold/${varianId}`, {
                     method: 'DELETE'
                 });
                 

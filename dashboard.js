@@ -4518,20 +4518,19 @@ async function getSupabaseSettings() {
   }
 }
 
-// Helper: Get product stock threshold
-async function getProductStockThreshold(produkId) {
+// Helper: Get variant stock threshold
+async function getProductStockThreshold(varianId) {
   try {
     const { data } = await supabase
       .from('ProductStockThreshold')
       .select('threshold, is_active')
-      .eq('produk_id', produkId)
-      .single()
+      .eq('varian_id', varianId)
+      .maybeSingle()
     
     if (data && data.is_active) {
       return data.threshold
     }
     
-    // Return default threshold
     const settings = await getNotificationSettings()
     return settings.lowStockThreshold
   } catch (error) {
@@ -4611,33 +4610,28 @@ async function checkLowStockAlerts() {
     const settings = await getNotificationSettings()
     if (!settings.stockNotificationEnabled) return
     
-    // Ambil semua produk
-    const { data: products } = await supabase
-      .from('Produk')
-      .select('id, nama, kode')
+    const { data: variants } = await supabase
+      .from('Varian')
+      .select('id, label, kode, produk:Produk(nama)')
+      .eq('is_active', true)
     
-    if (!products) return
+    if (!variants) return
     
-    // Check stok untuk setiap produk
-    for (const product of products) {
-      const threshold = await getProductStockThreshold(product.id)
-      
-      // Hitung stok tersedia
-      const { count: stokCount } = await supabase
-        .from('Stok')
-        .select('*', { count: 'exact', head: true })
-        .eq('produk_id', product.id)
-        .eq('status', 'tersedia')
+    for (const variant of variants) {
+      const threshold = await getProductStockThreshold(variant.id)
+      const stokCount = await stock.getStokCountByVarianId(variant.id)
       
       if (stokCount !== null && stokCount <= threshold) {
+        const produkNama = variant.produk?.nama || 'Produk'
         const notification = {
           type: 'low_stock',
           title: '⚠️ Stok Menipis',
-          message: `Produk "${product.nama}" (${product.kode}) stok tersisa ${stokCount} item`,
+          message: `Varian "${produkNama} — ${variant.label}" (${variant.kode}) stok tersisa ${stokCount} item`,
           data: {
-            produk_id: product.id,
-            produk_kode: product.kode,
-            produk_nama: product.nama,
+            varian_id: variant.id,
+            varian_kode: variant.kode,
+            varian_label: variant.label,
+            produk_nama: produkNama,
             stok_count: stokCount,
             threshold: threshold
           },
@@ -4797,19 +4791,16 @@ app.get('/api/notifications/counts', isAuthenticated, async (req, res) => {
     
     // Count low stock products
     if (settings.stockNotificationEnabled) {
-      const { data: products } = await supabase
-        .from('Produk')
+      const { data: variants } = await supabase
+        .from('Varian')
         .select('id')
+        .eq('is_active', true)
       
-      if (products) {
+      if (variants) {
         let lowStockCount = 0
-        for (const product of products) {
-          const threshold = await getProductStockThreshold(product.id)
-          const { count: stokCount } = await supabase
-            .from('Stok')
-            .select('*', { count: 'exact', head: true })
-            .eq('produk_id', product.id)
-            .eq('status', 'tersedia')
+        for (const variant of variants) {
+          const threshold = await getProductStockThreshold(variant.id)
+          const stokCount = await stock.getStokCountByVarianId(variant.id)
           
           if (stokCount !== null && stokCount <= threshold) {
             lowStockCount++
@@ -4893,20 +4884,19 @@ app.get('/settings/notifications', isAuthenticated, async (req, res) => {
   try {
     const settings = await getNotificationSettings()
     
-    // Ambil semua produk untuk threshold settings
-    const { data: products } = await supabase
-      .from('Produk')
-      .select('id, nama, kode')
-      .order('nama', { ascending: true })
+    const { data: variants } = await supabase
+      .from('Varian')
+      .select('id, label, kode, produk:Produk(nama)')
+      .eq('is_active', true)
+      .order('kode', { ascending: true })
     
-    // Ambil product stock thresholds
     const { data: productThresholds } = await supabase
       .from('ProductStockThreshold')
       .select('*')
     
     const thresholdMap = {}
     productThresholds?.forEach(pt => {
-      thresholdMap[pt.produk_id] = pt
+      thresholdMap[pt.varian_id] = pt
     })
     
     res.render('settings-notifications', {
@@ -4916,7 +4906,7 @@ app.get('/settings/notifications', isAuthenticated, async (req, res) => {
       currentPage: 'settings-notifications',
       pageTitle: '🔔 Notification Settings',
       settings: settings,
-      products: products || [],
+      variants: variants || [],
       productThresholds: thresholdMap,
       req: req
     })
@@ -5085,26 +5075,26 @@ app.post('/api/settings/notifications', isAuthenticated, async (req, res) => {
 // Route: Update Product Stock Threshold
 app.post('/api/settings/notifications/product-threshold', isAuthenticated, async (req, res) => {
   try {
-    const { produk_id, threshold, is_active } = req.body
+    const { varian_id, threshold, is_active } = req.body
     
-    if (!produk_id || threshold === undefined) {
-      return res.status(400).json({ success: false, error: 'produk_id dan threshold wajib diisi' })
+    if (!varian_id || threshold === undefined) {
+      return res.status(400).json({ success: false, error: 'varian_id dan threshold wajib diisi' })
     }
     
     const { error } = await supabase
       .from('ProductStockThreshold')
       .upsert({
-        produk_id: produk_id,
+        varian_id: varian_id,
         threshold: parseInt(threshold),
         is_active: is_active === 'true' || is_active === true,
         updated_at: new Date().toISOString()
       }, {
-        onConflict: 'produk_id'
+        onConflict: 'varian_id'
       })
     
     if (error) throw error
     
-    await logActivity(req, 'update_product_threshold', 'ProductStockThreshold', produk_id, {
+    await logActivity(req, 'update_product_threshold', 'ProductStockThreshold', varian_id, {
       threshold: threshold,
       is_active: is_active
     })
@@ -5117,18 +5107,18 @@ app.post('/api/settings/notifications/product-threshold', isAuthenticated, async
 })
 
 // Route: Delete Product Stock Threshold
-app.delete('/api/settings/notifications/product-threshold/:produk_id', isAuthenticated, async (req, res) => {
+app.delete('/api/settings/notifications/product-threshold/:varian_id', isAuthenticated, async (req, res) => {
   try {
-    const { produk_id } = req.params
+    const { varian_id } = req.params
     
     const { error } = await supabase
       .from('ProductStockThreshold')
       .delete()
-      .eq('produk_id', produk_id)
+      .eq('varian_id', varian_id)
     
     if (error) throw error
     
-    await logActivity(req, 'delete_product_threshold', 'ProductStockThreshold', produk_id)
+    await logActivity(req, 'delete_product_threshold', 'ProductStockThreshold', varian_id)
     
     res.json({ success: true, message: 'Product threshold berhasil dihapus!' })
   } catch (error) {
