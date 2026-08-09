@@ -1,7 +1,3 @@
-<%
-    const currentPage = 'voucher';
-    const pageTitle = action === 'tambah' ? 'Tambah Voucher' : 'Edit Voucher';
-%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -116,9 +112,6 @@
     <%- include('partials/sidebar') %>
 
     <main class="main-content" id="main-content">
-        <%
-            const topbarExtra = `<a href="/voucher" class="btn-top">← Kembali</a>`
-        %>
         <%- include('partials/topbar') %>
 
         <div class="container">

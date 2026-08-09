@@ -1,7 +1,3 @@
-<%
-    const currentPage = 'deposit';
-    const pageTitle = '💰 Manajemen Deposit';
-%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -13,17 +9,6 @@
     <%- include('partials/sidebar') %>
     
     <main class="main-content" id="main-content">
-        <%
-            const exportParams = []
-            if (filters.status && filters.status !== 'all') exportParams.push('status=' + filters.status)
-            if (filters.startDate) exportParams.push('startDate=' + filters.startDate)
-            if (filters.endDate) exportParams.push('endDate=' + filters.endDate)
-            if (filters.user) exportParams.push('user=' + filters.user)
-            if (filters.metode && filters.metode !== 'all') exportParams.push('metode=' + filters.metode)
-            if (filters.search) exportParams.push('search=' + encodeURIComponent(filters.search))
-            const exportQuery = exportParams.length > 0 ? '?' + exportParams.join('&') : ''
-            const topbarExtra = `<a href="/deposit/export${exportQuery}" class="btn btn-success">📥 Export CSV</a>`
-        %>
         <%- include('partials/topbar') %>
         
         <div class="container">

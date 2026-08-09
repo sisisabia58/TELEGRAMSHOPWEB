@@ -1,9 +1,8 @@
 <%
-    const currentPage = 'user';
-    const pageTitle = 'Daftar User';
     const limit = 50;
     const fromItem = totalUsers === 0 ? 0 : (currentPageNum - 1) * limit + 1;
     const toItem = Math.min(currentPageNum * limit, totalUsers || 0);
+
 %>
 <!DOCTYPE html>
 <html lang="id">

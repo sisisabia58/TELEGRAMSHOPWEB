@@ -103,6 +103,106 @@ async function renderVariantRow(produk, variant) {
   )
 }
 
+function buildQueryString(params, skipAllKeys = []) {
+  const entries = Object.entries(params || {}).filter(([key, value]) => {
+    if (!value) return false
+    return !(skipAllKeys.includes(key) && value === 'all')
+  })
+  return entries.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&')
+}
+
+function productVariantTitle(prefix, locals) {
+  const produkNama = locals.produk?.nama || 'Produk'
+  const varianLabel = locals.varian?.label || 'Varian'
+  return `${prefix} ${produkNama} / ${varianLabel}`
+}
+
+const chromeLocalsByView = {
+  dashboard: () => ({ currentPage: 'dashboard', pageTitle: `Dashboard ${NamaBot}` }),
+  produk: () => ({ currentPage: 'produk', pageTitle: '📦 Daftar Produk', topbarExtra: '<a href="/produk/tambah" class="btn btn-success">➕ Tambah Produk</a>' }),
+  'produk-form': () => ({ currentPage: 'produk', pageTitle: '➕ Tambah Produk', topbarExtra: '<a href="/produk" class="btn-top">← Kembali</a>' }),
+  'produk-detail': (locals) => ({
+    currentPage: 'produk',
+    pageTitle: `📦 ${locals.produk?.nama || 'Produk'}`,
+    topbarExtra: `<a href="/produk" class="btn-top">← Daftar Produk</a> <a href="/produk/hapus/${locals.produk?.id || ''}" class="btn-top" style="color:#dc3545;">🗑️ Hapus</a>`
+  }),
+  'produk-hapus': () => ({ currentPage: 'produk', pageTitle: '🗑️ Hapus Produk', topbarExtra: '<a href="/produk" class="btn-top">← Produk</a>' }),
+  'produk-stok': (locals) => ({ currentPage: 'produk', pageTitle: `📦 Stok: ${locals.produk?.nama || 'Produk'} — ${locals.varian?.label || 'Varian'}` }),
+  'produk-stok-tambah': (locals) => ({ currentPage: 'produk', pageTitle: productVariantTitle('➕ Tambah Stok —', locals) }),
+  'produk-stok-edit': (locals) => ({ currentPage: 'produk', pageTitle: productVariantTitle('✏️ Edit Stok —', locals) }),
+  'produk-stok-hapus': (locals) => ({ currentPage: 'produk', pageTitle: productVariantTitle('🗑️ Hapus Stok —', locals) }),
+  transaksi: (locals) => {
+    const queryString = buildQueryString(locals.filters)
+    const exportUrl = queryString ? `/transaksi/export?${queryString}` : '/transaksi/export'
+    return { currentPage: 'transaksi', pageTitle: 'Daftar Transaksi', topbarExtra: `<a href="${exportUrl}" class="btn btn-success">📥 Export CSV</a>` }
+  },
+  'transaksi-detail': () => ({ currentPage: 'transaksi', pageTitle: 'Detail Transaksi', topbarExtra: '<a href="/transaksi" class="btn-top">← Transaksi</a>' }),
+  user: () => ({ currentPage: 'user', pageTitle: 'Daftar User' }),
+  'user-detail': () => ({ currentPage: 'user', pageTitle: 'Detail User', topbarExtra: '<a href="/user" class="btn-top">← User</a>' }),
+  'user-topup': (locals) => ({ currentPage: 'user', pageTitle: 'Top Up Saldo', topbarExtra: `<a href="/user/${locals.user?.id || ''}" class="btn-top">← Detail User</a>` }),
+  'user-kurangi': (locals) => ({ currentPage: 'user', pageTitle: 'Kurangi Saldo', topbarExtra: `<a href="/user/${locals.user?.id || ''}" class="btn-top">← Detail User</a>` }),
+  'user-reset': (locals) => ({ currentPage: 'user', pageTitle: '🔄 Reset Data User', topbarExtra: `<a href="/user/${locals.user?.id || ''}" class="btn-top">← Detail User</a>` }),
+  deposit: (locals) => {
+    const exportQuery = buildQueryString(locals.filters, ['status', 'metode'])
+    return { currentPage: 'deposit', pageTitle: '💰 Manajemen Deposit', topbarExtra: `<a href="/deposit/export${exportQuery ? `?${exportQuery}` : ''}" class="btn btn-success">📥 Export CSV</a>` }
+  },
+  'deposit-detail': () => ({ currentPage: 'deposit', pageTitle: 'Detail Deposit', topbarExtra: '<a href="/deposit" class="btn-top">← Deposit</a>' }),
+  analitik: () => ({ currentPage: 'analitik', pageTitle: '📊 Analitik' }),
+  laporan: () => ({ currentPage: 'laporan', pageTitle: '📋 Laporan' }),
+  voucher: () => ({ currentPage: 'voucher', pageTitle: '🎟️ Manajemen Voucher', topbarExtra: '<a href="/voucher/tambah" class="btn btn-success">➕ Tambah Voucher</a> <a href="/voucher/export" class="btn btn-primary">📥 Export CSV</a>' }),
+  'voucher-form': (locals) => ({ currentPage: 'voucher', pageTitle: locals.action === 'edit' ? 'Edit Voucher' : 'Tambah Voucher', topbarExtra: '<a href="/voucher" class="btn-top">← Kembali</a>' }),
+  'voucher-detail': () => ({ currentPage: 'voucher', pageTitle: '🎟️ Detail Voucher', topbarExtra: '<a href="/voucher" class="btn-top">← Voucher</a>' }),
+  'voucher-hapus': () => ({ currentPage: 'voucher', pageTitle: '🗑️ Hapus Voucher', topbarExtra: '<a href="/voucher" class="btn-top">← Voucher</a>' }),
+  'communication-broadcast': () => ({ currentPage: 'communication', pageTitle: '📢 Broadcast Message', topbarExtra: '<a href="/communication/history" class="btn-top">📜 History</a> <a href="/communication/templates" class="btn-top">📝 Templates</a>' }),
+  'communication-send': () => ({ currentPage: 'communication', pageTitle: '✉️ Send Message', topbarExtra: '<a href="/communication/broadcast" class="btn-top">📢 Broadcast</a> <a href="/communication/templates" class="btn-top">📝 Templates</a> <a href="/communication/history" class="btn-top">📜 History</a>' }),
+  'communication-templates': () => ({ currentPage: 'communication', pageTitle: '📝 Message Templates', topbarExtra: '<a href="/communication/templates/tambah" class="btn btn-success">➕ Tambah Template</a> <a href="/communication/broadcast" class="btn-top">📢 Broadcast</a> <a href="/communication/send" class="btn-top">✉️ Send</a> <a href="/communication/history" class="btn-top">📜 History</a>' }),
+  'communication-template-form': (locals) => ({ currentPage: 'communication', pageTitle: locals.action === 'tambah' ? '➕ Tambah Template' : '✏️ Edit Template', topbarExtra: '<a href="/communication/templates" class="btn-top">← Templates</a> <a href="/communication/broadcast" class="btn-top">📢 Broadcast</a> <a href="/communication/send" class="btn-top">✉️ Send</a> <a href="/communication/history" class="btn-top">📜 History</a>' }),
+  'communication-history': () => ({ currentPage: 'communication', pageTitle: '📜 Message History', topbarExtra: '<a href="/communication/broadcast" class="btn-top">📢 Broadcast</a> <a href="/communication/send" class="btn-top">✉️ Send</a> <a href="/communication/templates" class="btn-top">📝 Templates</a>' }),
+  'communication-history-detail': () => ({ currentPage: 'communication', pageTitle: '📜 Detail Message History', topbarExtra: '<a href="/communication/history" class="btn-top">📜 History</a> <a href="/communication/broadcast" class="btn-top">📢 Broadcast</a>' }),
+  'settings-general': () => ({ currentPage: 'settings-general', pageTitle: '⚙️ General Settings' }),
+  'settings-channel-contact': () => ({ currentPage: 'settings-channel-contact', pageTitle: 'Channel & Contact' }),
+  'settings-payment-gateway': () => ({ currentPage: 'settings-payment-gateway', pageTitle: '💳 Payment Gateway Settings' }),
+  'settings-supabase': () => ({ currentPage: 'settings-supabase', pageTitle: '🗄️ Supabase Database Settings' }),
+  'settings-notifications': () => ({ currentPage: 'settings-notifications', pageTitle: '🔔 Notification Settings' }),
+  'settings-bot-copy': () => ({ currentPage: 'settings-bot-copy', pageTitle: '📝 Bot Copy' }),
+  'settings-bot-flow': () => ({ currentPage: 'settings-bot-flow', pageTitle: '🔀 Bot Flow' }),
+  'bulk-operations': () => ({ currentPage: 'bulk', pageTitle: '⚡ Bulk Operations' }),
+  'admin-users': () => ({ currentPage: 'admin-users', pageTitle: 'Manajemen Admin', topbarExtra: '<a href="/admin/users/tambah" class="btn btn-success">➕ Tambah Admin</a>' }),
+  'admin-user-form': (locals) => ({ currentPage: 'admin-users', pageTitle: locals.action === 'tambah' ? 'Tambah Admin' : 'Edit Admin', topbarExtra: '<a href="/admin/users" class="btn-top">← Admin Users</a>' }),
+  'admin-change-password': () => ({ currentPage: 'admin-change-password', pageTitle: 'Ubah Password', topbarExtra: '<a href="/" class="btn-top">← Dashboard</a>' }),
+  'admin-login-history': () => ({ currentPage: 'admin-login', pageTitle: 'Login History' }),
+  'admin-audit-log': () => ({ currentPage: 'admin-audit', pageTitle: '📋 Audit Log' }),
+}
+
+function withChromeLocals(req, view, locals = {}) {
+  const viewName = String(view).replace(/\.ejs$/, '')
+  const resolver = chromeLocalsByView[viewName]
+  if (!resolver) return locals
+
+  const chrome = resolver(locals)
+  return {
+    req,
+    topbarExtra: '',
+    ...chrome,
+    ...locals,
+    currentPage: locals.currentPage || chrome.currentPage,
+    pageTitle: locals.pageTitle || chrome.pageTitle,
+    topbarExtra: locals.topbarExtra || chrome.topbarExtra || ''
+  }
+}
+
+app.use((req, res, next) => {
+  const render = res.render.bind(res)
+  res.render = (view, locals, callback) => {
+    if (typeof locals === 'function') {
+      callback = locals
+      locals = {}
+    }
+    return render(view, withChromeLocals(req, view, locals || {}), callback)
+  }
+  next()
+})
+
 // Helper: Send Telegram message to Feed Channel
 async function sendFeedMessage(text, type = 'stock') {
   try {
@@ -706,7 +806,7 @@ app.get('/admin/login-history', isAuthenticated, requireRole('admin'), async (re
       username: req.session.username,
       req: req,
       loginHistory: loginHistory || [],
-      currentPage: page,
+      currentPageNum: page,
       totalPages: totalPages,
       totalCount,
       limit,
@@ -797,7 +897,7 @@ app.get('/admin/audit-log', isAuthenticated, requireRole('admin'), async (req, r
       username: req.session.username,
       req: req,
       auditLogs: auditLogs || [],
-      currentPage: page,
+      currentPageNum: page,
       totalPages: totalPages,
       totalLogs: count || 0,
       filters: filters,
@@ -1453,7 +1553,7 @@ app.get('/produk/:produkId/varian/:varianId/stok', isAuthenticated, async (req, 
       varian,
       stokItems: stokItems || [],
       stats,
-      currentPage,
+      currentPageNum: currentPage,
       totalPages,
       currentStatus: status || 'all',
       formatrupiah,
@@ -4302,7 +4402,7 @@ app.get('/communication/history', isAuthenticated, async (req, res) => {
       namaBot: NamaBot,
       username: req.session.username,
       messages: messages || [],
-      currentPage: page,
+      currentPageNum: page,
       totalPages: totalPages,
       formatTanggal,
       filters: {

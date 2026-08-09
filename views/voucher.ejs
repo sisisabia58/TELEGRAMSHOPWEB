@@ -1,7 +1,3 @@
-<%
-    const currentPage = 'voucher';
-    const pageTitle = '🎟️ Manajemen Voucher';
-%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -13,9 +9,6 @@
     <%- include('partials/sidebar') %>
     
     <main class="main-content" id="main-content">
-        <%
-            const topbarExtra = `<a href="/voucher/tambah" class="btn btn-success">➕ Tambah Voucher</a> <a href="/voucher/export" class="btn btn-primary">📥 Export CSV</a>`
-        %>
         <%- include('partials/topbar') %>
         
         <div class="container">

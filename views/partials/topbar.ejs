@@ -1,10 +1,11 @@
 <div class="top-bar">
+  <% const safeTopbarExtra = typeof topbarExtra !== 'undefined' ? topbarExtra : '' %>
   <div class="top-bar-left">
     <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
     <h1 class="page-title"><%= typeof pageTitle !== 'undefined' ? pageTitle : title %></h1>
   </div>
   <div class="top-bar-right">
-    <% if (typeof topbarExtra !== 'undefined') { %><%- topbarExtra %><% } %>
+    <% if (safeTopbarExtra) { %><%- safeTopbarExtra %><% } %>
     <div class="user-info">
       <span><%= typeof username !== 'undefined' ? username : 'Admin' %></span>
       <% if (typeof req !== 'undefined' && req.session && req.session.role) { %>

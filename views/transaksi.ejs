@@ -1,12 +1,9 @@
 <%
-    const currentPage = 'transaksi';
-    const pageTitle = 'Daftar Transaksi';
-    const hasFilters = filters.startDate || filters.endDate || filters.produk || filters.user || filters.minHarga || filters.maxHarga || filters.search;
     const filterParams = Object.keys(filters).filter(k => filters[k]).map(k => k + '=' + encodeURIComponent(filters[k]));
     const queryString = filterParams.length > 0 ? filterParams.join('&') : '';
-    const exportUrl = hasFilters ? '/transaksi/export?' + queryString : '/transaksi/export';
     const fromItem = totalCount === 0 ? 0 : (currentPageNum - 1) * (typeof limit !== 'undefined' ? limit : 50) + 1;
     const toItem = Math.min(currentPageNum * (typeof limit !== 'undefined' ? limit : 50), totalCount || 0);
+
 %>
 <!DOCTYPE html>
 <html lang="id">
@@ -83,9 +80,6 @@
     <%- include('partials/sidebar') %>
 
     <main class="main-content" id="main-content">
-        <%
-            const topbarExtra = `<a href="${exportUrl}" class="btn btn-success">📥 Export CSV</a>`
-        %>
         <%- include('partials/topbar') %>
 
         <div class="container">

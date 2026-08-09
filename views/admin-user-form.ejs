@@ -1,7 +1,3 @@
-<%
-    const currentPage = 'admin-users';
-    const pageTitle = action === 'tambah' ? 'Tambah Admin' : 'Edit Admin';
-%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -47,9 +43,6 @@
     <%- include('partials/sidebar') %>
 
     <main class="main-content" id="main-content">
-        <%
-            const topbarExtra = `<a href="/admin/users" class="btn-top">← Admin Users</a>`
-        %>
         <%- include('partials/topbar') %>
 
         <div class="container">

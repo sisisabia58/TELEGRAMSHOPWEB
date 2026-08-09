@@ -1,6 +1,4 @@
 <%
-    const currentPage = 'produk';
-    const pageTitle = `📦 ${produk.nama}`;
     const kategoriList = [
         ['umum', '📦 Umum'],
         ['game', '🎮 Game'],
@@ -14,6 +12,7 @@
     if (!kategoriList.some(([nilai]) => nilai === kategoriTerpilih)) {
         kategoriList.push([kategoriTerpilih, `⚠️ ${kategoriTerpilih} (tidak dikenali bot)`]);
     }
+
 %>
 <!DOCTYPE html>
 <html lang="id">
@@ -61,9 +60,6 @@
     <%- include('partials/sidebar') %>
 
     <main class="main-content" id="main-content">
-        <%
-            const topbarExtra = `<a href="/produk" class="btn-top">← Daftar Produk</a> <a href="/produk/hapus/${produk.id}" class="btn-top" style="color:#dc3545;">🗑️ Hapus</a>`
-        %>
         <%- include('partials/topbar') %>
 
         <div class="container">

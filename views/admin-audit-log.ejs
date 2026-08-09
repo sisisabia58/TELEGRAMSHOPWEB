@@ -1,7 +1,3 @@
-<%
-    const currentPage = 'admin-audit';
-    const pageTitle = '📋 Audit Log';
-%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -85,7 +81,7 @@
                 </div>
                 <div class="stat-summary-card" style="border-left-color: #28a745;">
                     <div class="stat-summary-label">Halaman</div>
-                    <div class="stat-summary-value"><%= currentPage %>/<%= totalPages || 1 %></div>
+                    <div class="stat-summary-value"><%= currentPageNum %>/<%= totalPages || 1 %></div>
                 </div>
             </div>
 
@@ -246,7 +242,7 @@
             <% if (totalPages > 1) { %>
                 <div class="pagination">
                     <div class="pagination-info">
-                        Menampilkan halaman <%= currentPage %> dari <%= totalPages %> 
+                        Menampilkan halaman <%= currentPageNum %> dari <%= totalPages %> 
                         (<%= auditLogs.length %> dari <%= totalLogs || auditLogs.length %> log)
                     </div>
                     <div class="pagination-controls">
@@ -254,19 +250,19 @@
                         const filterParams = filters ? Object.keys(filters).filter(k => filters[k]).map(k => k + '=' + encodeURIComponent(filters[k])).join('&') : '';
                         const paramPrefix = filterParams ? '&' : '?';
                         %>
-                        <% if (currentPage > 1) { %>
-                            <a href="?page=<%= currentPage - 1 %><%= filterParams ? '&' + filterParams : '' %>" class="pagination-btn">« Sebelumnya</a>
+                        <% if (currentPageNum > 1) { %>
+                            <a href="?page=<%= currentPageNum - 1 %><%= filterParams ? '&' + filterParams : '' %>" class="pagination-btn">« Sebelumnya</a>
                         <% } %>
                         
                         <% 
-                        const startPage = Math.max(1, currentPage - 2);
-                        const endPage = Math.min(totalPages, currentPage + 2);
+                        const startPage = Math.max(1, currentPageNum - 2);
+                        const endPage = Math.min(totalPages, currentPageNum + 2);
                         for (let i = startPage; i <= endPage; i++) { %>
-                            <a href="?page=<%= i %><%= filterParams ? '&' + filterParams : '' %>" class="pagination-btn <%= i === currentPage ? 'active' : '' %>"><%= i %></a>
+                            <a href="?page=<%= i %><%= filterParams ? '&' + filterParams : '' %>" class="pagination-btn <%= i === currentPageNum ? 'active' : '' %>"><%= i %></a>
                         <% } %>
                         
-                        <% if (currentPage < totalPages) { %>
-                            <a href="?page=<%= currentPage + 1 %><%= filterParams ? '&' + filterParams : '' %>" class="pagination-btn">Selanjutnya »</a>
+                        <% if (currentPageNum < totalPages) { %>
+                            <a href="?page=<%= currentPageNum + 1 %><%= filterParams ? '&' + filterParams : '' %>" class="pagination-btn">Selanjutnya »</a>
                         <% } %>
                     </div>
                 </div>

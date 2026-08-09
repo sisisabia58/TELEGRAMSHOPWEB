@@ -1,7 +1,3 @@
-<%
-    const currentPage = 'communication';
-    const pageTitle = '📜 Message History';
-%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -13,9 +9,6 @@
     <%- include('partials/sidebar') %>
     
     <main class="main-content" id="main-content">
-        <%
-            const topbarExtra = `<a href="/communication/broadcast" class="btn-top">📢 Broadcast</a> <a href="/communication/send" class="btn-top">✉️ Send</a> <a href="/communication/templates" class="btn-top">📝 Templates</a>`
-        %>
         <%- include('partials/topbar') %>
         
         <div class="container">
@@ -251,21 +244,21 @@
                         if (filters.status && filters.status !== 'all') filterParams.push('status=' + encodeURIComponent(filters.status));
                         const queryString = filterParams.length > 0 ? '&' + filterParams.join('&') : '';
                         %>
-                        <% if (currentPage > 1) { %>
-                            <a href="?page=<%= currentPage - 1 %><%= queryString %>" class="pagination-btn pagination-prev">
+                        <% if (currentPageNum > 1) { %>
+                            <a href="?page=<%= currentPageNum - 1 %><%= queryString %>" class="pagination-btn pagination-prev">
                                 <span class="pagination-icon">←</span>
                                 <span>Sebelumnya</span>
                             </a>
                         <% } %>
                         
                         <div class="pagination-info">
-                            <span class="pagination-current">Halaman <%= currentPage %></span>
+                            <span class="pagination-current">Halaman <%= currentPageNum %></span>
                             <span class="pagination-separator">dari</span>
                             <span class="pagination-total"><%= totalPages %></span>
                         </div>
                         
-                        <% if (currentPage < totalPages) { %>
-                            <a href="?page=<%= currentPage + 1 %><%= queryString %>" class="pagination-btn pagination-next">
+                        <% if (currentPageNum < totalPages) { %>
+                            <a href="?page=<%= currentPageNum + 1 %><%= queryString %>" class="pagination-btn pagination-next">
                                 <span>Selanjutnya</span>
                                 <span class="pagination-icon">→</span>
                             </a>

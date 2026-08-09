@@ -1,6 +1,4 @@
 <%
-    const currentPage = 'produk';
-    const pageTitle = '➕ Tambah Produk';
     const kategoriList = [
         ['umum', '📦 Umum'],
         ['game', '🎮 Game'],
@@ -11,6 +9,7 @@
         ['education', '📚 Education']
     ];
     const kategoriTerpilih = (produk && produk.kategori ? produk.kategori : 'umum').toLowerCase();
+
 %>
 <!DOCTYPE html>
 <html lang="id">
@@ -23,9 +22,6 @@
     <%- include('partials/sidebar') %>
     
     <main class="main-content" id="main-content">
-        <%
-            const topbarExtra = `<a href="/produk" class="btn-top">← Kembali</a>`
-        %>
         <%- include('partials/topbar') %>
         
         <div class="container">

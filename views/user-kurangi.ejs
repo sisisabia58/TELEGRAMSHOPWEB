@@ -1,7 +1,6 @@
 <%
-    const currentPage = 'user';
-    const pageTitle = 'Kurangi Saldo';
     const saldoSaatIni = user.saldo || 0;
+
 %>
 <!DOCTYPE html>
 <html lang="id">
@@ -29,9 +28,6 @@
     <%- include('partials/sidebar') %>
 
     <main class="main-content" id="main-content">
-        <%
-            const topbarExtra = `<a href="/user/${user.id}" class="btn-top">← Detail User</a>`
-        %>
         <%- include('partials/topbar') %>
 
         <div class="container">

@@ -1,7 +1,3 @@
-<%
-    const currentPage = 'communication';
-    const pageTitle = '📝 Message Templates';
-%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -11,9 +7,6 @@
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <%- include('partials/sidebar') %>
     <main class="main-content" id="main-content">
-        <%
-            const topbarExtra = `<a href="/communication/templates/tambah" class="btn btn-success">➕ Tambah Template</a> <a href="/communication/broadcast" class="btn-top">📢 Broadcast</a> <a href="/communication/send" class="btn-top">✉️ Send</a> <a href="/communication/history" class="btn-top">📜 History</a>`
-        %>
         <%- include('partials/topbar') %>
         <div class="container">
             <% if (success === 'tambah') { %>

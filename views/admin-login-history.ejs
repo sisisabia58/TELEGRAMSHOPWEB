@@ -1,8 +1,7 @@
 <%
-    const currentPage = 'admin-login';
-    const pageTitle = 'Login History';
-    const fromItem = totalCount === 0 ? 0 : (currentPage - 1) * (typeof limit !== 'undefined' ? limit : 50) + 1;
-    const toItem = Math.min(currentPage * (typeof limit !== 'undefined' ? limit : 50), totalCount || 0);
+    const fromItem = totalCount === 0 ? 0 : (currentPageNum - 1) * (typeof limit !== 'undefined' ? limit : 50) + 1;
+    const toItem = Math.min(currentPageNum * (typeof limit !== 'undefined' ? limit : 50), totalCount || 0);
+
 %>
 <!DOCTYPE html>
 <html lang="id">
@@ -106,15 +105,15 @@
 
                     <% if (totalPages > 1) { %>
                         <div class="pagination-bar">
-                            <span class="pagination-info">Halaman <%= currentPage %> dari <%= totalPages %></span>
+                            <span class="pagination-info">Halaman <%= currentPageNum %> dari <%= totalPages %></span>
                             <div class="pagination-controls">
-                                <% if (currentPage > 1) { %>
-                                    <a href="?page=<%= currentPage - 1 %>" class="pagination-btn">← Sebelumnya</a>
+                                <% if (currentPageNum > 1) { %>
+                                    <a href="?page=<%= currentPageNum - 1 %>" class="pagination-btn">← Sebelumnya</a>
                                 <% } else { %>
                                     <span class="pagination-btn" style="opacity: 0.5; cursor: not-allowed;">← Sebelumnya</span>
                                 <% } %>
-                                <% if (currentPage < totalPages) { %>
-                                    <a href="?page=<%= currentPage + 1 %>" class="pagination-btn">Selanjutnya →</a>
+                                <% if (currentPageNum < totalPages) { %>
+                                    <a href="?page=<%= currentPageNum + 1 %>" class="pagination-btn">Selanjutnya →</a>
                                 <% } else { %>
                                     <span class="pagination-btn" style="opacity: 0.5; cursor: not-allowed;">Selanjutnya →</span>
                                 <% } %>
