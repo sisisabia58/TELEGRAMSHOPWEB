@@ -17,6 +17,8 @@ const { TokenBot, NamaBot, OwnerID, ImagePath, Pakasir, ChannelLog, ChannelStore
 const supabase = require('./lib/supabase')
 const runtimeSettings = require('./lib/runtime-settings')
 const copy = require('./lib/copy')
+const flow = require('./lib/flow')
+const session = require('./lib/session')
 const pakasir = require('./pakasir.js')
 
 // Helper bersama dengan dashboard. Di-require di paling atas — dulu ini adalah
@@ -57,7 +59,11 @@ const channelContact = {
 runtimeSettings.refresh(true)
   .then(async () => {
     await copy.refresh()
-    runtimeSettings.startPolling(10000, () => { copy.refresh().catch(() => {}) })
+    await flow.refresh()
+    runtimeSettings.startPolling(10000, () => {
+      copy.refresh().catch(() => {})
+      flow.refresh().catch(() => {})
+    })
   })
   .catch((e) => console.error('[runtime-settings] gagal muat awal:', e.message))
 const TelegramBot = require("node-telegram-bot-api")
@@ -3851,15 +3857,22 @@ bot.onText(/\/start/, async (msg) => {
     const userCount = userCountResult.count || 0
     
     // Kirim foto + teks dalam satu bubble (banner merged)
-    await sendBannerMessage(msg.from.id, welcomeCaption({
-      first_name: msg.from.first_name,
-      user_count: userCount,
-      stok_terjual: stokterjual,
-      stok_tersedia: stoktersedia,
-      saldo: userSaldo,
-    }), {
-      reply_markup: welcomeInlineKeyboard()
-    })
+    if (flow.isEnabled()) {
+      await dispatchFlow(msg.from.id, flow.getEntryKey(), {
+        firstName: msg.from.first_name,
+        push: false,
+      })
+    } else {
+      await sendBannerMessage(msg.from.id, welcomeCaption({
+        first_name: msg.from.first_name,
+        user_count: userCount,
+        stok_terjual: stokterjual,
+        stok_tersedia: stoktersedia,
+        saldo: userSaldo,
+      }), {
+        reply_markup: welcomeInlineKeyboard()
+      })
+    }
 
     const replyKb = await generateReplyKeyboard(msg.from.id)
     await bot.sendMessage(msg.from.id, copy.get('msg.reply_nav_enabled'), {
@@ -4015,7 +4028,301 @@ Belum ada produk yang terdaftar.
   }
 })
 
+function flowUrlResolver(name) {
+  if (name === 'channel_store') return channelContact.channelStore
+  if (name === 'cs') return channelContact.cs
+  return ''
+}
 
+async function collectWelcomeVars(userId, firstName) {
+  const [trxCountResult, userCountResult, stoktersedia, stokterjual, userSaldo] = await Promise.all([
+    supabase.from('Trx').select('*', { count: 'exact', head: true }),
+    supabase.from('User').select('*', { count: 'exact', head: true }),
+    getTotalStokTersedia(),
+    getTotalStokTerjual(),
+    cekSaldo(userId),
+  ])
+  return {
+    first_name: firstName || 'User',
+    nama_bot: NamaBot,
+    user_count: userCountResult.count || 0,
+    stok_terjual: stokterjual,
+    stok_tersedia: stoktersedia,
+    saldo: formatrupiah(userSaldo),
+  }
+}
+
+async function openProductList(query) {
+  const { data: Produk } = await supabase.from('Produk').select('*')
+
+  try {
+    await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+  } catch (e) {
+    // Ignore if message already deleted
+  }
+
+  if (!Produk || Produk.length === 0) {
+    return bot.sendMessage(query.from.id, `⚠️ *BELUM ADA PRODUK*
+━━━━━━━━━━━━━━━━━━━━
+Belum ada produk yang terdaftar.
+
+━━━━━━━━━━━━━━━━━━━━
+💡 Hubungi admin untuk informasi lebih lanjut.`, {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🔙 Kembali', callback_data: 'kembaliawal' }],
+        ],
+      },
+    })
+  }
+
+  const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
+    const stokCount = await getStokCount(p.kode)
+    return { ...p, stok_count: stokCount }
+  }))
+
+  const isOwnerUser = isOwner(query)
+  await sendProductPage(ProdukWithStok, query.from.id, 0, query.message.message_id, query.id, {}, isOwnerUser)
+}
+
+async function openKategoriMenu(query) {
+  const { data: Produk } = await supabase.from('Produk').select('*')
+
+  if (!Produk || Produk.length === 0) {
+    await bot.answerCallbackQuery(query.id, { text: '⚠️ Belum ada produk!', show_alert: true })
+    return
+  }
+
+  const kategoriCount = {}
+  const kategoriList = ['game', 'streaming', 'software', 'social media', 'voucher', 'education', 'umum']
+
+  Produk.forEach((p) => {
+    const kat = (p.kategori || 'umum').toLowerCase()
+    kategoriCount[kat] = (kategoriCount[kat] || 0) + 1
+  })
+
+  let text = `📂 *PILIH KATEGORI*
+━━━━━━━━━━━━━━━━━━━━
+Pilih kategori produk yang ingin dilihat:
+
+━━━━━━━━━━━━━━━━━━━━
+`
+
+  kategoriList.forEach((kat) => {
+    const count = kategoriCount[kat] || 0
+    if (count > 0) {
+      const emoji = getKategoriEmoji(kat)
+      const name = getKategoriName(kat)
+      text += `${emoji} *${name}* (${count} produk)\n`
+    }
+  })
+
+  text += `\n━━━━━━━━━━━━━━━━━━━━
+💡 Pilih kategori untuk melihat produk`
+
+  const buttons = []
+  const kategoriButtons = []
+
+  kategoriList.forEach((kat) => {
+    const count = kategoriCount[kat] || 0
+    if (count > 0) {
+      const emoji = getKategoriEmoji(kat)
+      const name = getKategoriName(kat)
+
+      if (kategoriButtons.length === 0 || kategoriButtons[kategoriButtons.length - 1].length === 2) {
+        kategoriButtons.push([{
+          text: `${emoji} ${name}`,
+          callback_data: `kategori_${kat}`,
+        }])
+      } else {
+        kategoriButtons[kategoriButtons.length - 1].push({
+          text: `${emoji} ${name}`,
+          callback_data: `kategori_${kat}`,
+        })
+      }
+    }
+  })
+
+  buttons.push(...kategoriButtons)
+  buttons.push([{ text: '📦 Semua Produk', callback_data: 'daftarproduk' }])
+  buttons.push([{ text: '🔙 Kembali', callback_data: 'kembaliawal' }])
+
+  await bot.answerCallbackQuery(query.id)
+  await editOrSendBannerMessage(query.from.id, query.message.message_id, text, {
+    reply_markup: { inline_keyboard: buttons },
+  })
+}
+
+async function openStokBuyer(query) {
+  const { data: Produk } = await supabase.from('Produk').select('*')
+
+  if (!Produk || Produk.length === 0) {
+    await bot.answerCallbackQuery(query.id)
+    await sendMessage(query.from.id, `⚠️ *TIDAK ADA PRODUK*
+━━━━━━━━━━━━━━━━━━━━
+Belum ada produk yang terdaftar.
+
+━━━━━━━━━━━━━━━━━━━━
+💡 Gunakan \`/addproduk\` untuk menambah produk.`, { parse_mode: 'Markdown' })
+    return
+  }
+
+  const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
+    const stokCount = await getStokCount(p.kode)
+    return { ...p, stok_count: stokCount }
+  }))
+
+  let totalStok = 0
+  let totalTerjual = 0
+  let produkHabis = 0
+  let produkRendah = 0
+
+  ProdukWithStok.forEach((p) => {
+    totalStok += p.stok_count || 0
+    totalTerjual += p.terjual || 0
+    if (p.stok_count === 0) produkHabis++
+    else if (p.stok_count <= 5) produkRendah++
+  })
+
+  let tx = `📦 *STOK PRODUK*
+━━━━━━━━━━━━━━━━━━━━
+📊 *STATISTIK*
+━━━━━━━━━━━━━━━━━━━━
+📦 Total Stok: *${totalStok}*
+💰 Total Terjual: *${totalTerjual}*
+❌ Produk Habis: *${produkHabis}*
+⚠️ Stok Rendah (≤5): *${produkRendah}*
+━━━━━━━━━━━━━━━━━━━━
+
+*DAFTAR PRODUK:*
+`
+
+  const sortedProduk = [...ProdukWithStok].sort((a, b) => {
+    if (a.stok_count === 0 && b.stok_count > 0) return -1
+    if (a.stok_count > 0 && b.stok_count === 0) return 1
+    if (a.stok_count !== b.stok_count) return a.stok_count - b.stok_count
+    return a.nama.localeCompare(b.nama)
+  })
+
+  sortedProduk.forEach((p) => {
+    let emoji = ''
+    if (p.stok_count === 0) emoji = '❌'
+    else if (p.stok_count <= 5) emoji = '⚠️'
+    else if (p.stok_count <= 20) emoji = '✅'
+    else emoji = '🟢'
+
+    const persentase = p.terjual > 0 ? Math.round((p.terjual / (p.terjual + p.stok_count)) * 100) : 0
+
+    tx += `${emoji} *${p.nama.toUpperCase()}*
+📊 Stok: *${p.stok_count}* | Terjual: *${p.terjual}* | ${persentase}% terjual
+🔖 Kode: \`${p.kode}\` | 💰 ${formatrupiah(p.harga)}
+━━━━━━━━━━━━━━━━━━━━\n`
+  })
+
+  const buttons = []
+  buttons.push([
+    { text: '🔍 Filter', callback_data: 'stok_filter' },
+    { text: '📊 Statistik', callback_data: 'stok_statistik' },
+  ])
+
+  const productRows = []
+  for (let i = 0; i < Math.min(6, sortedProduk.length); i += 2) {
+    const row = []
+    row.push({
+      text: `${i + 1}️⃣ ${sortedProduk[i].nama.substring(0, 15)}${sortedProduk[i].nama.length > 15 ? '...' : ''}`,
+      callback_data: `stok_detail_${sortedProduk[i].kode}`,
+    })
+    if (sortedProduk[i + 1]) {
+      row.push({
+        text: `${i + 2}️⃣ ${sortedProduk[i + 1].nama.substring(0, 15)}${sortedProduk[i + 1].nama.length > 15 ? '...' : ''}`,
+        callback_data: `stok_detail_${sortedProduk[i + 1].kode}`,
+      })
+    }
+    productRows.push(row)
+  }
+  buttons.push(...productRows)
+
+  if (query.from.id === OwnerID) {
+    buttons.push([
+      { text: '➕ Tambah Stok', callback_data: 'addstok' },
+      { text: '✏️ Edit Stok', callback_data: 'stok_edit_menu' },
+    ])
+  }
+
+  buttons.push([{ text: '🔙 Kembali', callback_data: 'kembaliawal' }])
+
+  await bot.answerCallbackQuery(query.id)
+  await bot.sendMessage(query.from.id, tx, {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: buttons },
+  })
+}
+
+async function openRiwayat(query) {
+  const { data: Trx } = await supabase.from('Trx').select('*')
+  if (!Trx || Trx.length === 0) {
+    return sendMessage(query.from.id, '⚠️ Belum ada transaksi apapun!')
+  }
+  await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+  await sendPage(Trx, query.from.id, 0)
+}
+
+async function handleFlowResult(userId, result, { msgId = null, query = null } = {}) {
+  if (!result || result.type === 'error') {
+    console.error('[flow]', result && result.message)
+    return false
+  }
+  if (result.type === 'screen') {
+    if (msgId) {
+      await editOrSendBannerMessage(userId, msgId, result.caption, { reply_markup: result.reply_markup })
+    } else {
+      await sendBannerMessage(userId, result.caption, { reply_markup: result.reply_markup })
+    }
+    return true
+  }
+  if (result.type === 'action') {
+    if (!query) {
+      console.error('[flow] action requires query context')
+      return false
+    }
+    switch (result.action) {
+      case 'product_list':
+        await openProductList(query)
+        break
+      case 'kategori_menu':
+        await openKategoriMenu(query)
+        break
+      case 'stok':
+        await openStokBuyer(query)
+        break
+      case 'riwayat':
+        await openRiwayat(query)
+        break
+      default:
+        return false
+    }
+    return true
+  }
+  return false
+}
+
+async function dispatchFlow(userId, nodeKey, { msgId = null, push, firstName, query = null } = {}) {
+  const entry = flow.getEntryKey()
+  const vars = nodeKey === entry || nodeKey === 'welcome'
+    ? await collectWelcomeVars(userId, firstName)
+    : {
+        first_name: firstName || 'User',
+        nama_bot: NamaBot,
+        saldo: formatrupiah(await cekSaldo(userId)),
+      }
+  const result = await flow.goto(userId, nodeKey, {
+    vars,
+    push: push !== undefined ? push : nodeKey !== entry,
+    urlResolver: flowUrlResolver,
+  })
+  return handleFlowResult(userId, result, { msgId, query })
+}
 
 bot.on("callback_query", async (query) => {
   let cmd = query.data
@@ -4080,6 +4387,20 @@ Silakan ketik \`/deposit <jumlah>\` untuk melakukan top up saldo dengan nominal 
       parse_mode: "Markdown"
     })
     return
+  }
+
+  if (flow.isEnabled()) {
+    const flowKey = flow.parseFlowCallback(cmd) || flow.legacyToKey(cmd)
+    if (flowKey) {
+      await bot.answerCallbackQuery(query.id).catch(() => {})
+      await dispatchFlow(query.from.id, flowKey, {
+        msgId: query.message?.message_id,
+        firstName: query.from.first_name,
+        push: flowKey !== flow.getEntryKey(),
+        query,
+      })
+      return
+    }
   }
 
   if (cmd.startsWith('bulan_')) {
@@ -5526,130 +5847,7 @@ ${item.snk.length > 150 ? item.snk.substring(0, 150) + '...' : item.snk}
 }
 
 if (cmd === "stok") {
-  let { data: Produk } = await supabase
-    .from("Produk")
-    .select("*")
-  
-  if (!Produk || Produk.length === 0) {
-    await bot.answerCallbackQuery(query.id)
-    await sendMessage(query.from.id, `⚠️ *TIDAK ADA PRODUK*
-━━━━━━━━━━━━━━━━━━━━
-Belum ada produk yang terdaftar.
-
-━━━━━━━━━━━━━━━━━━━━
-💡 Gunakan \`/addproduk\` untuk menambah produk.`, { parse_mode: "Markdown" })
-    return
-  }
-  
-  // Hitung stok untuk setiap produk
-  const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-    const stokCount = await getStokCount(p.kode)
-    return { ...p, stok_count: stokCount }
-  }))
-  
-  // Calculate statistics
-  let totalStok = 0
-  let totalTerjual = 0
-  let produkHabis = 0
-  let produkRendah = 0
-  
-  ProdukWithStok.forEach(p => {
-    totalStok += p.stok_count || 0
-    totalTerjual += p.terjual || 0
-    if (p.stok_count === 0) produkHabis++
-    else if (p.stok_count <= 5) produkRendah++
-  })
-  
-  let tx = `📦 *STOK PRODUK*
-━━━━━━━━━━━━━━━━━━━━
-📊 *STATISTIK*
-━━━━━━━━━━━━━━━━━━━━
-📦 Total Stok: *${totalStok}*
-💰 Total Terjual: *${totalTerjual}*
-❌ Produk Habis: *${produkHabis}*
-⚠️ Stok Rendah (≤5): *${produkRendah}*
-━━━━━━━━━━━━━━━━━━━━
-
-*DAFTAR PRODUK:*
-`
-  
-  // Sort by stock (lowest first, then by name)
-  const sortedProduk = [...ProdukWithStok].sort((a, b) => {
-    if (a.stok_count === 0 && b.stok_count > 0) return -1
-    if (a.stok_count > 0 && b.stok_count === 0) return 1
-    if (a.stok_count !== b.stok_count) return a.stok_count - b.stok_count
-    return a.nama.localeCompare(b.nama)
-  })
-  
-  sortedProduk.forEach((p) => {
-    let emoji = ""
-    let status = ""
-    if (p.stok_count === 0) {
-      emoji = "❌"
-      status = "HABIS"
-    } else if (p.stok_count <= 5) {
-      emoji = "⚠️"
-      status = "RENDAH"
-    } else if (p.stok_count <= 20) {
-      emoji = "✅"
-      status = "NORMAL"
-    } else {
-      emoji = "🟢"
-      status = "BANYAK"
-    }
-    
-    const persentase = p.terjual > 0 ? Math.round((p.terjual / (p.terjual + p.stok_count)) * 100) : 0
-    
-    tx += `${emoji} *${p.nama.toUpperCase()}*
-📊 Stok: *${p.stok_count}* | Terjual: *${p.terjual}* | ${persentase}% terjual
-🔖 Kode: \`${p.kode}\` | 💰 ${formatrupiah(p.harga)}
-━━━━━━━━━━━━━━━━━━━━\n`
-  })
-  
-  // Create inline keyboard with actions
-  const buttons = []
-  
-  // Filter buttons
-  buttons.push([
-    { text: "🔍 Filter", callback_data: "stok_filter" },
-    { text: "📊 Statistik", callback_data: "stok_statistik" }
-  ])
-  
-  // Product buttons (first 6 products, 2 per row)
-  const productRows = []
-  for (let i = 0; i < Math.min(6, sortedProduk.length); i += 2) {
-    const row = []
-    row.push({ 
-      text: `${i + 1}️⃣ ${sortedProduk[i].nama.substring(0, 15)}${sortedProduk[i].nama.length > 15 ? '...' : ''}`, 
-      callback_data: `stok_detail_${sortedProduk[i].kode}` 
-    })
-    if (sortedProduk[i + 1]) {
-      row.push({ 
-        text: `${i + 2}️⃣ ${sortedProduk[i + 1].nama.substring(0, 15)}${sortedProduk[i + 1].nama.length > 15 ? '...' : ''}`, 
-        callback_data: `stok_detail_${sortedProduk[i + 1].kode}` 
-      })
-    }
-    productRows.push(row)
-  }
-  buttons.push(...productRows)
-  
-  // Action buttons (only for owner)
-  if (query.from.id === OwnerID) {
-    buttons.push([
-      { text: "➕ Tambah Stok", callback_data: "addstok" },
-      { text: "✏️ Edit Stok", callback_data: "stok_edit_menu" }
-    ])
-  }
-  
-  buttons.push([{ text: "🔙 Kembali", callback_data: "kembaliawal" }])
-  
-  await bot.answerCallbackQuery(query.id)
-  await bot.sendMessage(query.from.id, tx, {
-    parse_mode: "Markdown",
-    reply_markup: {
-      inline_keyboard: buttons
-    }
-  })
+  await openStokBuyer(query)
 }
 
 // Handler untuk detail produk di stok
@@ -9950,6 +10148,16 @@ Kode Deposit: \`${kodeDeposit}\`
         
         await cart.clear(query.from.id)
       }
+
+      if (flow.isEnabled()) {
+        await dispatchFlow(query.from.id, flow.getEntryKey(), {
+          msgId: query.message.message_id,
+          firstName: query.from.first_name,
+          push: false,
+          query,
+        })
+        return
+      }
      
      // Parallel queries untuk semua data (LEBIH CEPAT!)
      const [
@@ -9989,116 +10197,12 @@ Kode Deposit: \`${kodeDeposit}\`
    }
  }
   if (cmd === "daftarproduk") {
-    let { data: Produk } = await supabase
-      .from("Produk")
-      .select("*")
-    
-    try {
-      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-    } catch (e) {
-      // Ignore if message already deleted
-    }
-    
-    if (!Produk || Produk.length === 0) {
-      return await bot.sendMessage(query.from.id, `⚠️ *BELUM ADA PRODUK*
-━━━━━━━━━━━━━━━━━━━━
-Belum ada produk yang terdaftar.
-
-━━━━━━━━━━━━━━━━━━━━
-💡 Hubungi admin untuk informasi lebih lanjut.`, {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [{text: "🔙 Kembali", callback_data: "kembaliawal"}]
-          ]
-        }
-      })
-    }
-    
-    // Hitung stok untuk setiap produk dari tabel Stok
-    const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-      const stokCount = await getStokCount(p.kode)
-      return { ...p, stok_count: stokCount }
-    }))
-    
-    const isOwnerUser = isOwner(query)
-    await sendProductPage(ProdukWithStok, query.from.id, 0, query.message.message_id, query.id, {}, isOwnerUser)
+    await openProductList(query)
   }
   
   // Handler untuk menu kategori
   if (cmd === "kategori_menu") {
-    let { data: Produk } = await supabase
-      .from("Produk")
-      .select("*")
-    
-    if (!Produk || Produk.length === 0) {
-      await bot.answerCallbackQuery(query.id, { text: "⚠️ Belum ada produk!", show_alert: true })
-      return
-    }
-    
-    // Hitung jumlah produk per kategori
-    const kategoriCount = {}
-    const kategoriList = ['game', 'streaming', 'software', 'social media', 'voucher', 'education', 'umum']
-    
-    Produk.forEach(p => {
-      const kat = (p.kategori || 'umum').toLowerCase()
-      kategoriCount[kat] = (kategoriCount[kat] || 0) + 1
-    })
-    
-    // Buat teks menu kategori
-    let text = `📂 *PILIH KATEGORI*
-━━━━━━━━━━━━━━━━━━━━
-Pilih kategori produk yang ingin dilihat:
-
-━━━━━━━━━━━━━━━━━━━━
-`
-    
-    kategoriList.forEach(kat => {
-      const count = kategoriCount[kat] || 0
-      if (count > 0) {
-        const emoji = getKategoriEmoji(kat)
-        const name = getKategoriName(kat)
-        text += `${emoji} *${name}* (${count} produk)\n`
-      }
-    })
-    
-    text += `\n━━━━━━━━━━━━━━━━━━━━
-💡 Pilih kategori untuk melihat produk`
-    
-    // Buat tombol kategori (2 kolom)
-    const buttons = []
-    const kategoriButtons = []
-    
-    kategoriList.forEach((kat, idx) => {
-      const count = kategoriCount[kat] || 0
-      if (count > 0) {
-        const emoji = getKategoriEmoji(kat)
-        const name = getKategoriName(kat)
-        
-        if (kategoriButtons.length === 0 || kategoriButtons[kategoriButtons.length - 1].length === 2) {
-          kategoriButtons.push([{ 
-            text: `${emoji} ${name}`, 
-            callback_data: `kategori_${kat}` 
-          }])
-        } else {
-          kategoriButtons[kategoriButtons.length - 1].push({ 
-            text: `${emoji} ${name}`, 
-            callback_data: `kategori_${kat}` 
-          })
-        }
-      }
-    })
-    
-    buttons.push(...kategoriButtons)
-    buttons.push([{ text: "📦 Semua Produk", callback_data: "daftarproduk" }])
-    buttons.push([{ text: "🔙 Kembali", callback_data: "kembaliawal" }])
-    
-    await bot.answerCallbackQuery(query.id)
-    await editOrSendBannerMessage(query.from.id, query.message.message_id, text, {
-      reply_markup: {
-        inline_keyboard: buttons
-      }
-    })
+    await openKategoriMenu(query)
   }
   
   // Handler untuk filter produk berdasarkan kategori
@@ -10147,12 +10251,7 @@ Pilih kategori produk yang ingin dilihat:
   }
   
   if (cmd === "riwayattransaksi") {
-    let { data: Trx } = await supabase
-.from("Trx")
-.select("*")
-    if (!Trx || Trx.length === 0) return await sendMessage(query.from.id, `⚠️ Belum ada transaksi apapun!`)
-    await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-    await sendPage(Trx, query.from.id, 0)
+    await openRiwayat(query)
   }
   
   // Handler untuk filter riwayat transaksi

@@ -5501,6 +5501,114 @@ app.post('/settings/bot-copy/:key', isAuthenticated, async (req, res) => {
 })
 
 // ============================================
+// BOT FLOW SETTINGS
+// ============================================
+
+const FLOW_ACTIONS = [
+  'product_list', 'product_card', 'kategori_menu', 'stok', 'riwayat', 'deposit_menu', 'noop',
+]
+
+function parseButtonsField(raw) {
+  const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+  if (!Array.isArray(parsed)) throw new Error('buttons must be a JSON array of rows')
+  for (const row of parsed) {
+    if (!Array.isArray(row)) throw new Error('each buttons row must be an array')
+    for (const btn of row) {
+      const modes = [btn.go, btn.callback, btn.url_from, btn.url].filter((x) => x !== undefined && x !== null && x !== '')
+      if (modes.length !== 1) throw new Error('each button needs exactly one of go|callback|url_from|url')
+    }
+  }
+  return parsed
+}
+
+app.get('/settings/bot-flow', isAuthenticated, async (req, res) => {
+  try {
+    const { data: flow } = await supabase
+      .from('BotFlow')
+      .select('*')
+      .eq('is_active', true)
+      .maybeSingle()
+    const { data: nodes } = flow
+      ? await supabase.from('BotFlowNode').select('*').eq('flow_id', flow.id).order('key')
+      : { data: [] }
+    const { data: flag } = await supabase
+      .from('NotificationSettings')
+      .select('setting_value')
+      .eq('setting_key', 'flow_engine_enabled')
+      .maybeSingle()
+    const enabledDb = !!(flag?.setting_value && flag.setting_value.value === true)
+    res.render('settings-bot-flow', {
+      title: `Bot Flow - ${NamaBot}`,
+      namaBot: NamaBot,
+      username: req.session.username,
+      currentPage: 'settings-bot-flow',
+      pageTitle: '🔀 Bot Flow',
+      flow,
+      nodes: nodes || [],
+      enabled: enabledDb,
+      actions: FLOW_ACTIONS,
+      req,
+      success: req.query.success || '',
+      error: req.query.error || '',
+    })
+  } catch (e) {
+    console.error(e)
+    res.status(500).send(e.message)
+  }
+})
+
+app.post('/settings/bot-flow/toggle', isAuthenticated, async (req, res) => {
+  try {
+    const enabled = req.body.enabled === 'true' || req.body.enabled === true || req.body.enabled === 'on'
+    const { error } = await supabase.from('NotificationSettings').upsert({
+      setting_key: 'flow_engine_enabled',
+      setting_value: { value: !!enabled },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'setting_key' })
+    if (error) throw error
+    await runtimeSettings.bump()
+    res.redirect('/settings/bot-flow?success=toggle')
+  } catch (e) {
+    console.error(e)
+    res.redirect('/settings/bot-flow?error=' + encodeURIComponent(e.message))
+  }
+})
+
+app.post('/settings/bot-flow/nodes/:key', isAuthenticated, async (req, res) => {
+  try {
+    const key = req.params.key
+    const { data: flow } = await supabase.from('BotFlow').select('id').eq('is_active', true).maybeSingle()
+    if (!flow) throw new Error('No active flow')
+    const kind = String(req.body.kind || '')
+    if (kind !== 'screen' && kind !== 'action') throw new Error('kind must be screen|action')
+    const buttons = parseButtonsField(req.body.buttons || '[]')
+    const patch = {
+      kind,
+      screen_key: kind === 'screen' ? String(req.body.screen_key || '') : null,
+      action: kind === 'action' ? String(req.body.action || '') : null,
+      buttons,
+      description: String(req.body.description || ''),
+      updated_at: new Date().toISOString(),
+    }
+    if (kind === 'action' && !FLOW_ACTIONS.includes(patch.action)) {
+      throw new Error('action not in allowlist')
+    }
+    if (kind === 'screen' && !patch.screen_key) throw new Error('screen_key required')
+    const { error } = await supabase
+      .from('BotFlowNode')
+      .update(patch)
+      .eq('flow_id', flow.id)
+      .eq('key', key)
+    if (error) throw error
+    await runtimeSettings.bump()
+    res.redirect('/settings/bot-flow?success=1')
+  } catch (e) {
+    console.error(e)
+    res.redirect('/settings/bot-flow?error=' + encodeURIComponent(e.message))
+  }
+})
+
+// ============================================
 // PAYMENT GATEWAY SETTINGS
 // ============================================
 
