@@ -122,6 +122,42 @@ body {
     letter-spacing: 1px;
 }
 
+.nav-group-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 12px 8px 8px 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--color-muted);
+    font-weight: 600;
+    letter-spacing: 1px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+}
+
+.nav-group-toggle::after {
+    content: '▸';
+    font-size: 10px;
+    transition: transform 0.2s;
+}
+
+.nav-group.open .nav-group-toggle::after {
+    transform: rotate(90deg);
+}
+
+.nav-group-items {
+    display: none;
+}
+
+.nav-group.open .nav-group-items {
+    display: block;
+}
+
 .nav-item {
     display: flex;
     align-items: center;

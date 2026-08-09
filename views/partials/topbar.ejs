@@ -1,0 +1,17 @@
+<div class="top-bar">
+  <div class="top-bar-left">
+    <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+    <h1 class="page-title"><%= typeof pageTitle !== 'undefined' ? pageTitle : title %></h1>
+  </div>
+  <div class="top-bar-right">
+    <% if (typeof topbarExtra !== 'undefined') { %><%- topbarExtra %><% } %>
+    <div class="user-info">
+      <span><%= username || 'Admin' %></span>
+      <% if (req.session && req.session.role) { %>
+        <span class="user-badge"><%= req.session.role %></span>
+      <% } %>
+    </div>
+    <a href="/admin/change-password" class="btn-top">Password</a>
+    <a href="/logout" class="btn-top btn-logout">Logout</a>
+  </div>
+</div>

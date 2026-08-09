@@ -1,118 +1,73 @@
-<!-- Sidebar Navigation -->
 <nav class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-        <h2>📊 <%= typeof namaBot !== 'undefined' ? namaBot : 'Dashboard' %></h2>
-        <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
-    </div>
-    
-    <div class="nav-group">
-        <div class="nav-group-title">Main</div>
-        <a href="/" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'dashboard' ? 'active' : '' %>">
-            <span class="nav-item-icon">📊</span>
-            <span>Dashboard</span>
-        </a>
-    </div>
-    
-    <div class="nav-group">
-        <div class="nav-group-title">Products</div>
-        <a href="/produk" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'produk' ? 'active' : '' %>">
-            <span class="nav-item-icon">📦</span>
-            <span>Produk</span>
-        </a>
-        <a href="/voucher" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'voucher' ? 'active' : '' %>">
-            <span class="nav-item-icon">🎫</span>
-            <span>Voucher</span>
-        </a>
-    </div>
-    
-    <div class="nav-group">
-        <div class="nav-group-title">Transactions</div>
-        <a href="/transaksi" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'transaksi' ? 'active' : '' %>">
-            <span class="nav-item-icon">🛍️</span>
-            <span>Transaksi</span>
-        </a>
-        <a href="/deposit" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'deposit' ? 'active' : '' %>">
-            <span class="nav-item-icon">💵</span>
-            <span>Deposit</span>
-        </a>
-        <a href="/user" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'user' ? 'active' : '' %>">
-            <span class="nav-item-icon">👥</span>
-            <span>User</span>
-        </a>
-    </div>
-    
-    <div class="nav-group">
-        <div class="nav-group-title">Tools</div>
-        <a href="/bulk" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'bulk' ? 'active' : '' %>">
-            <span class="nav-item-icon">⚡</span>
-            <span>Bulk Operations</span>
-        </a>
-        <a href="/communication/broadcast" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'communication' ? 'active' : '' %>">
-            <span class="nav-item-icon">📢</span>
-            <span>Communication</span>
-        </a>
-    </div>
-    
-    <div class="nav-group">
-        <div class="nav-group-title">Reports</div>
-        <a href="/analitik" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'analitik' ? 'active' : '' %>">
-            <span class="nav-item-icon">📈</span>
-            <span>Analytics</span>
-        </a>
-        <a href="/laporan" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'laporan' ? 'active' : '' %>">
-            <span class="nav-item-icon">📄</span>
-            <span>Reports</span>
-        </a>
-    </div>
-    
-    <div class="nav-group">
-        <div class="nav-group-title">Settings</div>
-        <a href="/settings/general" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'settings-general' ? 'active' : '' %>">
-            <span class="nav-item-icon">⚙️</span>
-            <span>General Settings</span>
-        </a>
-        <a href="/settings/channel-contact" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'settings-channel-contact' ? 'active' : '' %>">
-            <span class="nav-item-icon">📢</span>
-            <span>Channel & Contact</span>
-        </a>
-        <a href="/settings/bot-copy" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'settings-bot-copy' ? 'active' : '' %>">
-            <span class="nav-item-icon">📝</span>
-            <span>Bot Copy</span>
-        </a>
-        <a href="/settings/bot-flow" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'settings-bot-flow' ? 'active' : '' %>">
-            <span class="nav-item-icon">🔀</span>
-            <span>Bot Flow</span>
-        </a>
-        <a href="/settings/payment-gateway" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'settings-payment-gateway' ? 'active' : '' %>">
-            <span class="nav-item-icon">💳</span>
-            <span>Payment Gateway</span>
-        </a>
-        <a href="/settings/supabase" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'settings-supabase' ? 'active' : '' %>">
-            <span class="nav-item-icon">🗄️</span>
-            <span>Supabase Database</span>
-        </a>
-        <a href="/settings/notifications" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'settings-notifications' ? 'active' : '' %>">
-            <span class="nav-item-icon">🔔</span>
-            <span>Notifications</span>
-        </a>
-    </div>
-    
-    <% if (typeof req !== 'undefined' && req.session && req.session.role === 'admin') { %>
-    <div class="nav-group">
-        <div class="nav-group-title">Admin</div>
-        <a href="/admin/users" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'admin-users' ? 'active' : '' %>">
-            <span class="nav-item-icon">👤</span>
-            <span>Admin Users</span>
-        </a>
-        <a href="/admin/login-history" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'admin-login' ? 'active' : '' %>">
-            <span class="nav-item-icon">🔐</span>
-            <span>Login History</span>
-        </a>
-        <a href="/admin/audit-log" class="nav-item <%= typeof currentPage !== 'undefined' && currentPage === 'admin-audit' ? 'active' : '' %>">
-            <span class="nav-item-icon">📋</span>
-            <span>Audit Log</span>
-        </a>
-    </div>
-    <% } %>
-</nav>
+  <div class="sidebar-header">
+    <h2><%= typeof namaBot !== 'undefined' ? namaBot : 'Dashboard' %></h2>
+    <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+  </div>
 
+  <div class="nav-group" data-section="overview">
+    <button type="button" class="nav-group-toggle">Overview</button>
+    <div class="nav-group-items">
+      <a href="/" class="nav-item <%= currentPage === 'dashboard' ? 'active' : '' %>">Home</a>
+    </div>
+  </div>
+
+  <div class="nav-group" data-section="catalog">
+    <button type="button" class="nav-group-toggle">Catalog</button>
+    <div class="nav-group-items">
+      <a href="/produk" class="nav-item <%= currentPage === 'produk' ? 'active' : '' %>">Products</a>
+      <a href="/stok" class="nav-item <%= currentPage === 'stok' ? 'active' : '' %>">Stock</a>
+      <a href="/pricing" class="nav-item <%= currentPage === 'pricing' ? 'active' : '' %>">Pricing</a>
+      <a href="/bulk" class="nav-item <%= currentPage === 'bulk' ? 'active' : '' %>">Bulk Import</a>
+    </div>
+  </div>
+
+  <div class="nav-group" data-section="bot">
+    <button type="button" class="nav-group-toggle">Bot</button>
+    <div class="nav-group-items">
+      <a href="/settings/bot-flow" class="nav-item <%= currentPage === 'settings-bot-flow' ? 'active' : '' %>">Flow Builder</a>
+      <a href="/settings/bot-copy" class="nav-item <%= currentPage === 'settings-bot-copy' ? 'active' : '' %>">Copy &amp; Text</a>
+      <a href="/communication/broadcast" class="nav-item <%= currentPage === 'communication' ? 'active' : '' %>">Broadcast</a>
+      <a href="/communication/templates" class="nav-item <%= currentPage === 'communication' ? 'active' : '' %>">Templates</a>
+    </div>
+  </div>
+
+  <div class="nav-group" data-section="customers">
+    <button type="button" class="nav-group-toggle">Customers</button>
+    <div class="nav-group-items">
+      <a href="/user" class="nav-item <%= currentPage === 'user' ? 'active' : '' %>">Users</a>
+      <a href="/deposit" class="nav-item <%= currentPage === 'deposit' ? 'active' : '' %>">Deposits</a>
+      <a href="/transaksi" class="nav-item <%= currentPage === 'transaksi' ? 'active' : '' %>">Transactions</a>
+      <a href="/voucher" class="nav-item <%= currentPage === 'voucher' ? 'active' : '' %>">Vouchers</a>
+    </div>
+  </div>
+
+  <div class="nav-group" data-section="insights">
+    <button type="button" class="nav-group-toggle">Insights</button>
+    <div class="nav-group-items">
+      <a href="/analitik" class="nav-item <%= currentPage === 'analitik' ? 'active' : '' %>">Analytics</a>
+      <a href="/laporan" class="nav-item <%= currentPage === 'laporan' ? 'active' : '' %>">Reports</a>
+    </div>
+  </div>
+
+  <div class="nav-group" data-section="system">
+    <button type="button" class="nav-group-toggle">System</button>
+    <div class="nav-group-items">
+      <a href="/settings/general" class="nav-item <%= currentPage === 'settings-general' ? 'active' : '' %>">General</a>
+      <a href="/settings/channel-contact" class="nav-item <%= currentPage === 'settings-channel-contact' ? 'active' : '' %>">Channel &amp; Contact</a>
+      <a href="/settings/payment-gateway" class="nav-item <%= currentPage === 'settings-payment-gateway' ? 'active' : '' %>">Payment Gateway</a>
+      <a href="/settings/supabase" class="nav-item <%= currentPage === 'settings-supabase' ? 'active' : '' %>">Supabase</a>
+      <a href="/settings/notifications" class="nav-item <%= currentPage === 'settings-notifications' ? 'active' : '' %>">Notifications</a>
+    </div>
+  </div>
+
+  <% if (typeof req !== 'undefined' && req.session && req.session.role === 'admin') { %>
+  <div class="nav-group" data-section="admin">
+    <button type="button" class="nav-group-toggle">Admin</button>
+    <div class="nav-group-items">
+      <a href="/admin/users" class="nav-item <%= currentPage === 'admin-users' ? 'active' : '' %>">Admin Users</a>
+      <a href="/admin/login-history" class="nav-item <%= currentPage === 'admin-login' ? 'active' : '' %>">Login History</a>
+      <a href="/admin/audit-log" class="nav-item <%= currentPage === 'admin-audit' ? 'active' : '' %>">Audit Log</a>
+    </div>
+  </div>
+  <% } %>
+</nav>
