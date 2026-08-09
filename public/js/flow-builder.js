@@ -53,11 +53,6 @@
     return 'go'
   }
 
-  function buttonModeCount(btn) {
-    return [btn.go, btn.callback, btn.url_from, btn.url]
-      .filter((v) => v !== undefined && v !== null && String(v) !== '').length
-  }
-
   function goFlatIndices(node) {
     const indices = []
     let flat = 0
@@ -74,21 +69,51 @@
     return goFlatIndices(node).length
   }
 
+  function displayLabel(btn) {
+    return btn.label || btn.label_key || 'Button'
+  }
+
   function nodePreviewText(node) {
-    if (node.kind === 'action') return 'action: ' + (node.action || '')
+    if (node.kind === 'action') {
+      return 'Runs: ' + (node.action || '—') + '\n\nOpens this step in the live bot catalog / tools.'
+    }
     const body = node.body || ''
-    if (body.length <= 80) return body
-    return body.slice(0, 80) + '…'
+    if (body.length <= 160) return body
+    return body.slice(0, 160) + '…'
   }
 
   function nodeHtml(node) {
-    const cls = node.kind === 'screen' ? 'flow-node-screen' : 'flow-node-action'
-    return (
-      '<div class="flow-node-inner ' + cls + '">' +
-      '<div class="flow-node-header">' + escapeHtml(node.key) + '</div>' +
-      '<div class="flow-node-body">' + escapeHtml(nodePreviewText(node)) + '</div>' +
-      '</div>'
-    )
+    const kindClass = node.kind === 'screen' ? 'screen' : 'action'
+    const kindLabel = node.kind === 'screen' ? 'Message' : 'Action'
+    let html = '<div class="sp-card ' + kindClass + '" data-node-key="' + escapeHtml(node.key) + '">'
+    html += '<div class="sp-card-header"><span>' + kindLabel + '</span><span class="sp-card-key">' + escapeHtml(node.key) + '</span></div>'
+    html += '<div class="sp-card-body">' + escapeHtml(nodePreviewText(node)) + '</div>'
+
+    const goBtns = flattenButtons(node.buttons).filter((b) => buttonMode(b) === 'go')
+    if (goBtns.length) {
+      html += '<div class="sp-card-buttons">'
+      goBtns.slice(0, 8).forEach((btn) => {
+        html += '<div class="sp-card-btn"><span>' + escapeHtml(displayLabel(btn)) + '</span><span class="sp-port-hint"></span></div>'
+      })
+      if (goBtns.length > 8) {
+        html += '<div class="sp-card-btn"><span>+' + (goBtns.length - 8) + ' more…</span></div>'
+      }
+      html += '</div>'
+    } else if (node.kind === 'screen') {
+      html += '<div class="sp-card-meta">No go-wires — use panel to edit callbacks / links</div>'
+    }
+
+    html += '</div>'
+    return html
+  }
+
+  function refreshNodeDom(id, node) {
+    const el = document.getElementById('node-' + id)
+    if (!el) return
+    const content = el.querySelector('.drawflow_content_node')
+    if (content) content.innerHTML = nodeHtml(node)
+    const data = editor.drawflow.drawflow[editor.module].data[id]
+    if (data) data.html = nodeHtml(node)
   }
 
   function applyWire(draft, fromKey, buttonFlatIndex, toKey) {
@@ -145,8 +170,32 @@
     }
   }
 
+  function resolveNodeId(raw) {
+    if (raw == null) return null
+    const n = Number(raw)
+    if (idToKey.has(n)) return n
+    if (idToKey.has(raw)) return raw
+    const asStr = String(raw)
+    for (const [id] of idToKey) {
+      if (String(id) === asStr) return id
+    }
+    return null
+  }
+
+  function selectNodeByKey(key) {
+    if (!key || !state.draft) return
+    state.selectedKey = key
+    renderPanel()
+    const id = keyToId.get(key)
+    if (id == null || !editor) return
+    document.querySelectorAll('.drawflow-node.selected').forEach((n) => n.classList.remove('selected'))
+    const el = document.getElementById('node-' + id)
+    if (el) el.classList.add('selected')
+  }
+
   function renderCanvas() {
     if (!editor || !state.draft) return
+    const keepKey = state.selectedKey
     editor.clear()
     keyToId.clear()
     idToKey.clear()
@@ -154,19 +203,20 @@
 
     for (const node of state.draft.nodes) {
       const inputs = 1
-      const outputs = countGoOutputs(node)
+      const outputs = Math.max(countGoOutputs(node), node.kind === 'action' ? 0 : 0)
       const id = editor.addNode(
         node.key,
         inputs,
         outputs,
-        Number(node.pos_x) || 0,
-        Number(node.pos_y) || 0,
+        Number(node.pos_x) || 40,
+        Number(node.pos_y) || 40,
         node.kind === 'screen' ? 'flow-node-screen' : 'flow-node-action',
         { key: node.key },
         nodeHtml(node)
       )
       keyToId.set(node.key, id)
       idToKey.set(id, node.key)
+      idToKey.set(String(id), node.key)
       goOutputFlatIndices.set(node.key, goFlatIndices(node))
     }
 
@@ -180,11 +230,19 @@
         if (btn && btn.go) {
           const toId = keyToId.get(btn.go)
           if (toId) {
-            editor.addConnection(fromId, toId, 'output_' + outNum, 'input_1')
+            try {
+              editor.addConnection(fromId, toId, 'output_' + outNum, 'input_1')
+            } catch (e) {
+              /* ignore duplicate */
+            }
           }
         }
         outNum++
       }
+    }
+
+    if (keepKey && keyToId.has(keepKey)) {
+      selectNodeByKey(keepKey)
     }
   }
 
@@ -197,52 +255,67 @@
     if (!panel) return
     const key = state.selectedKey
     if (!key) {
-      panel.innerHTML = '<p class="muted flow-panel-empty">Select a node on the canvas</p>'
+      panel.innerHTML =
+        '<div class="flow-panel-empty">' +
+        '<strong>Edit panel</strong>' +
+        'Click a <em>Message</em> or <em>Action</em> card on the canvas to edit its text and buttons here.' +
+        '</div>'
       return
     }
     const node = getNode(key)
     if (!node) {
-      panel.innerHTML = '<p class="muted flow-panel-empty">Node not found</p>'
+      panel.innerHTML = '<div class="flow-panel-empty">Node not found</div>'
       return
     }
 
-    let html = '<h3>' + escapeHtml(node.key) + '</h3>'
-    html += '<div class="field"><label>Kind</label><input type="text" class="readonly" readonly value="' + escapeHtml(node.kind) + '"></div>'
+    const kindClass = node.kind === 'action' ? 'action' : ''
+    const kindLabel = node.kind === 'screen' ? 'Message' : 'Action'
+
+    let html = '<div class="flow-panel-head">'
+    html += '<div class="sp-kind ' + kindClass + '">' + kindLabel + '</div>'
+    html += '<h2>' + escapeHtml(node.key) + '</h2>'
+    html += '</div><div class="flow-panel-body">'
 
     if (node.kind === 'screen') {
-      html += '<div class="field"><label>screen_key</label><input type="text" class="readonly" readonly value="' + escapeHtml(node.screen_key || '') + '"></div>'
-      html += '<div class="field"><label>Message body</label><textarea id="panelBody">' + escapeHtml(node.body || '') + '</textarea></div>'
+      html += '<div class="field"><label>Message text</label>'
+      html += '<textarea id="panelBody" placeholder="Message shown in Telegram…">' + escapeHtml(node.body || '') + '</textarea></div>'
+      html += '<p class="flow-panel-hint">Use {{first_name}}, {{nama_bot}}, {{saldo}}, etc. Publish writes this to BotCopy.</p>'
+      html += '<div class="field"><label>Copy key</label><input type="text" class="readonly" readonly value="' + escapeHtml(node.screen_key || '') + '"></div>'
     } else {
       html += '<div class="field"><label>Action</label><input type="text" class="readonly" readonly value="' + escapeHtml(node.action || '') + '"></div>'
+      html += '<p class="flow-panel-hint">Action nodes open live catalog tools. Preview them with the Preview button. Kind cannot be changed here.</p>'
     }
 
     html += '<div class="field"><label>Description</label><input type="text" id="panelDescription" value="' + escapeHtml(node.description || '') + '"></div>'
 
     html += '<div class="field"><label>Buttons</label>'
-    html += '<table class="flow-buttons-table"><thead><tr><th>Label</th><th>Mode</th><th>Target</th></tr></thead><tbody id="panelButtonsBody">'
+    html += '<div class="sp-btn-list" id="panelButtonsBody">'
 
     const flat = flattenButtons(node.buttons)
     flat.forEach((btn, idx) => {
       const mode = buttonMode(btn)
-      html += '<tr data-flat-index="' + idx + '">'
-      html += '<td><input type="text" class="btn-label" value="' + escapeHtml(btn.label || btn.label_key || '') + '"></td>'
-      html += '<td><select class="btn-mode">'
+      const target = btn.go || btn.callback || btn.url_from || btn.url || ''
+      html += '<div class="sp-btn-row" data-flat-index="' + idx + '">'
+      html += '<div class="sp-btn-grid">'
+      html += '<input type="text" class="btn-label" placeholder="Label" value="' + escapeHtml(btn.label || btn.label_key || '') + '">'
+      html += '<select class="btn-mode">'
       ;['go', 'callback', 'url_from', 'url'].forEach((m) => {
         html += '<option value="' + m + '"' + (mode === m ? ' selected' : '') + '>' + m + '</option>'
       })
-      html += '</select></td>'
-      const target = btn.go || btn.callback || btn.url_from || btn.url || ''
-      html += '<td><input type="text" class="btn-target" value="' + escapeHtml(target) + '"></td>'
-      html += '</tr>'
+      html += '</select>'
+      html += '<input type="text" class="btn-target sp-btn-target" placeholder="Target (node key / callback / url)" value="' + escapeHtml(target) + '">'
+      html += '</div></div>'
     })
 
-    html += '</tbody></table>'
-    html += '<p class="muted" style="font-size:11px;margin:0 0 8px;">Draw wires on canvas for <code>go</code> targets. Save draft validates all buttons.</p>'
-    html += '<button type="button" id="panelApply" class="btn btn-primary">Apply to canvas</button>'
+    html += '</div>'
+    html += '<p class="flow-panel-hint">For <code>go</code> buttons: set the target node key here, or drag a wire from the card’s output ports. Then click Apply.</p>'
+    html += '</div>'
+
+    html += '<div class="flow-panel-footer">'
+    html += '<button type="button" id="panelApply" class="btn-apply">Apply</button>'
     html += '</div>'
 
     panel.innerHTML = html
-
     document.getElementById('panelApply').addEventListener('click', applyPanelToDraft)
   }
 
@@ -259,9 +332,9 @@
       if (bodyEl) node.body = bodyEl.value
     }
 
-    const tbody = document.getElementById('panelButtonsBody')
-    if (tbody) {
-      const rows = tbody.querySelectorAll('tr')
+    const list = document.getElementById('panelButtonsBody')
+    if (list) {
+      const rows = list.querySelectorAll('.sp-btn-row')
       const flat = flattenButtons(node.buttons)
       rows.forEach((row) => {
         const idx = Number(row.getAttribute('data-flat-index'))
@@ -271,7 +344,8 @@
         const prev = flat[idx] || {}
         const btn = {}
         if (label) {
-          if (prev.label_key && !prev.label) btn.label_key = label
+          if (prev.label_key && label === prev.label_key) btn.label_key = label
+          else if (prev.label_key && !prev.label && label.startsWith('msg.')) btn.label_key = label
           else btn.label = label
         }
         if (mode === 'go') btn.go = target
@@ -294,36 +368,41 @@
       node.buttons = rebuilt
     }
 
-    const id = keyToId.get(key)
-    if (id != null) {
-      const info = editor.getNodeFromId(id)
-      const outputs = countGoOutputs(node)
-      const prevOutputs = (goOutputFlatIndices.get(key) || []).length
-      if (outputs !== prevOutputs) {
-        renderCanvas()
-      } else {
-        editor.updateNodeDataFromId(id, { key: node.key })
-        const content = editor.drawflow.drawflow[editor.module].data[id]
-        if (content) content.html = nodeHtml(node)
-        editor.updateConnectionNodes(id)
-      }
-    } else {
+    const outputs = countGoOutputs(node)
+    const prevOutputs = (goOutputFlatIndices.get(key) || []).length
+    if (outputs !== prevOutputs) {
       renderCanvas()
+    } else {
+      const id = keyToId.get(key)
+      if (id != null) {
+        editor.updateNodeDataFromId(id, { key: node.key })
+        refreshNodeDom(id, node)
+        editor.updateConnectionNodes('node-' + id)
+      } else {
+        renderCanvas()
+      }
     }
 
-    setStatus('Panel changes applied locally. Save draft to persist.', 'ok')
+    selectNodeByKey(key)
+    setStatus('Applied to canvas — click Save draft to persist', 'ok')
   }
 
   function bindEditorEvents() {
     editor.on('nodeSelected', function (id) {
-      state.selectedKey = idToKey.get(id) || null
-      renderPanel()
+      const resolved = resolveNodeId(id)
+      const key = resolved != null ? idToKey.get(resolved) : null
+      if (key) selectNodeByKey(key)
+    })
+
+    editor.on('nodeUnselected', function () {
+      /* keep last selection so panel stays useful while dragging wires */
     })
 
     editor.on('nodeMoved', function (id) {
-      const key = idToKey.get(id)
+      const resolved = resolveNodeId(id)
+      const key = resolved != null ? idToKey.get(resolved) : null
       const node = getNode(key)
-      const info = editor.getNodeFromId(id)
+      const info = editor.getNodeFromId(resolved)
       if (node && info) {
         node.pos_x = info.pos_x
         node.pos_y = info.pos_y
@@ -331,8 +410,8 @@
     })
 
     editor.on('connectionCreated', function (info) {
-      const fromKey = idToKey.get(info.output_id)
-      const toKey = idToKey.get(info.input_id)
+      const fromKey = idToKey.get(resolveNodeId(info.output_id)) || idToKey.get(info.output_id)
+      const toKey = idToKey.get(resolveNodeId(info.input_id)) || idToKey.get(info.input_id)
       if (!fromKey || !toKey) return
       const outNum = parseInt(String(info.output_class).replace('output_', ''), 10)
       const flatList = goOutputFlatIndices.get(fromKey) || []
@@ -340,11 +419,11 @@
       if (flatIdx === undefined) return
       state.draft = applyWire(state.draft, fromKey, flatIdx, toKey)
       if (state.selectedKey === fromKey) renderPanel()
-      setStatus('Wire: ' + fromKey + ' → ' + toKey, 'ok')
+      setStatus('Connected ' + fromKey + ' → ' + toKey, 'ok')
     })
 
     editor.on('connectionRemoved', function (info) {
-      const fromKey = idToKey.get(info.output_id)
+      const fromKey = idToKey.get(resolveNodeId(info.output_id)) || idToKey.get(info.output_id)
       if (!fromKey) return
       const outNum = parseInt(String(info.output_class).replace('output_', ''), 10)
       const flatList = goOutputFlatIndices.get(fromKey) || []
@@ -353,6 +432,18 @@
       state.draft = clearWire(state.draft, fromKey, flatIdx)
       if (state.selectedKey === fromKey) renderPanel()
       setStatus('Wire removed from ' + fromKey, 'ok')
+    })
+
+    // Fallback: clicking card content always opens the inspector
+    const container = document.getElementById('drawflow')
+    container.addEventListener('click', function (ev) {
+      const card = ev.target.closest('.sp-card, .drawflow-node')
+      if (!card) return
+      const nodeEl = card.classList.contains('drawflow-node') ? card : card.closest('.drawflow-node')
+      if (!nodeEl || !nodeEl.id) return
+      const id = resolveNodeId(nodeEl.id.replace(/^node-/, ''))
+      const key = id != null ? idToKey.get(id) : null
+      if (key) selectNodeByKey(key)
     })
   }
 
@@ -396,7 +487,6 @@
   }
 
   function formatCaptionHtml(caption) {
-    // Light Markdown-ish: *bold*, _italic~, strip remaining markers for readability
     let s = escapeHtml(caption || '')
     s = s.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
     s = s.replace(/_([^_\n]+)_/g, '<em>$1</em>')
@@ -420,7 +510,6 @@
           return
         }
         if (btn.preview.type === 'action' && btn.preview.action) {
-          // Map legacy daftarproduk → product_list node
           const key = btn.preview.action === 'product_list' ? 'product_list' : btn.preview.action
           previewStep({ nodeKey: key })
           return
@@ -483,9 +572,7 @@
       return
     }
     const title = document.getElementById('previewTitle')
-    if (title) {
-      title.textContent = data.key || data.action || 'Preview'
-    }
+    if (title) title.textContent = data.key || data.action || 'Preview'
     const cap = document.getElementById('previewCaption')
     if (cap) cap.innerHTML = formatCaptionHtml(data.caption || '')
     buildPreviewKeyboard(data.buttons || [])
@@ -556,25 +643,30 @@
 
     const meta = document.getElementById('flowMeta')
     if (meta && data.flow) {
-      meta.textContent = 'Active flow: ' + data.flow.name + ' — entry: ' + (data.flow.entry_key || 'welcome') +
-        (data.flow.draft_updated_at ? ' — draft saved ' + new Date(data.flow.draft_updated_at).toLocaleString() : '')
+      meta.textContent = 'Flow: ' + data.flow.name + ' · entry ' + (data.flow.entry_key || 'welcome') +
+        (data.flow.draft_updated_at ? ' · draft ' + new Date(data.flow.draft_updated_at).toLocaleString() : '')
     } else if (meta) {
       meta.textContent = 'No active flow configured.'
     }
 
     if (!state.draft || !state.draft.nodes || !state.draft.nodes.length) {
       setStatus('No flow nodes to display', 'err')
+      renderPanel()
       return
     }
 
     const container = document.getElementById('drawflow')
     editor = new Drawflow(container)
     editor.reroute = true
+    editor.editor_mode = 'edit'
     editor.start()
     bindEditorEvents()
     renderCanvas()
     bindToolbar()
-    setStatus('Ready — edit nodes and Save draft', 'ok')
+
+    const entry = state.draft.entry_key || 'welcome'
+    selectNodeByKey(keyToId.has(entry) ? entry : state.draft.nodes[0].key)
+    setStatus('Click a card to edit · Apply · Save draft · Preview', 'ok')
   }
 
   document.addEventListener('DOMContentLoaded', loadGraph)
