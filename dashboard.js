@@ -64,6 +64,7 @@ if (!sessionSecret && process.env.NODE_ENV === 'production') {
   console.error('FATAL: SESSION_SECRET is required in production')
   process.exit(1)
 }
+app.set('trust proxy', 1)
 app.use(session({
   secret: sessionSecret || 'dev-only-change-me',
   resave: false,
