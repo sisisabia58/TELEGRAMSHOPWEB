@@ -1,14 +1,16 @@
 require('dotenv').config()
 const express = require('express')
-const { createClient } = require('@supabase/supabase-js')
-const { SUPABASE_URL, SUPABASE_KEY, NamaBot } = require('./settings.js')
+const { NamaBot } = require('./settings.js')
 const path = require('path')
 const moment = require('moment-timezone')
 const fs = require('fs')
 const pakasir = require('./pakasir.js')
+const supabase = require('./lib/supabase')
+const runtimeSettings = require('./lib/runtime-settings')
+const stock = require('./lib/stock')
+const { formatrupiah, formatTanggal } = require('./lib/format')
 
 const app = express()
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 // Set view engine
 app.set('view engine', 'ejs')
@@ -75,39 +77,16 @@ const redirectIfAuthenticated = (req, res, next) => {
   next()
 }
 
-// Helper function untuk format rupiah
-function formatrupiah(nominal) {
-  return new Intl.NumberFormat('id', {
-    style: 'currency',
-    currency: 'IDR',
-    maximumFractionDigits: 0
-  }).format(nominal)
-}
+// formatrupiah / formatTanggal -> lib/format.js (di-require di bagian atas file)
 
-// Format tanggal
-function formatTanggal(date) {
-  return moment.tz(date, 'Asia/Jakarta').format('DD MMMM YYYY, HH:mm')
-}
-
-// Helper: Get stock count from Stok table
-async function getStokCount(produkId) {
-  try {
-    const { count, error } = await supabase
-      .from('Stok')
-      .select('*', { count: 'exact', head: true })
-      .eq('produk_id', produkId)
-      .eq('status', 'tersedia')
-    
-    if (error) {
-      console.error('Error getStokCount:', error)
-      return 0
-    }
-    return count || 0
-  } catch (error) {
-    console.error('Error getStokCount:', error)
-    return 0
-  }
-}
+// Hitung stok dari tabel Stok.
+//
+// Di dashboard, produk selalu diacu lewat id (parameter route :id), jadi
+// hitungannya berdasarkan produk_id. Perhatikan bahwa bot menghitung
+// berdasarkan produk_kode. Dulu KEDUA fungsi ini bernama getStokCount dengan
+// parameter berbeda, sehingga salah panggil tidak error, hanya menghasilkan 0.
+// Sekarang keduanya ada di lib/stock.js dengan nama yang menyebut kuncinya.
+const getStokCount = stock.getStokCountByProdukId
 
 // Helper: Send Telegram message to Feed Channel
 async function sendFeedMessage(text, type = 'stock') {
@@ -1022,6 +1001,7 @@ app.post('/produk/tambah', isAuthenticated, async (req, res) => {
         deskripsi: deskripsi.trim(),
         snk: snk.trim(),
         format: format ? format.trim() : null,
+        kategori: req.body.kategori ? req.body.kategori.trim().toLowerCase() : 'umum',
         grup: req.body.grup ? req.body.grup.trim() : null,
         data: [],
         terjual: 0
@@ -1165,6 +1145,7 @@ app.post('/produk/edit/:id', isAuthenticated, async (req, res) => {
         deskripsi: deskripsi.trim(),
         snk: snk.trim(),
         format: format ? format.trim() : null,
+        kategori: req.body.kategori ? req.body.kategori.trim().toLowerCase() : 'umum',
         grup: req.body.grup ? req.body.grup.trim() : null
       })
       .eq('id', id)
@@ -5125,6 +5106,9 @@ app.post('/api/settings/notifications', isAuthenticated, async (req, res) => {
     }
     
     // Log activity
+    // Beri tahu proses bot supaya memuat ulang cache pengaturannya.
+    await runtimeSettings.bump()
+
     await logActivity(req, 'update_notification_settings', 'NotificationSettings', null, {
       updates: updates.map(u => u.setting_key)
     })
@@ -5341,6 +5325,9 @@ app.post('/api/settings/general', isAuthenticated, async (req, res) => {
       }
     }
     
+    // Beri tahu proses bot supaya memuat ulang cache pengaturannya.
+    await runtimeSettings.bump()
+
     await logActivity(req, 'update_general_settings', 'Settings', 'general')
     
     res.json({ success: true, message: 'General settings berhasil disimpan!' })
@@ -5400,6 +5387,10 @@ app.post('/api/settings/channel-contact', isAuthenticated, async (req, res) => {
       }
     }
     
+    // Beri tahu proses bot supaya memuat ulang cache pengaturannya. Tanpa ini,
+    // perubahan channel/CS tidak akan terpakai sampai bot di-restart.
+    await runtimeSettings.bump()
+
     await logActivity(req, 'update_channel_contact_settings', 'Settings', 'channel-contact')
     res.json({ success: true, message: 'Channel & Contact berhasil disimpan!' })
   } catch (error) {
@@ -5506,6 +5497,9 @@ app.post('/api/settings/payment-gateway', isAuthenticated, async (req, res) => {
       }
     }
     
+    // Beri tahu proses bot supaya memuat ulang cache pengaturannya.
+    await runtimeSettings.bump()
+
     await logActivity(req, 'update_payment_gateway_settings', 'Settings', 'payment-gateway')
     
     res.json({ success: true, message: 'Payment gateway settings berhasil disimpan!' })
@@ -5613,6 +5607,9 @@ app.post('/api/settings/supabase', isAuthenticated, async (req, res) => {
       }
     }
     
+    // Beri tahu proses bot supaya memuat ulang cache pengaturannya.
+    await runtimeSettings.bump()
+
     await logActivity(req, 'update_supabase_settings', 'Settings', 'supabase-database')
     
     res.json({ success: true, message: 'Supabase database settings berhasil disimpan!' })

@@ -13,38 +13,43 @@ process.emitWarning = function(warning, ...args) {
 // Disable deprecation warning for Buffer filename
 process.env.NTBA_FIX_350 = '1'
 
-const { createClient } = require('@supabase/supabase-js')
-const { TokenBot, NamaBot, OwnerID, ImagePath, Pakasir, ChannelLog, ChannelStore, CS, SUPABASE_URL, SUPABASE_KEY } = require("./settings.js")
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+const { TokenBot, NamaBot, OwnerID, ImagePath, Pakasir, ChannelLog, ChannelStore, CS } = require("./settings.js")
+const supabase = require('./lib/supabase')
+const runtimeSettings = require('./lib/runtime-settings')
 const pakasir = require('./pakasir.js')
 
-// Channel & Contact: dipakai bot (bisa di-override dari DB via dashboard)
+// Helper bersama dengan dashboard. Di-require di paling atas — dulu ini adalah
+// `function` declaration yang ter-hoist, sekarang binding `const`, jadi harus
+// terdefinisi sebelum ada kode lain yang memanggilnya.
+const { formatrupiah, formatWIB, formatWIBDetail, namaBulan } = require('./lib/format')
+
+// Query tabel Stok. Di bot, "hitung stok" selalu berdasarkan kode produk —
+// karena itu getStokCount dialiaskan ke getStokCountByKode. Nama-nama lokal
+// dipertahankan supaya seluruh pemanggil di file ini tidak perlu diubah.
+const stock = require('./lib/stock')
+const getStokCount = stock.getStokCountByKode
+const getStokForTransaction = stock.getStokForTransaction
+const getStokItems = stock.getStokItems
+const markStokTerjual = stock.markStokTerjual
+
+// Channel & Contact: nilai dari .env dipakai sebagai default, bisa di-override
+// dari DB via dashboard.
+//
+// Ini getter, bukan nilai tetap. Sebelumnya nilainya dibaca sekali saat boot
+// (loadChannelContactFromDb) sehingga perubahan dari dashboard tidak pernah
+// sampai ke bot yang sedang berjalan sampai bot di-restart. Dengan getter,
+// setiap pembacaan mengambil nilai terbaru dari cache runtime-settings, yang
+// di-refresh oleh poller di bawah.
 const channelContact = {
-  channelLog: ChannelLog || '',
-  channelStore: ChannelStore || '',
-  cs: CS || ''
+  get channelLog() { return runtimeSettings.get('channel_log', ChannelLog || '') },
+  get channelStore() { return runtimeSettings.get('channel_store', ChannelStore || '') },
+  get cs() { return runtimeSettings.get('cs', CS || '') }
 }
-async function loadChannelContactFromDb() {
-  try {
-    const { data } = await supabase
-      .from('NotificationSettings')
-      .select('setting_key, setting_value')
-      .in('setting_key', ['channel_log', 'channel_store', 'cs'])
-    if (data && data.length) {
-      data.forEach((row) => {
-        const v = row.setting_value?.value
-        if (v !== undefined && v !== null && v !== '') {
-          if (row.setting_key === 'channel_log') channelContact.channelLog = v
-          else if (row.setting_key === 'channel_store') channelContact.channelStore = v
-          else if (row.setting_key === 'cs') channelContact.cs = v
-        }
-      })
-    }
-  } catch (e) {
-    // ignore; tetap pakai nilai dari .env
-  }
-}
-loadChannelContactFromDb()
+
+// Muat pengaturan sekali di awal, lalu pantau perubahan dari dashboard.
+runtimeSettings.refresh(true)
+  .then(() => runtimeSettings.startPolling())
+  .catch((e) => console.error('[runtime-settings] gagal muat awal:', e.message))
 const TelegramBot = require("node-telegram-bot-api")
 const bot = new TelegramBot(TokenBot, { 
   polling: true,
@@ -267,96 +272,18 @@ function formatProductDataForFile(dataLines, formatString) {
   return formattedLines.join('\n\n')
 }
 
-function formatWIB(isoString) {
-  const date = new Date(isoString)
-  const options = {
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric', // Menampilkan tahun (e.g., 2025)
-  }
-  const timeOptions = {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }
-  const formattedDate = new Intl.DateTimeFormat('id-ID', options).format(date)
-  const formattedTime = new Intl.DateTimeFormat('id-ID', timeOptions).format(date)
-  return `${formattedDate} ${formattedTime}`
-}
-
-// Fungsi untuk format timestamp detail dengan detik
-function formatWIBDetail(isoString) {
-  const date = new Date(isoString)
-  const options = {
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  }
-  const timeOptions = {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }
-  const formattedDate = new Intl.DateTimeFormat('id-ID', options).format(date)
-  const formattedTime = new Intl.DateTimeFormat('id-ID', timeOptions).format(date)
-  return `${formattedDate} ${formattedTime}`
-}
-const namaBulan = [
-  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-];
-
-
-function formatrupiah(nominal) {
-  const nom = new Intl.NumberFormat("id", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0
-  }).format(nominal)
-  return nom
-}
+// formatWIB / formatWIBDetail / formatrupiah / namaBulan -> lib/format.js
+// (di-require di bagian atas file)
 
 async function generateReplyKeyboard(userId) {
   try {
     const saldo = await cekSaldo(userId)
-    let { data: Produk } = await supabase
-      .from("Produk")
-      .select("id")
-    
-    const totalProducts = Produk ? Produk.length : 0
-    const keyboardRows = []
-    
-    // Row 1: Daftar Produk and Saldo
-    keyboardRows.push([
-      "📦 Daftar Produk",
-      `💰 Saldo: ${formatrupiah(saldo)}`
-    ])
-    
-    // Rows 2 to N: Grid of numbers (6 per row)
-    if (totalProducts > 0) {
-      let numbersRow = []
-      for (let i = 1; i <= totalProducts; i++) {
-        numbersRow.push(i.toString())
-        if (numbersRow.length === 6) {
-          keyboardRows.push([...numbersRow])
-          numbersRow = []
-        }
-      }
-      if (numbersRow.length > 0) {
-        keyboardRows.push(numbersRow)
-      }
-    }
-    
-    // Row Last: Riwayat Transaksi
-    keyboardRows.push([
-      "📋 Riwayat Transaksi"
-    ])
-    
+
     return {
-      keyboard: keyboardRows,
+      keyboard: [
+        ["📦 Daftar Produk", `💰 Saldo: ${formatrupiah(saldo)}`],
+        ["📋 Riwayat Transaksi"]
+      ],
       resize_keyboard: true
     }
   } catch (error) {
@@ -547,7 +474,8 @@ ${filterOptions.periodLabel ? `📅 *Periode:* ${filterOptions.periodLabel}` : '
       }
     })
     
-    // Hapus tombol "Unduh Item" dan "Beli Lagi" - user cukup ketik nomor produk untuk membeli lagi
+    // Tombol "Unduh Item" dan "Beli Lagi" tidak ditampilkan di sini — produk
+    // dibeli lagi lewat tombol di daftar produk.
   }
   
   // Navigation buttons
@@ -809,69 +737,8 @@ async function isRegistered(id) {
 // HELPER FUNCTIONS UNTUK STOK (Tabel Terpisah)
 // ============================================
 
-// Ambil jumlah stok tersedia untuk produk tertentu
-async function getStokCount(kode) {
-  try {
-    const { count, error } = await supabase
-      .from('Stok')
-      .select('*', { count: 'exact', head: true })
-      .eq('produk_kode', kode.toLowerCase())
-      .eq('status', 'tersedia')
-    
-    if (error) {
-      console.error('Error getStokCount:', error)
-      return 0
-    }
-    return count || 0
-  } catch (error) {
-    console.error('Error getStokCount:', error)
-    return 0
-  }
-}
-
-// Ambil stok untuk transaksi (FIFO - First In First Out)
-async function getStokForTransaction(kode, jumlah) {
-  try {
-    const { data, error } = await supabase
-      .from('Stok')
-      .select('id, data')
-      .eq('produk_kode', kode.toLowerCase())
-      .eq('status', 'tersedia')
-      .limit(jumlah)
-      .order('created_at', { ascending: true })
-    
-    if (error) {
-      console.error('Error getStokForTransaction:', error)
-      return []
-    }
-    return data || []
-  } catch (error) {
-    console.error('Error getStokForTransaction:', error)
-    return []
-  }
-}
-
-// Update stok menjadi terjual
-async function markStokTerjual(stokIds, trxid) {
-  try {
-    if (!stokIds || stokIds.length === 0) return
-    
-    const { error } = await supabase
-      .from('Stok')
-      .update({ 
-        status: 'terjual',
-        terjual_at: new Date().toISOString(),
-        trx_id: trxid
-      })
-      .in('id', stokIds)
-    
-    if (error) {
-      console.error('Error markStokTerjual:', error)
-    }
-  } catch (error) {
-    console.error('Error markStokTerjual:', error)
-  }
-}
+// getStokCount / getStokForTransaction / getStokItems / markStokTerjual
+// -> lib/stock.js (di-require di bagian atas file)
 
 // ============ FUNGSI RESERVASI STOK ============
 // Fungsi untuk reserve stok agar tidak bisa dipilih user lain
@@ -994,31 +861,7 @@ async function addStokItems(produkId, produkKode, dataArray) {
   }
 }
 
-// Ambil semua stok untuk produk (untuk edit/view)
-async function getStokItems(kode, limit = null) {
-  try {
-    let query = supabase
-      .from('Stok')
-      .select('id, data, status, created_at, terjual_at, trx_id')
-      .eq('produk_kode', kode.toLowerCase())
-      .order('created_at', { ascending: true })
-    
-    if (limit) {
-      query = query.limit(limit)
-    }
-    
-    const { data, error } = await query
-    
-    if (error) {
-      console.error('Error getStokItems:', error)
-      return []
-    }
-    return data || []
-  } catch (error) {
-    console.error('Error getStokItems:', error)
-    return []
-  }
-}
+// getStokItems -> lib/stock.js (di-require di bagian atas file)
 
 // Update stok item (untuk edit)
 async function updateStokItem(stokId, newData) {
@@ -3206,6 +3049,31 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
       { text: "🔙 Kembali", callback_data: "kembaliawal" }
     ])
   } else {
+    // One button per entry on this page — the only way to open a product from
+    // the list. Entries with no stock get no button (the buy flow rejects them
+    // anyway), matching how sendGroupCard hides sold-out variants.
+    let entryRow = []
+    items.forEach((entry, idx) => {
+      if (getEntryStokCount(entry) === 0) return
+      const itemNum = start + idx + 1
+      const name = getEntryName(entry)
+      const callback_data = entry.type === 'group'
+        ? `grup_refresh:${entry.grup}`
+        : `item:${entry.product.kode}`
+      // Telegram rejects callback_data over 64 bytes and that would fail the
+      // whole sendMessage, so drop the button rather than break the page.
+      if (Buffer.byteLength(callback_data, 'utf8') > 64) {
+        console.error(`sendProductPage: callback_data too long, skipping button: ${callback_data}`)
+        return
+      }
+      entryRow.push({ text: `${itemNum}. ${name}`, callback_data })
+      if (entryRow.length === 2) {
+        buttons.push(entryRow)
+        entryRow = []
+      }
+    })
+    if (entryRow.length > 0) buttons.push(entryRow)
+
     const navButtons = []
     if (page > 0) {
       navButtons.push({ text: '⬅️ Sebelumnya', callback_data: `produk_prev:${page}_${filterOptions.filterKey || 'all'}` })
@@ -10647,7 +10515,6 @@ ${mostExpensive ? `💰 *${formatrupiah(mostExpensive.harga)}*\n📦 ${mostExpen
 2️⃣ Pilih produk yang ingin dibeli
 3️⃣ Lihat detail produk (harga, stok, deskripsi)
 💡 Pastikan stok tersedia sebelum order
-💡 *Tips Cepat:* Anda juga bisa langsung mengetik nomor produk di chat untuk membeli (contoh: ketik \`1\` untuk membeli produk nomor 1)
 
 ━━━━━━━━━━━━━━━━━━━━
 
@@ -11218,174 +11085,6 @@ Belum ada produk yang terdaftar.
       await sendBannerMessage(msg.from.id, textResponse, { reply_markup })
       return
     }
-  }
-  
-  // PRIORITAS 2: Handler untuk pembelian via nomor produk
-  // Cek apakah text adalah angka (nomor produk)
-  // Skip jika user sedang dalam mode input tertentu (editstok, addstok, dll)
-  // FIX: Tambahkan pengecekan untuk semua state mode interaktif
-  if (text && typeof text === 'string' && /^\d+$/.test(text.trim()) && !text.startsWith('/') && 
-      !(editstok[msg.from.id] && editstok[msg.from.id].status) &&
-      !(addStokState[msg.from.id] && addStokState[msg.from.id].step === 2) &&
-      !(depositState[msg.from.id] && depositState[msg.from.id].status) &&
-      !addProdukState[msg.from.id] &&
-      !editNamaState[msg.from.id] &&
-      !editKodeState[msg.from.id] &&
-      !editHargaState[msg.from.id] &&
-      !editDeskripsiState[msg.from.id] &&
-      !editSnkState[msg.from.id] &&
-      !editFormatState[msg.from.id] &&
-      !editKategoriState[msg.from.id]) {
-    const productNumber = parseInt(text.trim())
-    
-    // Fetch and sort products
-    let { data: Produk } = await supabase.from("Produk").select("*")
-    
-    if (!Produk || Produk.length === 0) return
-    
-    const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-      const stokCount = await getStokCount(p.kode)
-      return { ...p, stok_count: stokCount }
-    }))
-    
-    const sortedProducts = [...ProdukWithStok].sort((a, b) => a.nama.localeCompare(b.nama))
-    
-    // Collapse into entries (groups + solo)
-    const allEntries = getProductEntries(sortedProducts)
-    
-    if (productNumber < 1 || productNumber > allEntries.length) {
-      return await bot.sendMessage(msg.from.id, `❌ *Nomor Produk Tidak Valid*\n━━━━━━━━━━━━━━━━━━━━\nNomor \`${productNumber}\` tidak ditemukan.\n\n💡 Gunakan nomor 1-${allEntries.length} sesuai dengan daftar produk.\n💡 Ketik \`/start\` atau klik "📦 Daftar Produk" untuk melihat daftar produk.`, {
-        parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: [[{ text: "📦 Lihat Daftar Produk", callback_data: "daftarproduk" }]] }
-      })
-    }
-    
-    const selectedEntry = allEntries[productNumber - 1]
-    
-    // If it's a GROUP entry → show group card
-    if (selectedEntry.type === 'group') {
-      await sendGroupCard(msg.from.id, selectedEntry.grup)
-      return
-    }
-    
-    // Solo product — continue with existing flow
-    const selectedProduct = selectedEntry.product
-    
-    if (!selectedProduct) return
-    
-    // Cek apakah produk memiliki stok
-    if (selectedProduct.stok_count === 0) {
-      return await bot.sendMessage(msg.from.id, `⚠️ *STOK KOSONG*\n━━━━━━━━━━━━━━━━━━━━\nProduk *${selectedProduct.nama}* tidak memiliki stok tersedia.\n\n━━━━━━━━━━━━━━━━━━━━\n💡 Silakan pilih produk lain.`, {
-        parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: [[{ text: "📦 Lihat Produk Lain", callback_data: "daftarproduk" }]] }
-      })
-    }
-
-    
-    // Simulasi klik produk dengan callback item:${kode}
-    const itemName = selectedProduct.kode
-    let { data: Premium } = await supabase
-      .from("Premium")
-      .select("*")
-      .eq("kode", itemName.toLowerCase())
-      .single()
-    
-    if (Premium !== null) {
-      let user = Premium.user.find(x => x === msg.from.id)
-      if (!user) {
-        // Cek saldo user
-        const userSaldo = await cekSaldo(msg.from.id)
-        const minimalSaldo = 40000
-        
-        const buttons = []
-        if (userSaldo >= minimalSaldo) {
-          buttons.push([{text: "✅ Dapatkan Akses", callback_data: `buypremium:${itemName.toLowerCase()}`}])
-        } else {
-          buttons.push([{text: "💰 Deposit Saldo", callback_data: "saldomenu"}])
-        }
-        buttons.push([{text: "🔙 Kembali", callback_data: "kembaliawal"}])
-        
-        await bot.sendMessage(msg.from.id, `🔒 Produk Eksklusif
-
-Produk *${itemName.toUpperCase()}* memerlukan akses premium.
-
-━━━━━━━━━━━━━━━━━━━━
-
-💡 *Cara Mendapatkan Akses:*
-
-Anda perlu memiliki saldo mengendap minimal *${formatrupiah(minimalSaldo)}* di akun Anda.
-
-💰 *Saldo Anda Saat Ini:* ${formatrupiah(userSaldo)}
-${userSaldo >= minimalSaldo ? '✅ Saldo Anda mencukupi!' : `❌ Saldo Anda belum mencukupi (kurang ${formatrupiah(minimalSaldo - userSaldo)})`}
-
-ℹ️ *Catatan:* Saldo ini akan tetap di akun Anda, hanya digunakan sebagai jaminan akses. Saldo tidak akan dikurangi.
-
-${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 'Silakan deposit terlebih dahulu untuk mendapatkan akses:'}`, {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: buttons
-          }
-        })
-        return
-      }
-    }
-    
-    let { data: ProdukData } = await supabase
-      .from("Produk")
-      .select("*")
-    
-    const item = ProdukData.find(i => i.kode.toLowerCase() === itemName.toLowerCase())
-    
-    if (item) {
-      // Hitung stok dari tabel Stok
-      const stokCount = await getStokCount(item.kode)
-      
-      let Unique = require("crypto").randomBytes(6).toString("hex").toUpperCase()
-      let data = {
-        id: msg.from.id,
-        kode: item.kode,
-        jumlah: 1,
-        trxid: Unique,
-        voucher: "",
-        voucher_status: "",
-        selectedStokIds: []
-      }
-      fs.writeFileSync(`./Database/Trx/${msg.from.id}.json`, JSON.stringify(data, null, 2))
-      
-      // Detect format - gunakan stok items untuk detect format
-      const stokItems = await getStokItems(item.kode, 1)
-      const sampleData = stokItems.length > 0 ? [stokItems[0].data] : (item.data || [])
-      const formatDetected = detectProductFormat(sampleData, item.format)
-      
-      const momentTz = require('moment-timezone')
-      const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
-
-      await sendBannerMessage(msg.from.id, `tambahkan jumlah pembelian:
-
-┌──────────────────
-│ • Produk : ${item.nama.toUpperCase()}
-│ • Stok Terjual : ${item.terjual}
-│ • Desk : ${item.deskripsi}
-└──────────────────
-
-┌──────────────────
-│ Variasi, Harga - (Stok):
-│ • ${item.nama}: ${formatrupiah(item.harga)} - (${stokCount})
-└──────────────────
-
-Current Date: ${formattedTime}`, {
-        reply_markup: {
-          inline_keyboard: [
-            [{text: `${item.nama} (${stokCount})`, callback_data: "lanjut"}],
-            [{text: "🔙 Kembali", callback_data: "daftarproduk"}]
-          ]
-        }
-      })
-    } else {
-      await bot.sendMessage(msg.from.id, `⚠️ Produk tidak ditemukan, mungkin sudah dihapus!`)
-    }
-    
-    return // PENTING: return agar handler lain tidak dijalankan
   }
   
   // PRIORITAS 3: Handler editstok

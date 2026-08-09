@@ -129,6 +129,38 @@
                             </div>
 
                             <div class="form-group">
+                                <label class="form-label">Kategori</label>
+                                <%
+                                    // Terbatas pada kategori yang dikenali bot — getKategoriEmoji()
+                                    // dan getKategoriName() di index.js menampilkan "Umum" untuk
+                                    // nilai lain, jadi kategori bebas akan tampil salah di bot.
+                                    const kategoriList = [
+                                        ['umum', '📦 Umum'],
+                                        ['game', '🎮 Game'],
+                                        ['streaming', '📺 Streaming'],
+                                        ['software', '💻 Software'],
+                                        ['social media', '📱 Social Media'],
+                                        ['voucher', '🎟️ Voucher'],
+                                        ['education', '📚 Education']
+                                    ];
+                                    const kategoriTerpilih = (produk && produk.kategori ? produk.kategori : 'umum').toLowerCase();
+                                    // Produk lama bisa punya kategori bebas (dulu diset via /editkategori
+                                    // di bot). Tanpa ini, option tidak ada yang terpilih dan browser
+                                    // memilih opsi pertama — menyimpan form akan mengubah kategori
+                                    // secara diam-diam. Jadi tampilkan nilai lamanya juga.
+                                    if (!kategoriList.some(([nilai]) => nilai === kategoriTerpilih)) {
+                                        kategoriList.push([kategoriTerpilih, `⚠️ ${kategoriTerpilih} (tidak dikenali bot)`]);
+                                    }
+                                %>
+                                <select name="kategori" class="form-input">
+                                    <% kategoriList.forEach(([nilai, label]) => { %>
+                                        <option value="<%= nilai %>" <%= kategoriTerpilih === nilai ? 'selected' : '' %>><%= label %></option>
+                                    <% }) %>
+                                </select>
+                                <div class="form-help">Kategori dipakai bot untuk mengelompokkan dan memfilter produk.</div>
+                            </div>
+
+                            <div class="form-group">
                                 <label class="form-label">Grup Produk <span style="color:#888;font-weight:400;">(Opsional)</span></label>
                                 <input 
                                     type="text" 
