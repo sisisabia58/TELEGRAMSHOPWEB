@@ -21,11 +21,11 @@
         .overview-title h1 {
             margin: 0 0 6px;
             font-size: 28px;
-            color: #333;
+            color: var(--color-text);
         }
         .overview-title p {
             margin: 0;
-            color: #666;
+            color: var(--color-muted);
         }
         .overview-actions {
             display: flex;
@@ -54,10 +54,10 @@
             font-size: 32px;
             font-weight: 700;
             line-height: 1;
-            color: #333;
+            color: var(--color-text);
         }
         .triage-copy {
-            color: #666;
+            color: var(--color-muted);
             margin: 0;
         }
         .triage-list {
@@ -74,7 +74,7 @@
             align-items: center;
             gap: 12px;
             padding: 10px 0;
-            border-bottom: 1px solid #f0f0f0;
+            border-bottom: 1px solid var(--color-border);
         }
         .triage-row:last-child {
             border-bottom: none;
@@ -91,11 +91,11 @@
         }
         .triage-main span,
         .triage-meta {
-            color: #777;
+            color: var(--color-muted);
             font-size: 13px;
         }
         .notice-card {
-            border-left: 4px solid #ffc107;
+            border-left: 4px solid var(--color-warning);
             margin-bottom: 20px;
         }
         .overview-section {
@@ -226,7 +226,7 @@
                                 <% }) %>
                             </ul>
                         <% } %>
-                        <a href="/pricing" class="btn btn-secondary" style="margin-top: 14px;">Review Pricing</a>
+                        <a href="/stok" class="btn btn-secondary" style="margin-top: 14px;">Review Pricing</a>
                     </div>
                 </div>
 
