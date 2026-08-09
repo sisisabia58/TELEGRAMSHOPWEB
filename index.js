@@ -30,6 +30,7 @@ const { formatrupiah, formatWIB, formatWIBDetail, namaBulan } = require('./lib/f
 // terhapus setiap deploy karena filesystem Railway ephemeral.
 const cart = require('./lib/cart')
 const catalog = require('./lib/catalog')
+const pricing = require('./lib/pricing')
 
 const stock = require('./lib/stock')
 const getStokCount = stock.getStokCountByKode
@@ -321,6 +322,18 @@ async function getVarianForCart(kode) {
   }
 }
 
+async function hargaUntukQty(item, qty) {
+  return pricing.resolveForVarian(item, qty)
+}
+
+function applyVoucherPotongan(subtotal, userId, voucherKode, voucherList) {
+  const vcr = (voucherList || []).find((v) => v.kode === voucherKode)
+  if (vcr && !vcr.user.some((a) => a === userId) && vcr.limit > 0) {
+    return Math.max(0, subtotal - vcr.potongan)
+  }
+  return subtotal
+}
+
 async function showVariantQtyScreen(userId, msgId, varian) {
   const stokCount = await getStokCount(varian.kode)
   if (stokCount === 0) {
@@ -462,7 +475,7 @@ ${filterOptions.periodLabel ? `📅 *Periode:* ${filterOptions.periodLabel}` : '
 │ *${itemNum}. ${item.nama}*
 │─────────────
 │📊 Jumlah: *${item.jumlah}*
-│💰 Harga: *${formatrupiah(item.harga)}*
+│💰 Harga: *${formatrupiah(resolvedSaldo.harga_satuan)}*
 │🕒 ${formatWIB(item.tanggal)}
 │🆔 Trx ID: \`${item.trxid || 'N/A'}\`
 └─────────────`
@@ -4333,11 +4346,13 @@ Produk *${item.nama}* tidak memiliki stok tersedia.
     }
     
     // Tampilkan stok dengan timestamp dan tombol pilih
-    const totalPembayaran = Data.selectedStokIds.length * item.harga
+    const qtyPilih = Data.selectedStokIds.length
+    const resolvedPick = await hargaUntukQty(item, qtyPilih || 1)
+    const totalPembayaran = qtyPilih ? resolvedPick.subtotal : resolvedPick.harga_satuan
     let stokText = `📦 *PILIH STOK YANG INGIN DIBELI*
 ━━━━━━━━━━━━━━━━━━━━
 🛍️ *Produk:* ${item.nama}
-💰 *Harga Satuan:* ${formatrupiah(item.harga)}
+💰 *Harga Satuan:* ${formatrupiah(resolvedPick.harga_satuan)}
 📊 *Stok Tersedia:* ${tersediaItems.length} item
 ✅ *Dipilih:* ${Data.selectedStokIds.length} item
 💵 *Total Pembayaran:* ${formatrupiah(totalPembayaran)}
@@ -4387,11 +4402,13 @@ async function refreshStokView(query, Data, msgId = null) {
     await cart.save(query.from.id, Data)
   }
   
-  const totalPembayaran = Data.selectedStokIds.length * item.harga
+  const qtyPilih = Data.selectedStokIds.length
+  const resolvedPick = await hargaUntukQty(item, qtyPilih || 1)
+  const totalPembayaran = qtyPilih ? resolvedPick.subtotal : resolvedPick.harga_satuan
   let stokText = `📦 *PILIH STOK YANG INGIN DIBELI*
 ━━━━━━━━━━━━━━━━━━━━
 🛍️ *Produk:* ${item.nama}
-💰 *Harga Satuan:* ${formatrupiah(item.harga)}
+💰 *Harga Satuan:* ${formatrupiah(resolvedPick.harga_satuan)}
 📊 *Stok Tersedia:* ${tersediaItems.length} item
 ✅ *Dipilih:* ${Data.selectedStokIds.length} item
 💵 *Total Pembayaran:* ${formatrupiah(totalPembayaran)}
@@ -4660,12 +4677,9 @@ if (cmd.startsWith("checkout_payment:")) {
         return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
       }
       
-      let harga = Data.jumlah * item.harga
+      const resolved = await hargaUntukQty(item, Data.jumlah)
       let { data: Voucher } = await supabase.from("Voucher").select("*")
-      let vcr = Voucher.find(v => v.kode === Data.voucher)
-      if (vcr && !vcr.user.some(a => a === query.from.id) && vcr.limit > 0) {
-        harga = harga - vcr.potongan
-      }
+      let harga = applyVoucherPotongan(resolved.subtotal, query.from.id, Data.voucher, Voucher)
       
       const userSaldo = await cekSaldo(query.from.id)
       if (userSaldo >= harga) {
@@ -4731,14 +4745,15 @@ if (cmd === "reset") {
      const item = await getVarianForCart(Data.kode)
      if (!item) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
      const stokCountReset = item.stok_count
+     const resolvedReset = await hargaUntukQty(item, Data.jumlah)
     await bot.editMessageText(`*KONFIRMASI PESANAN*
 =======================
 Produk: *${item.nama}*
-Harga: *${formatrupiah(item.harga)}*
+Harga: *${formatrupiah(resolvedReset.harga_satuan)}*
 Stok Tersedia: *${stokCountReset}*
 -----------------------
 Jumlah Pesanan: *${Data.jumlah}*
-Total Dibayar: *${formatrupiah(Data.jumlah*item.harga)}*
+Total Dibayar: *${formatrupiah(resolvedReset.subtotal)}*
 =======================
 Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
   parse_mode: "Markdown",
@@ -4767,16 +4782,11 @@ Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
 if (cmd === "konfirmasi") {
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
-    let { data: Produk } = await supabase
-      .from("Produk")
-      .select("*")
-    
-    let s = null
-    Object.keys(Produk).forEach((d) => {
-      if (Produk[d].kode.toLowerCase() === Data.kode.toLowerCase()) s = d
-    })
-    
-    if (s !== null) {
+    const item = await getVarianForCart(Data.kode)
+    if (!item) {
+      return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+    }
+    {
       // Validasi stok yang dipilih masih tersedia
       if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
         const selectedStok = await getStokItems(Data.kode.toLowerCase())
@@ -4818,7 +4828,8 @@ if (cmd === "konfirmasi") {
       }
       
       const userSaldo = await cekSaldo(query.from.id)
-      let hargaAwal = Data.jumlah * Produk[s].harga
+      const resolved = await hargaUntukQty(item, Data.jumlah)
+      let hargaAwal = resolved.subtotal
       let { data: Voucher } = await supabase.from("Voucher").select("*")
       let vcr = Voucher.find(v => v.kode === Data.voucher)
       
@@ -4827,7 +4838,7 @@ if (cmd === "konfirmasi") {
         potongan = vcr.potongan
       }
       
-      const totalBayar = hargaAwal - potongan
+      const totalBayar = Math.max(0, hargaAwal - potongan)
       const saldoSetelah = userSaldo - totalBayar
       
       // Ambil info stok yang dipilih untuk ditampilkan (COMPACTED FOR 1024 CAPTION LIMIT)
@@ -4837,18 +4848,18 @@ if (cmd === "konfirmasi") {
       }
       
       // Detect format
-      const stokItems = await getStokItems(Produk[s].kode, 1)
-      const sampleData = stokItems.length > 0 ? [stokItems[0].data] : (Produk[s].data || [])
-      const formatDetected = detectProductFormat(sampleData, Produk[s].format)
+      const stokItems = await getStokItems(item.kode, 1)
+      const sampleData = stokItems.length > 0 ? [stokItems[0].data] : []
+      const formatDetected = detectProductFormat(sampleData, item.format)
       
       // Build enhanced confirmation message
       let confirmText = `📋 *KONFIRMASI PESANAN*
 ━━━━━━━━━━━━━━━━━━━━
 📦 *DETAIL PRODUK*
 ━━━━━━━━━━━━━━━━━━━━
-🛍️ *Nama:* ${Produk[s].nama}
-🔖 *Kode:* \`${Produk[s].kode}\`
-💰 *Harga Satuan:* ${formatrupiah(Produk[s].harga)}
+🛍️ *Nama:* ${item.nama}
+🔖 *Kode:* \`${item.kode}\`
+💰 *Harga Satuan:* ${formatrupiah(resolved.harga_satuan)}
 ${formatDetected.info}
 ${formatDetected.example ? formatDetected.example + '\n' : ''}${stokInfoText}📊 *Jumlah Pesanan:* ${Data.jumlah} item
 ━━━━━━━━━━━━━━━━━━━━
@@ -4864,9 +4875,9 @@ ${potongan > 0 ? `✅ Hemat: ${formatrupiah(potongan)} dengan voucher!\n` : ''}�
 ━━━━━━━━━━━━━━━━━━━━`
       
       // Syarat & ketentuan preview
-      if (Produk[s].snk) {
+      if (item.snk) {
         confirmText += `\n📋 *Syarat & Ketentuan:*
-${Produk[s].snk.length > 150 ? Produk[s].snk.substring(0, 150) + '...' : Produk[s].snk}
+${item.snk.length > 150 ? item.snk.substring(0, 150) + '...' : item.snk}
 ━━━━━━━━━━━━━━━━━━━━`
       }
       
@@ -4905,9 +4916,9 @@ ${Produk[s].snk.length > 150 ? Produk[s].snk.substring(0, 150) + '...' : Produk[
 ━━━━━━━━━━━━━━━━━━━━
 📦 *DETAIL PRODUK*
 ━━━━━━━━━━━━━━━━━━━━
-🛍️ *Nama:* ${Produk[s].nama}
-🔖 *Kode:* \`${Produk[s].kode}\`
-💰 *Harga Satuan:* ${formatrupiah(Produk[s].harga)}
+🛍️ *Nama:* ${item.nama}
+🔖 *Kode:* \`${item.kode}\`
+💰 *Harga Satuan:* ${formatrupiah(resolved.harga_satuan)}
 ${formatDetected.info}
 ${formatDetected.example ? formatDetected.example + '\n' : ''}${stokInfoText}📊 *Jumlah Pesanan:* ${Data.jumlah} item
 ━━━━━━━━━━━━━━━━━━━━
@@ -4922,9 +4933,9 @@ ${potongan > 0 ? `✅ Hemat: ${formatrupiah(potongan)} dengan voucher!\n` : ''}�
 📌 *Progress:* [✅ Produk] → [✅ Stok] → [⏳ Konfirmasi] → [⏸ Bayar] → [⏸ Selesai]
 ━━━━━━━━━━━━━━━━━━━━`
           
-          if (Produk[s].snk) {
+          if (item.snk) {
             confirmText += `\n📋 *Syarat & Ketentuan:*
-${Produk[s].snk.length > 100 ? Produk[s].snk.substring(0, 100) + '...' : Produk[s].snk}
+${item.snk.length > 100 ? item.snk.substring(0, 100) + '...' : item.snk}
 ━━━━━━━━━━━━━━━━━━━━`
           }
         }
@@ -4941,7 +4952,7 @@ ${Produk[s].snk.length > 100 ? Produk[s].snk.substring(0, 100) + '...' : Produk[
       // Edit options
       keyboard.push([
         { text: "✏️ Edit Pilihan Stok", callback_data: "lanjut" },
-        { text: "📦 Lihat Detail", callback_data: `produk_detail_${Produk[s].kode}` }
+        { text: "📦 Lihat Detail", callback_data: `produk_detail_${item.kode}` }
       ])
       
       // Payment method selection
@@ -4972,16 +4983,13 @@ ${Produk[s].snk.length > 100 ? Produk[s].snk.substring(0, 100) + '...' : Produk[
 if (cmd === "pilih_payment_method") {
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
-    let { data: Produk } = await supabase.from("Produk").select("*")
-    
-    let s = null
-    Object.keys(Produk).forEach((d) => {
-      if (Produk[d].kode.toLowerCase() === Data.kode.toLowerCase()) s = d
-    })
-    
-    if (s !== null) {
+    const item = await getVarianForCart(Data.kode)
+    if (!item) {
+      await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+    } else {
+    const resolved = await hargaUntukQty(item, Data.jumlah)
       const userSaldo = await cekSaldo(query.from.id)
-      let hargaAwal = Data.jumlah * Produk[s].harga
+      let hargaAwal = resolved.subtotal
       let { data: Voucher } = await supabase.from("Voucher").select("*")
       let vcr = Voucher.find(v => v.kode === Data.voucher)
       
@@ -5073,15 +5081,12 @@ Tersedia ${availableVouchers.length} voucher:`
 if (cmd === "lihat_voucher") {
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
-    let { data: Produk } = await supabase.from("Produk").select("*")
-    
-    let s = null
-    Object.keys(Produk).forEach((d) => {
-      if (Produk[d].kode.toLowerCase() === Data.kode.toLowerCase()) s = d
-    })
-    
-    if (s !== null) {
-      let hargaAwal = Data.jumlah * Produk[s].harga
+    const item = await getVarianForCart(Data.kode)
+    if (!item) {
+      await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+    } else {
+    const resolved = await hargaUntukQty(item, Data.jumlah)
+      let hargaAwal = resolved.subtotal
       let { data: Voucher } = await supabase.from("Voucher").select("*")
       
       const availableVouchers = Voucher.filter(v => 
@@ -5148,14 +5153,11 @@ if (cmd.startsWith("apply_voucher_")) {
   
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
-    let { data: Produk } = await supabase.from("Produk").select("*")
-    
-    let s = null
-    Object.keys(Produk).forEach((d) => {
-      if (Produk[d].kode.toLowerCase() === Data.kode.toLowerCase()) s = d
-    })
-    
-    if (s !== null) {
+    const item = await getVarianForCart(Data.kode)
+    if (!item) {
+      await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+    } else {
+    const resolved = await hargaUntukQty(item, Data.jumlah)
       let { data: Voucher } = await supabase.from("Voucher").select("*")
       let vcr = Voucher.find(v => v.kode === voucherKode)
       
@@ -5183,7 +5185,7 @@ if (cmd.startsWith("apply_voucher_")) {
         return
       }
       
-      let hargaAwal = Data.jumlah * Produk[s].harga
+      let hargaAwal = resolved.subtotal
       if (vcr.minimal_pembelian && hargaAwal < vcr.minimal_pembelian) {
         await bot.answerCallbackQuery(query.id, { 
           text: `Minimal pembelian ${formatrupiah(vcr.minimal_pembelian)}!`, 
@@ -5204,7 +5206,7 @@ if (cmd.startsWith("apply_voucher_")) {
       
       // Re-trigger pilih_payment_method manually
       const userSaldo = await cekSaldo(query.from.id)
-      hargaAwal = Data.jumlah * Produk[s].harga
+      hargaAwal = resolved.subtotal
       const potongan = vcr.potongan
       const totalBayar = hargaAwal - potongan
       const saldoSetelah = userSaldo - totalBayar
@@ -5371,14 +5373,11 @@ if (cmd === "cek_saldo") {
 if (cmd === "konfirmasi_kembali") {
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
-    let { data: Produk } = await supabase.from("Produk").select("*")
-    
-    let s = null
-    Object.keys(Produk).forEach((d) => {
-      if (Produk[d].kode.toLowerCase() === Data.kode.toLowerCase()) s = d
-    })
-    
-    if (s !== null) {
+    const item = await getVarianForCart(Data.kode)
+    if (!item) {
+      await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+    } else {
+    const resolved = await hargaUntukQty(item, Data.jumlah)
       // Re-check stok menggunakan tabel Stok
       const stokCount = await getStokCount(Data.kode.toLowerCase())
       if (stokCount < Data.jumlah) {
@@ -5396,7 +5395,7 @@ if (cmd === "konfirmasi_kembali") {
       }
       
       const userSaldo = await cekSaldo(query.from.id)
-      let hargaAwal = Data.jumlah * Produk[s].harga
+      let hargaAwal = resolved.subtotal
       let { data: Voucher } = await supabase.from("Voucher").select("*")
       let vcr = Voucher.find(v => v.kode === Data.voucher)
       
@@ -5408,18 +5407,18 @@ if (cmd === "konfirmasi_kembali") {
       const totalBayar = hargaAwal - potongan
       
       // Detect format - gunakan stok items untuk detect format
-      const stokItems = await getStokItems(Produk[s].kode, 1)
-      const sampleData = stokItems.length > 0 ? [stokItems[0].data] : (Produk[s].data || [])
-      const formatDetected = detectProductFormat(sampleData, Produk[s].format)
+      const stokItems = await getStokItems(item.kode, 1)
+      const sampleData = stokItems.length > 0 ? [stokItems[0].data] : []
+      const formatDetected = detectProductFormat(sampleData, item.format)
       
       // Build enhanced confirmation message
       let confirmText = `📋 *KONFIRMASI PESANAN*
 ━━━━━━━━━━━━━━━━━━━━
 📦 *DETAIL PRODUK*
 ━━━━━━━━━━━━━━━━━━━━
-🛍️ *Nama:* ${Produk[s].nama}
-🔖 *Kode:* \`${Produk[s].kode}\`
-💰 *Harga Satuan:* ${formatrupiah(Produk[s].harga)}
+🛍️ *Nama:* ${item.nama}
+🔖 *Kode:* \`${item.kode}\`
+💰 *Harga Satuan:* ${formatrupiah(resolved.harga_satuan)}
 ${formatDetected.info}
 ${formatDetected.example ? formatDetected.example + '\n' : ''}📊 *Stok Tersedia:* ${stokCount} item
 ${stokCount <= 5 ? '⚠️ *Status:* Stok Terbatas\n' : ''}
@@ -5437,9 +5436,9 @@ ${potongan > 0 ? `✅ Hemat: ${formatrupiah(potongan)} dengan voucher!\n` : ''}�
 ━━━━━━━━━━━━━━━━━━━━`
       
       // Syarat & ketentuan preview
-      if (Produk[s].snk) {
+      if (item.snk) {
         confirmText += `\n📋 *Syarat & Ketentuan:*
-${Produk[s].snk.length > 150 ? Produk[s].snk.substring(0, 150) + '...' : Produk[s].snk}
+${item.snk.length > 150 ? item.snk.substring(0, 150) + '...' : item.snk}
 ━━━━━━━━━━━━━━━━━━━━`
       }
       
@@ -5448,8 +5447,8 @@ ${Produk[s].snk.length > 150 ? Produk[s].snk.substring(0, 150) + '...' : Produk[
       
       // Edit options
       keyboard.push([
-        { text: "✏️ Edit Jumlah", callback_data: `item:${Produk[s].kode}` },
-        { text: "📦 Lihat Detail", callback_data: `produk_detail_${Produk[s].kode}` }
+        { text: "✏️ Edit Jumlah", callback_data: `item:${item.kode}` },
+        { text: "📦 Lihat Detail", callback_data: `produk_detail_${item.kode}` }
       ])
       
       // Payment method selection
@@ -6171,12 +6170,9 @@ if (cmd === "batalvoucher") {
     const userSaldo = await cekSaldo(query.from.id)
     const item = await getVarianForCart(Data.kode)
     if (!item) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan!`)
-    let harga = Data.jumlah * item.harga
+    const resolvedSaldo = await hargaUntukQty(item, Data.jumlah)
     let { data: Voucher } = await supabase.from("Voucher").select("*")
-    let vcr = Voucher.find(v => v.kode === Data.voucher)
-    if (vcr && !vcr.user.some(a => a === query.from.id) && vcr.limit > 0) {
-      harga = harga - vcr.potongan
-    }
+    let harga = applyVoucherPotongan(resolvedSaldo.subtotal, query.from.id, Data.voucher, Voucher)
     
     let keyboard = []
     if (userSaldo >= harga) {
@@ -6217,14 +6213,15 @@ if (cmd.startsWith("min:")) {
      const item = await getVarianForCart(Data.kode)
      if (!item) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
      const stokCount = item.stok_count ?? await getStokCount(item.kode)
+     const resolvedMin = await hargaUntukQty(item, Data.jumlah)
     await bot.editMessageText(`*KONFIRMASI PESANAN*
 =======================
 Produk: *${item.nama}*
-Harga: *${formatrupiah(item.harga)}*
+Harga: *${formatrupiah(resolvedMin.harga_satuan)}*
 Stok Tersedia: *${stokCount}*
 -----------------------
 Jumlah Pesanan: *${Data.jumlah}*
-Total Dibayar: *${formatrupiah(Data.jumlah*item.harga)}*
+Total Dibayar: *${formatrupiah(resolvedMin.subtotal)}*
 =======================
 Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
   parse_mode: "Markdown",
@@ -6264,15 +6261,16 @@ if (cmd.startsWith("plus:")) {
      const itemUpdated = await getVarianForCart(Data.kode)
      if (!itemUpdated) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
      const stokCountUpdated = itemUpdated.stok_count ?? await getStokCount(itemUpdated.kode)
+     const resolvedPlus = await hargaUntukQty(itemUpdated, Data.jumlah)
      
      await bot.editMessageText(`*KONFIRMASI PESANAN*
 =======================
 Produk: *${itemUpdated.nama}*
-Harga: *${formatrupiah(itemUpdated.harga)}*
+Harga: *${formatrupiah(resolvedPlus.harga_satuan)}*
 Stok Tersedia: *${stokCountUpdated}*
 -----------------------
 Jumlah Pesanan: *${Data.jumlah}*
-Total Dibayar: *${formatrupiah(Data.jumlah*item.harga)}*
+Total Dibayar: *${formatrupiah(resolvedPlus.subtotal)}*
 =======================
 Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
   parse_mode: "Markdown",
@@ -6322,12 +6320,9 @@ if (cmd === "bayarsaldo") {
     const item = await getVarianForCart(Data.kode)
     if (!item) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
     
-    let harga = Data.jumlah * item.harga
+    const resolvedSaldo = await hargaUntukQty(item, Data.jumlah)
     let { data: Voucher } = await supabase.from("Voucher").select("*")
-    let vcr = Voucher.find(v => v.kode === Data.voucher)
-    if (vcr && !vcr.user.some(a => a === query.from.id) && vcr.limit > 0) {
-      harga = harga - vcr.potongan
-    }
+    let harga = applyVoucherPotongan(resolvedSaldo.subtotal, query.from.id, Data.voucher, Voucher)
     
     const userSaldo = await cekSaldo(query.from.id)
     if (userSaldo < harga) {
@@ -6464,7 +6459,7 @@ ${DataProduk}
 ━━━━━━━━━━━━━━━━━━━━
 🛍️ *Produk:* ${item.nama}
 📊 *Jumlah:* ${Data.jumlah} item
-💰 *Harga Satuan:* ${formatrupiah(item.harga)}
+💰 *Harga Satuan:* ${formatrupiah(resolvedSaldo.harga_satuan)}
 ${discountAmount > 0 ? `🎟️ *Voucher:* ${Data.voucher}\n💸 *Potongan:* ${formatrupiah(discountAmount)}` : ''}
 ━━━━━━━━━━━━━━━━━━━━
 💎 *TOTAL BAYAR:* ${formatrupiah(harga)}
@@ -6591,7 +6586,7 @@ Terima kasih! 🙏`, {
 User: @${query.from.username || query.from.first_name}
 Trx ID: *${Data.trxid}*
 Produk: *${item.nama}*
-Harga: *${formatrupiah(item.harga)}*
+Harga: *${formatrupiah(resolvedSaldo.harga_satuan)}*
 Jumlah Beli: *${Data.jumlah}*
 Total Harga: *${formatrupiah(harga)}*
 Metode: *Saldo*
@@ -6608,7 +6603,7 @@ Tanggal: *${formatWIB(tggl)}*
       kode: item.kode,
       jumlah: Data.jumlah,
       harga: harga,
-      harga_satuan: item.harga,
+      harga_satuan: resolvedSaldo.harga_satuan,
       tanggal: tggl,
       trxid: Data.trxid
     }])
@@ -6731,23 +6726,12 @@ if (cmd === "bayar") {
       await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     } catch (e) {}
     let Data = await cart.get(query.from.id)
-    let { data: Produk } = await supabase
-.from("Produk")
-.select("*")
-    let np = null
-    Object.keys(Produk).forEach((f) => {
-      if (Produk[f].kode.toLowerCase() === Data.kode.toLowerCase()) np = f
-    })
-     if (np === null) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+    const item = await getVarianForCart(Data.kode)
+    if (!item) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
     let DataProduk = ""
-    let harga = Data.jumlah*item.harga
-    let { data: Voucher } = await supabase
-.from("Voucher")
-.select("*")
-    let vcr = Voucher.find(v => v.kode === Data.voucher)
-    if (vcr && !vcr.user.some(a => a === query.from.id) && vcr.limit > 0) {
-      harga = harga-vcr.potongan
-    }
+    const resolvedBayar = await hargaUntukQty(item, Data.jumlah)
+    let { data: Voucher } = await supabase.from("Voucher").select("*")
+    let harga = applyVoucherPotongan(resolvedBayar.subtotal, query.from.id, Data.voucher, Voucher)
     // Validasi stok yang dipilih atau cek stok tersedia
     if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
       const allStok = await getStokItems(Data.kode.toLowerCase())
@@ -6811,7 +6795,7 @@ if (cmd === "bayar") {
 =======================
 Trx ID: *${Data.trxid}*
 Produk: *${item.nama}*
-Harga: *${formatrupiah(item.harga)}*
+Harga: *${formatrupiah(resolvedBayar.harga_satuan)}*
 Jumlah Beli: *${Data.jumlah}*
 Fee: *${formatrupiah(pay.fee || 0)}*
 Total Harga: *${formatrupiah(totalAmount)}*
@@ -7056,7 +7040,7 @@ let tggl = new Date().toISOString()
 ━━━━━━━━━━━━━━━━━━━━
 🛍️ *Produk:* ${item.nama}
 📊 *Jumlah:* ${Data.jumlah} item
-💰 *Harga Satuan:* ${formatrupiah(item.harga)}
+💰 *Harga Satuan:* ${formatrupiah(resolvedBayar.harga_satuan)}
 ${discountAmount > 0 ? `🎟️ *Voucher:* ${Data.voucher}\n💸 *Potongan:* ${formatrupiah(discountAmount)}` : ''}
 💵 *Fee Admin:* ${formatrupiah(pay.fee || 0)}
 ━━━━━━━━━━━━━━━━━━━━
@@ -7216,7 +7200,7 @@ Silakan hubungi CS untuk mendapatkan produk Anda.`)
 User: @${query.from.username || query.from.first_name}
 Trx ID: *${Data.trxid}*
 Produk: *${item.nama}*
-Harga: *${formatrupiah(item.harga)}*
+Harga: *${formatrupiah(resolvedSaldo.harga_satuan)}*
 Jumlah Beli: *${Data.jumlah}*
 Fee: *${formatrupiah(pay.fee || 0)}*
 Total Harga: *${formatrupiah(totalHarga)}*
@@ -7242,7 +7226,7 @@ Tanggal: *${formatWIB(tggl)}*
                     kode: item.kode,
                     jumlah: Data.jumlah,
                     harga: harga,
-                    harga_satuan: item.harga,
+                    harga_satuan: resolvedBayar.harga_satuan,
                     tanggal: tggl,
                     trxid: Data.trxid
                   }
@@ -10832,10 +10816,10 @@ ${Data.kode}
       await cart.save(msg.from.id, Data)
       
       const itemVoucher = await getVarianForCart(Data.kode)
-      let price = itemVoucher ? itemVoucher.harga : 0
-      let harga = Data.jumlah * price
-      let totalBayar = harga - vv.potongan
-      if (totalBayar < 0) totalBayar = 0
+      const resolvedVoucher = itemVoucher
+        ? await hargaUntukQty(itemVoucher, Data.jumlah)
+        : { subtotal: 0, harga_satuan: 0 }
+      let totalBayar = Math.max(0, resolvedVoucher.subtotal - vv.potongan)
       
       const userSaldo = await cekSaldo(msg.from.id)
       const keyboard = []

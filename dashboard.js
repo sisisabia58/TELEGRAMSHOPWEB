@@ -9,6 +9,7 @@ const supabase = require('./lib/supabase')
 const runtimeSettings = require('./lib/runtime-settings')
 const stock = require('./lib/stock')
 const catalog = require('./lib/catalog')
+const pricing = require('./lib/pricing')
 const ejs = require('ejs')
 const { formatrupiah, formatTanggal } = require('./lib/format')
 
@@ -1293,6 +1294,105 @@ app.delete('/api/produk/:id/varian/:varianId', isAuthenticated, async (req, res)
   } catch (error) {
     console.error('Error deleting variant:', error)
     res.status(500).json({ error: error.message })
+  }
+})
+
+async function loadVarianForProduk(produkId, varianId) {
+  const { data, error } = await supabase
+    .from('Varian')
+    .select('*')
+    .eq('id', varianId)
+    .eq('produk_id', produkId)
+    .maybeSingle()
+  if (error || !data) return null
+  return data
+}
+
+app.get('/api/produk/:id/varian/:varianId/tiers', isAuthenticated, async (req, res) => {
+  try {
+    const varian = await loadVarianForProduk(req.params.id, req.params.varianId)
+    if (!varian) return res.status(404).json({ error: 'Varian tidak ditemukan' })
+    const tiers = await pricing.getTiersForVarian(varian.id)
+    res.json({ tiers })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/produk/:id/varian/:varianId/tiers', isAuthenticated, async (req, res) => {
+  try {
+    const varian = await loadVarianForProduk(req.params.id, req.params.varianId)
+    if (!varian) return res.status(404).json({ error: 'Varian tidak ditemukan' })
+    const min_qty = parseInt(req.body.min_qty, 10)
+    const harga = parseInt(req.body.harga, 10)
+    if (!Number.isFinite(min_qty) || min_qty < 2) {
+      return res.status(400).json({ error: 'min_qty minimal 2' })
+    }
+    if (!Number.isFinite(harga) || harga < 0) {
+      return res.status(400).json({ error: 'harga tidak valid' })
+    }
+    const { data, error } = await supabase
+      .from('HargaTier')
+      .insert([{ varian_id: varian.id, min_qty, harga }])
+      .select()
+      .single()
+    if (error) {
+      if (error.code === '23505') return res.status(400).json({ error: 'min_qty sudah ada untuk varian ini' })
+      throw error
+    }
+    res.status(201).json({ tier: data })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.patch('/api/produk/:id/varian/:varianId/tiers/:tierId', isAuthenticated, async (req, res) => {
+  try {
+    const varian = await loadVarianForProduk(req.params.id, req.params.varianId)
+    if (!varian) return res.status(404).json({ error: 'Varian tidak ditemukan' })
+    const patch = {}
+    if (req.body.min_qty !== undefined) {
+      const min_qty = parseInt(req.body.min_qty, 10)
+      if (!Number.isFinite(min_qty) || min_qty < 2) return res.status(400).json({ error: 'min_qty minimal 2' })
+      patch.min_qty = min_qty
+    }
+    if (req.body.harga !== undefined) {
+      const harga = parseInt(req.body.harga, 10)
+      if (!Number.isFinite(harga) || harga < 0) return res.status(400).json({ error: 'harga tidak valid' })
+      patch.harga = harga
+    }
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'Tidak ada field diubah' })
+    const { data, error } = await supabase
+      .from('HargaTier')
+      .update(patch)
+      .eq('id', req.params.tierId)
+      .eq('varian_id', varian.id)
+      .select()
+      .maybeSingle()
+    if (error) {
+      if (error.code === '23505') return res.status(400).json({ error: 'min_qty sudah ada untuk varian ini' })
+      throw error
+    }
+    if (!data) return res.status(404).json({ error: 'Tier tidak ditemukan' })
+    res.json({ tier: data })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.delete('/api/produk/:id/varian/:varianId/tiers/:tierId', isAuthenticated, async (req, res) => {
+  try {
+    const varian = await loadVarianForProduk(req.params.id, req.params.varianId)
+    if (!varian) return res.status(404).json({ error: 'Varian tidak ditemukan' })
+    const { error } = await supabase
+      .from('HargaTier')
+      .delete()
+      .eq('id', req.params.tierId)
+      .eq('varian_id', varian.id)
+    if (error) throw error
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
   }
 })
 
