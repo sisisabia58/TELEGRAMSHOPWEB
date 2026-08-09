@@ -37,8 +37,8 @@
         <div class="container">
             <%
                 const totalVariants = rows.length;
-                const outCount = rows.filter(r => r.stok_count === 0).length;
-                const lowCount = rows.filter(r => r.stok_count > 0 && r.stok_count < 10).length;
+                const outCount = (stockSummary && stockSummary.outOfStock) ? stockSummary.outOfStock.length : 0;
+                const lowCount = (stockSummary && stockSummary.lowStock) ? stockSummary.lowStock.length : 0;
             %>
             <div class="catalog-summary">
                 <div class="stat-card">
@@ -97,9 +97,10 @@
                                 <% } else { %>
                                     <% rows.forEach(row => { %>
                                         <%
-                                            const badgeClass = row.stok_count === 0
+                                            const threshold = row.threshold == null ? 5 : Number(row.threshold);
+                                            const badgeClass = row.stok_count <= 0
                                                 ? 'badge-danger'
-                                                : (row.stok_count < 10 ? 'badge-warning' : 'badge-success');
+                                                : (row.stok_count <= threshold ? 'badge-warning' : 'badge-success');
                                         %>
                                         <tr>
                                             <td><strong><%= row.produk_nama %></strong></td>

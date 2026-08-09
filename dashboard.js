@@ -16,7 +16,7 @@ const flowPreview = require('./lib/flow-preview')
 const copyLib = require('./lib/copy')
 const ejs = require('ejs')
 const { formatrupiah, formatTanggal } = require('./lib/format')
-const { buildOverviewModel } = require('./lib/dashboard-overview')
+const { buildOverviewModel, summarizeStock } = require('./lib/dashboard-overview')
 
 const app = express()
 
@@ -1002,7 +1002,14 @@ app.get('/produk', isAuthenticated, async (req, res) => {
 
 app.get('/stok', isAuthenticated, async (req, res) => {
   try {
-    const products = await catalog.listProducts({ activeOnly: false, withStock: true })
+    const [products, thresholdsResult] = await Promise.all([
+      catalog.listProducts({ activeOnly: false, withStock: true }),
+      supabase.from('ProductStockThreshold').select('varian_id, threshold, is_active'),
+    ])
+    const thresholdsByVarianId = Object.create(null)
+    for (const row of thresholdsResult.data || []) {
+      if (row.is_active !== false) thresholdsByVarianId[row.varian_id] = row.threshold
+    }
     const rows = []
     for (const p of products) {
       for (const v of p.variants || []) {
@@ -1013,11 +1020,13 @@ app.get('/stok', isAuthenticated, async (req, res) => {
           label: v.label,
           kode: v.kode,
           stok_count: v.stok_count || 0,
+          threshold: thresholdsByVarianId[v.id],
           is_active: v.is_active !== false,
         })
       }
     }
     rows.sort((a, b) => a.stok_count - b.stok_count || a.produk_nama.localeCompare(b.produk_nama))
+    const stockSummary = summarizeStock(rows)
     res.render('stok', {
       title: `Stock - ${NamaBot}`,
       namaBot: NamaBot,
@@ -1025,6 +1034,7 @@ app.get('/stok', isAuthenticated, async (req, res) => {
       currentPage: 'stok',
       pageTitle: 'Stock',
       rows,
+      stockSummary,
       req,
     })
   } catch (e) {
