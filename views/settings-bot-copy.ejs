@@ -1,0 +1,117 @@
+<%
+    const currentPage = 'settings-bot-copy';
+    const pageTitle = '📝 Bot Copy';
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <script src="/js/ui-utils.js"></script>
+    <style>
+        .copy-key { font-family: monospace; font-size: 14px; }
+        .copy-kind { color: #666; font-weight: normal; font-size: 13px; }
+        .copy-vars { color: #888; font-size: 13px; margin-bottom: 12px; }
+        .copy-desc { color: #666; margin-bottom: 8px; }
+        .form-textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+        }
+        .form-textarea:focus {
+            border-color: #667eea;
+            outline: none;
+        }
+        .success-banner {
+            background: #d4edda;
+            color: #155724;
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        .error-banner {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <%- include('partials/sidebar') %>
+
+    <main class="main-content" id="main-content">
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
+            </div>
+            <div class="top-bar-right">
+                <div class="user-info">
+                    <span>👤 <%= username || 'Admin' %></span>
+                    <% if (req.session.role) { %>
+                        <span class="user-badge"><%= req.session.role %></span>
+                    <% } %>
+                </div>
+                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
+                <a href="/logout" class="btn-top btn-logout">Logout</a>
+            </div>
+        </div>
+
+        <div class="container">
+            <% if (success) { %>
+                <div class="success-banner">✅ Copy berhasil disimpan. Bot akan memuat ulang dalam ~10 detik.</div>
+            <% } %>
+            <% if (typeof req !== 'undefined' && req.query && req.query.error === 'empty') { %>
+                <div class="error-banner">⚠️ Body tidak boleh kosong.</div>
+            <% } %>
+
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header">
+                    <h2 class="card-title">Tentang Bot Copy</h2>
+                </div>
+                <div class="card-body">
+                    <p style="color: #666; margin: 0;">
+                        Edit teks layar dan label tombol bot. Gunakan <code>{{variabel}}</code> untuk bagian dinamis.
+                        Perubahan aktif otomatis tanpa restart bot (~10 detik).
+                    </p>
+                </div>
+            </div>
+
+            <% rows.forEach(row => { %>
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header">
+                        <h2 class="card-title">
+                            <code class="copy-key"><%= row.key %></code>
+                            <span class="copy-kind">(<%= row.kind %>)</span>
+                        </h2>
+                    </div>
+                    <div class="card-body">
+                        <% if (row.description) { %>
+                            <p class="copy-desc"><%= row.description %></p>
+                        <% } %>
+                        <p class="copy-vars">
+                            Variables:
+                            <% const vars = Array.isArray(row.variables) ? row.variables : []; %>
+                            <%= vars.length ? vars.join(', ') : '—' %>
+                        </p>
+                        <form method="POST" action="/settings/bot-copy/<%= encodeURIComponent(row.key) %>">
+                            <textarea name="body" class="form-textarea" rows="8" required><%= row.body %></textarea>
+                            <button type="submit" class="btn btn-primary" style="margin-top: 10px;">Simpan</button>
+                        </form>
+                    </div>
+                </div>
+            <% }) %>
+        </div>
+    </main>
+</body>
+</html>

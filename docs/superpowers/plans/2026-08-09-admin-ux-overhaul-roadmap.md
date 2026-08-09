@@ -16,7 +16,7 @@
 | 2 — Product → Variant → Stock | [2026-08-09-product-variant-stock.md](./2026-08-09-product-variant-stock.md) | **Done** (schema live; fixtures seeded) |
 | 3 — Tiered pricing | [2026-08-09-tiered-pricing.md](./2026-08-09-tiered-pricing.md) | **Done** |
 | 4 — Bulk upload rework | [2026-08-09-bulk-upload.md](./2026-08-09-bulk-upload.md) | **Done** |
-| 5 — Copy registry (screen/msg) | [2026-08-09-copy-registry.md](./2026-08-09-copy-registry.md) | **Plan ready** |
+| 5 — Copy registry (screen/msg) | [2026-08-09-copy-registry.md](./2026-08-09-copy-registry.md) | **Done** |
 | 6 — Flow engine | _depends on 1 + 5_ | Not started |
 | 7 — Bot command retirement | _depends on 2 + 4 + 6_ | Not started |
 | 8 — Dashboard IA + mobile | _depends on 2 + 3 + 6_ | Not started |

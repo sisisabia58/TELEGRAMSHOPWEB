@@ -16,6 +16,7 @@ process.env.NTBA_FIX_350 = '1'
 const { TokenBot, NamaBot, OwnerID, ImagePath, Pakasir, ChannelLog, ChannelStore, CS } = require("./settings.js")
 const supabase = require('./lib/supabase')
 const runtimeSettings = require('./lib/runtime-settings')
+const copy = require('./lib/copy')
 const pakasir = require('./pakasir.js')
 
 // Helper bersama dengan dashboard. Di-require di paling atas — dulu ini adalah
@@ -54,7 +55,10 @@ const channelContact = {
 
 // Muat pengaturan sekali di awal, lalu pantau perubahan dari dashboard.
 runtimeSettings.refresh(true)
-  .then(() => runtimeSettings.startPolling())
+  .then(async () => {
+    await copy.refresh()
+    runtimeSettings.startPolling(10000, () => { copy.refresh().catch(() => {}) })
+  })
   .catch((e) => console.error('[runtime-settings] gagal muat awal:', e.message))
 const TelegramBot = require("node-telegram-bot-api")
 const bot = new TelegramBot(TokenBot, { 
@@ -281,14 +285,48 @@ function formatProductDataForFile(dataLines, formatString) {
 // formatWIB / formatWIBDetail / formatrupiah / namaBulan -> lib/format.js
 // (di-require di bagian atas file)
 
+function welcomeCaption(ctx) {
+  return copy.get('screen.welcome', {
+    first_name: ctx.first_name || 'User',
+    nama_bot: NamaBot,
+    user_count: ctx.user_count ?? 0,
+    stok_terjual: ctx.stok_terjual ?? 0,
+    stok_tersedia: ctx.stok_tersedia ?? 0,
+    saldo: ctx.saldo_fmt || formatrupiah(ctx.saldo || 0),
+  })
+}
+
+function welcomeInlineKeyboard() {
+  return {
+    inline_keyboard: [
+      [{ text: copy.get('msg.menu_daftar_produk'), callback_data: 'daftarproduk' }],
+      [{ text: copy.get('msg.menu_kategori'), callback_data: 'kategori_menu' }],
+      [
+        { text: copy.get('msg.menu_riwayat'), callback_data: 'riwayattransaksi' },
+        { text: copy.get('msg.menu_cara_order'), callback_data: 'caraorder' },
+      ],
+      [
+        { text: copy.get('msg.menu_saldo'), callback_data: 'saldomenu' },
+        { text: copy.get('msg.menu_stok'), callback_data: 'stok' },
+      ],
+      [{ text: copy.get('msg.menu_channel'), url: channelContact.channelStore }],
+      [{ text: copy.get('msg.menu_cs'), url: channelContact.cs }],
+    ],
+  }
+}
+
 async function generateReplyKeyboard(userId) {
   try {
     const saldo = await cekSaldo(userId)
+    const saldoFmt = formatrupiah(saldo)
 
     return {
       keyboard: [
-        ["📦 Daftar Produk", `💰 Saldo: ${formatrupiah(saldo)}`],
-        ["📋 Riwayat Transaksi"]
+        [
+          copy.get('msg.menu_daftar_produk_reply'),
+          copy.get('msg.menu_saldo_reply', { saldo: saldoFmt }),
+        ],
+        [copy.get('msg.menu_riwayat_reply')],
       ],
       resize_keyboard: true
     }
@@ -296,8 +334,8 @@ async function generateReplyKeyboard(userId) {
     console.error('Error generating reply keyboard:', error)
     return {
       keyboard: [
-        ["📦 Daftar Produk"],
-        ["📋 Riwayat Transaksi"]
+        [copy.get('msg.menu_daftar_produk_reply')],
+        [copy.get('msg.menu_riwayat_reply')],
       ],
       resize_keyboard: true
     }
@@ -354,7 +392,15 @@ async function showVariantQtyScreen(userId, msgId, varian) {
   const momentTz = require('moment-timezone')
   const formattedTime = momentTz().tz('Asia/Jakarta').format('hh:mm:ss A')
   const item = await getVarianForCart(varian.kode)
-  await editOrSendBannerMessage(userId, msgId, `tambahkan jumlah pembelian:\n\n┌──────────────────\n│ • Produk : ${item.namaProduk.toUpperCase()} — ${item.namaLabel.toUpperCase()}\n│ • Stok Terjual : ${varian.terjual || 0}\n│ • Desk : ${item.deskripsi}\n└──────────────────\n\n┌──────────────────\n│ Harga: ${formatrupiah(varian.harga)} — (Stok ${stokCount})\n└──────────────────\n\nCurrent Date: ${formattedTime}`, {
+  const caption = copy.get('screen.qty', {
+    produk_label: `${item.namaProduk.toUpperCase()} — ${item.namaLabel.toUpperCase()}`,
+    terjual: varian.terjual || 0,
+    deskripsi: item.deskripsi,
+    harga: formatrupiah(varian.harga),
+    stok: stokCount,
+    waktu: formattedTime,
+  })
+  await editOrSendBannerMessage(userId, msgId, caption, {
     reply_markup: {
       inline_keyboard: [
         [{ text: `${item.namaLabel} (${stokCount})`, callback_data: 'lanjut' }],
@@ -3042,19 +3088,21 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
 
   if (callbackId) await bot.answerCallbackQuery(callbackId)
 
-  let text = `*LIST PRODUCT*\n\n`
+  let rows = ''
   if (items.length === 0) {
-    text += `📭 *Tidak ada produk*`
+    rows = `📭 *Tidak ada produk*`
   } else {
     items.forEach((p, idx) => {
       const itemNum = start + idx + 1
-      text += `[${itemNum}]. ${p.nama.toUpperCase()} ( ${p.stok_count} )\n`
+      rows += `[${itemNum}]. ${p.nama.toUpperCase()} ( ${p.stok_count} )\n`
     })
     const momentTz = require('moment-timezone')
     const formattedTime = momentTz().tz('Asia/Jakarta').format('hh:mm:ss A')
-    text += `\n📄 Halaman ${page + 1} / ${totalPages}\n`
-    text += `📅 ${formattedTime}`
+    rows += `\n📄 Halaman ${page + 1} / ${totalPages}\n`
+    rows += `📅 ${formattedTime}`
   }
+
+  const text = copy.get('screen.product_list', { rows })
 
   const buttons = []
   if (items.length === 0) {
@@ -3140,7 +3188,12 @@ async function sendProductCard(chatId, slug, msgId = null) {
       }
     })
 
-    const text = `📦 *${produk.nama}*\n\n${totalTerjual.toLocaleString('id-ID')} Terjual\nS&K / T&C : ${snkDisplay}\n\n${variasiLines}\n🕒 Diperbarui pada ${formattedTime} WIB`
+    const text = copy.get('screen.product_card', {
+      nama: produk.nama,
+      deskripsi: `${totalTerjual.toLocaleString('id-ID')} Terjual`,
+      snk: snkDisplay,
+      variants_block: `${variasiLines}\n🕒 Diperbarui pada ${formattedTime} WIB`,
+    })
 
     const varButtons = []
     const available = active.filter((v) => v.stok_count > 0)
@@ -3151,8 +3204,8 @@ async function sendProductCard(chatId, slug, msgId = null) {
       }
       varButtons.push(row)
     }
-    varButtons.push([{ text: '⟳ Perbarui', callback_data: `p_refresh:${slug}` }])
-    varButtons.push([{ text: '← Kembali', callback_data: 'daftarproduk' }])
+    varButtons.push([{ text: copy.get('msg.btn_perbarui'), callback_data: `p_refresh:${slug}` }])
+    varButtons.push([{ text: copy.get('msg.btn_kembali'), callback_data: 'daftarproduk' }])
 
     const reply_markup = { inline_keyboard: varButtons }
     if (msgId) {
@@ -3798,30 +3851,18 @@ bot.onText(/\/start/, async (msg) => {
     const userCount = userCountResult.count || 0
     
     // Kirim foto + teks dalam satu bubble (banner merged)
-    await sendBannerMessage(msg.from.id, `Halo, *${msg.from.first_name}* 👋
-
-Selamat datang di *${NamaBot}*
-
-👥 Total User: *${userCount}*
-🛍️ Total Terjual: *${stokterjual}*
-📦 Stok Tersedia: *${stoktersedia}*
-💰 Saldo Anda: *${formatrupiah(userSaldo)}*
-
-Silahkan pilih menu dibawah ini!`, {
-      reply_markup: {
-        inline_keyboard: [
-          [{text: "‹📦› Daftar Produk", callback_data: "daftarproduk" }],
-          [{text: "‹📂› Kategori Produk", callback_data: "kategori_menu"}],
-          [{text: "‹📋› Riwayat Transaksi", callback_data: "riwayattransaksi"}, {text: "‹❓› Cara Order", callback_data: "caraorder"}],
-          [{text: "‹💰› Saldo & Deposit", callback_data: "saldomenu"}, {text: "‹📊› Stok", callback_data: "stok"}],
-          [{text: "‹📢› Channel", url: channelContact.channelStore }],
-          [{text: "‹📞› Customer Service", url: channelContact.cs }]
-        ]
-      }
+    await sendBannerMessage(msg.from.id, welcomeCaption({
+      first_name: msg.from.first_name,
+      user_count: userCount,
+      stok_terjual: stokterjual,
+      stok_tersedia: stoktersedia,
+      saldo: userSaldo,
+    }), {
+      reply_markup: welcomeInlineKeyboard()
     })
 
     const replyKb = await generateReplyKeyboard(msg.from.id)
-    await bot.sendMessage(msg.from.id, `⌨️ Menu navigasi cepat diaktifkan.`, {
+    await bot.sendMessage(msg.from.id, copy.get('msg.reply_nav_enabled'), {
       reply_markup: replyKb
     })
   } catch (error) {
@@ -6702,26 +6743,14 @@ di *${NamaBot}*! 🙏`, {
       }
     }
     
-    await sendBannerMessage(query.from.id, `Halo, *${query.from.first_name}* 👋
-
-Selamat datang di *${NamaBot}*
-
-👥 Total User: *${User ? User.length : 0}*
-🛍️ Total Terjual: *${stokterjual}*
-📦 Stok Tersedia: *${stoktersedia}*
-💰 Saldo Anda: *${formatrupiah(saldoBaru)}*
-
-Silahkan pilih menu dibawah ini!`, {
-      reply_markup: {
-        inline_keyboard: [
-          [{text: "‹📦› Daftar Produk", callback_data: "daftarproduk" }],
-          [{text: "‹📂› Kategori Produk", callback_data: "kategori_menu"}],
-          [{text: "‹📋› Riwayat Transaksi", callback_data: "riwayattransaksi"}, {text: "‹❓› Cara Order", callback_data: "caraorder"}],
-          [{text: "‹💰› Saldo & Deposit", callback_data: "saldomenu"}, {text: "‹📊› Stok", callback_data: "stok"}],
-          [{text: "‹📢› Channel", url: channelContact.channelStore }],
-          [{text: "‹📞› Customer Service", url: channelContact.cs }]
-        ]
-      }
+    await sendBannerMessage(query.from.id, welcomeCaption({
+      first_name: query.from.first_name,
+      user_count: User ? User.length : 0,
+      stok_terjual: stokterjual,
+      stok_tersedia: stoktersedia,
+      saldo: saldoBaru,
+    }), {
+      reply_markup: welcomeInlineKeyboard()
     })
   } else {
     await sendMessage(query.from.id, `⚠️ Harap ulangi pilih produk!`)
@@ -7359,26 +7388,14 @@ di *${NamaBot}*! 🙏`, {
                 }
               }
               const userSaldo2 = await cekSaldo(query.from.id)
-              await sendBannerMessage(query.from.id, `Halo, *${query.from.first_name}* 👋
-
-Selamat datang di *${NamaBot}*
-
-👥 Total User: *${User ? User.length : 0}*
-🛍️ Total Terjual: *${stokterjual}*
-📦 Stok Tersedia: *${stoktersedia}*
-💰 Saldo Anda: *${formatrupiah(userSaldo2)}*
-
-Silahkan pilih menu dibawah ini!`, {
-                reply_markup: {
-                  inline_keyboard: [
-                    [{text: "‹📦› Daftar Produk", callback_data: "daftarproduk" }],
-                    [{text: "‹📂› Kategori Produk", callback_data: "kategori_menu"}],
-                    [{text: "‹📋› Riwayat Transaksi", callback_data: "riwayattransaksi"}, {text: "‹❓› Cara Order", callback_data: "caraorder"}],
-                    [{text: "‹💰› Saldo & Deposit", callback_data: "saldomenu"}, {text: "‹📊› Stok", callback_data: "stok"}],
-                    [{text: "‹📢› Channel", url: channelContact.channelStore }],
-                    [{text: "‹📞› Customer Service", url: channelContact.cs }]
-                  ]
-                }
+              await sendBannerMessage(query.from.id, welcomeCaption({
+                first_name: query.from.first_name,
+                user_count: User ? User.length : 0,
+                stok_terjual: stokterjual,
+                stok_tersedia: stoktersedia,
+                saldo: userSaldo2,
+              }), {
+                reply_markup: welcomeInlineKeyboard()
               })
             } catch (menuError) {
               console.error('Error refresh menu:', menuError)
@@ -9732,17 +9749,8 @@ File berisi semua data produk dalam format CSV.`,
 if (cmd === "saldomenu") {
   const saldo = await cekSaldo(query.from.id)
   await bot.answerCallbackQuery(query.id)
-  
-  const text = `💰 *SALDO & DEPOSIT*
-=======================
-💵 *Saldo Tersedia:* ${formatrupiah(saldo)}
-=======================
-*Fitur:*
-• 💳 Top Up Saldo - Deposit saldo via QRIS
-• 📋 Riwayat Deposit - Lihat riwayat deposit
-• 💰 Cek Saldo - Lihat saldo saat ini
-=======================
-💡 Gunakan saldo untuk pembayaran yang lebih cepat!`
+
+  const text = copy.get('screen.saldo_menu', { saldo: formatrupiah(saldo) })
 
   const reply_markup = {
     inline_keyboard: [
@@ -9966,26 +9974,14 @@ Kode Deposit: \`${kodeDeposit}\`
      // Extract counts
      const trxCount = trxCountResult.count || 0
       const userCount = userCountResult.count || 0
-      await editOrSendBannerMessage(query.from.id, query.message.message_id, `Halo, *${query.from.first_name}* 👋
-
-Selamat datang di *${NamaBot}*
-
-👥 Total User: *${userCount}*
-🛍️ Total Terjual: *${stokterjual}*
-📦 Stok Tersedia: *${stoktersedia}*
-💰 Saldo Anda: *${formatrupiah(userSaldo)}*
-
-Silahkan pilih menu dibawah ini!`, {
-       reply_markup: {
-         inline_keyboard: [
-           [{text: "‹📦› Daftar Produk", callback_data: "daftarproduk" }],
-           [{text: "‹📂› Kategori Produk", callback_data: "kategori_menu"}],
-           [{text: "‹📋› Riwayat Transaksi", callback_data: "riwayattransaksi"}, {text: "‹❓› Cara Order", callback_data: "caraorder"}],
-           [{text: "‹💰› Saldo & Deposit", callback_data: "saldomenu"}, {text: "‹📊› Stok", callback_data: "stok"}],
-           [{text: "‹📢› Channel", url: channelContact.channelStore }],
-           [{text: "‹📞› Customer Service", url: channelContact.cs }]
-         ]
-       }
+      await editOrSendBannerMessage(query.from.id, query.message.message_id, welcomeCaption({
+        first_name: query.from.first_name,
+        user_count: userCount,
+        stok_terjual: stokterjual,
+        stok_tersedia: stoktersedia,
+        saldo: userSaldo,
+      }), {
+       reply_markup: welcomeInlineKeyboard()
      })
    } catch (error) {
      console.error('Error in kembaliawal:', error)
@@ -10337,66 +10333,8 @@ ${mostExpensive ? `💰 *${formatrupiah(mostExpensive.harga)}*\n📦 ${mostExpen
   if (cmd === "caraorder") {
     await bot.answerCallbackQuery(query.id)
     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-    
-    await bot.sendMessage(query.from.id, `❓ *CARA ORDER DI ${NamaBot.toUpperCase()}*
-━━━━━━━━━━━━━━━━━━━━
-📖 *Panduan Lengkap*
-━━━━━━━━━━━━━━━━━━━━
 
-*📦 Langkah 1: Pilih Produk*
-━━━━━━━━━━━━━━━━━━━━
-1️⃣ Klik tombol "📦 Daftar Produk"
-2️⃣ Pilih produk yang ingin dibeli
-3️⃣ Lihat detail produk (harga, stok, deskripsi)
-💡 Pastikan stok tersedia sebelum order
-
-━━━━━━━━━━━━━━━━━━━━
-
-*🔢 Langkah 2: Tentukan Jumlah*
-━━━━━━━━━━━━━━━━━━━━
-1️⃣ Pilih jumlah pembelian (1-5)
-2️⃣ Lihat total harga yang harus dibayar
-3️⃣ Opsional: Gunakan kode voucher jika ada
-💡 Klik "Punya" jika ingin menggunakan voucher
-
-━━━━━━━━━━━━━━━━━━━━
-
-*💳 Langkah 3: Pilih Metode Pembayaran*
-━━━━━━━━━━━━━━━━━━━━
-💳 *Metode 1: QRIS*
-   • Scan QR Code yang muncul
-   • Bayar sesuai nominal
-   • Produk otomatis terkirim setelah pembayaran
-   ⏰ Waktu expired: 10 menit
-   💵 Ada fee admin
-
-💰 *Metode 2: Saldo*
-   • Pastikan saldo mencukupi
-   • Klik "Bayar Pakai Saldo"
-   • Produk langsung terkirim
-   ✅ Tidak ada fee admin
-
-━━━━━━━━━━━━━━━━━━━━
-
-*✅ Langkah 4: Terima Produk*
-━━━━━━━━━━━━━━━━━━━━
-1️⃣ Produk akan terkirim otomatis dalam beberapa detik
-2️⃣ File produk dikirim sebagai dokumen
-3️⃣ Simpan file dengan baik!
-💡 Gunakan tombol "📥 Unduh Ulang" jika perlu
-
-━━━━━━━━━━━━━━━━━━━━
-💡 *TIPS PENTING*
-━━━━━━━━━━━━━━━━━━━━
-• Pastikan koneksi internet stabil saat scan QRIS
-• Simpan file produk segera setelah diterima
-• Gunakan voucher untuk mendapatkan diskon
-• Top up saldo untuk transaksi lebih cepat
-• Hubungi CS jika ada masalah
-
-━━━━━━━━━━━━━━━━━━━━
-🚀 *Nikmati transaksi yang cepat, mudah, dan tanpa ribet!*
-━━━━━━━━━━━━━━━━━━━━`, {
+    await bot.sendMessage(query.from.id, copy.get('screen.cara_order'), {
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
