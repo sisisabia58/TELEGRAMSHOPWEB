@@ -953,7 +953,7 @@ app.get('/', isAuthenticated, async (req, res) => {
         threshold: thresholdsByVarianId[variant.id],
       })),
       todayRevenue: (todayTrxResult.data || []).reduce((sum, t) => sum + (t.harga || 0), 0),
-      todayTxnCount: todayTrxResult.count || (todayTrxResult.data || []).length,
+      todayTxnCount: todayTrxResult.count ?? (todayTrxResult.data || []).length,
       recentTxns: recentTrxResult.data || [],
       flowDraftUpdatedAt: activeFlowResult.data?.draft_updated_at || null,
     })
