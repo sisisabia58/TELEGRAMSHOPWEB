@@ -3,6 +3,16 @@
 <head>
     <%- include('partials/head') %>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .analitik-product-grid {
+            margin-bottom: 20px;
+        }
+        .chart-subtitle {
+            color: var(--color-muted);
+            font-size: 13px;
+            margin-top: 4px;
+        }
+    </style>
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -25,7 +35,7 @@
                 </div>
             </div>
             
-            <!-- Analytics Charts -->
+            <!-- Revenue Chart -->
             <div class="content-grid">
                 <div class="card">
                     <div class="card-header">
@@ -35,13 +45,27 @@
                         <canvas id="revenueChart"></canvas>
                     </div>
                 </div>
-                
+            </div>
+
+            <!-- Product + Variant Charts -->
+            <div class="content-grid analitik-product-grid">
                 <div class="card">
                     <div class="card-header">
                         <h2 class="card-title">📊 Top Products</h2>
+                        <p class="chart-subtitle">Agregat per produk (semua varian)</p>
                     </div>
                     <div class="card-body">
                         <canvas id="productsChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">🏷️ Top Variants</h2>
+                        <p class="chart-subtitle">Per varian / kode</p>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="variantsChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -81,8 +105,44 @@
             }
         });
         
-        // Load analytics data and render charts
         const currentPeriod = '<%= currentPeriod %>';
+        const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim() || '#0F766E';
+        const accentMuted = 'rgba(15, 118, 110, 0.15)';
+        const variantColor = getComputedStyle(document.documentElement).getPropertyValue('--color-success').trim() || '#059669';
+        const variantMuted = 'rgba(5, 150, 105, 0.35)';
+
+        function renderBarChart(canvasId, rows, labelField, emptyMessage, errorMessage, colors) {
+            const canvas = document.getElementById(canvasId);
+            const parent = canvas.parentElement;
+            if (!rows || !rows.length) {
+                parent.innerHTML = '<p class="text-muted">' + emptyMessage + '</p>';
+                return;
+            }
+            const labels = rows.map((d) => (d[labelField] || d.kode || 'Item').substring(0, 24));
+            const terjual = rows.map((d) => d.totalTerjual);
+            new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Terjual',
+                        data: terjual,
+                        backgroundColor: colors.bg,
+                        borderColor: colors.border,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { beginAtZero: true }
+                    }
+                }
+            });
+        }
 
         // Revenue chart
         fetch(`/api/analitik/sales?period=${currentPeriod}`)
@@ -98,8 +158,8 @@
                             datasets: [{
                                 label: 'Revenue (Rp)',
                                 data: revenues,
-                                borderColor: 'rgb(75, 192, 192)',
-                                backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                                borderColor: accentColor,
+                                backgroundColor: accentMuted,
                                 fill: true,
                                 tension: 0.3
                             }]
@@ -121,41 +181,38 @@
                 document.getElementById('revenueChart').parentElement.innerHTML = '<p class="text-danger">Gagal memuat data revenue.</p>';
             });
 
-        // Top products chart
+        // Product + variant charts
         fetch('/api/analitik/products?limit=10')
             .then(res => res.json())
             .then(data => {
-                if (data.success && data.data && data.data.length) {
-                    const labels = data.data.map(d => (d.nama || d.kode || 'Produk').substring(0, 20));
-                    const terjual = data.data.map(d => d.totalTerjual);
-                    new Chart(document.getElementById('productsChart'), {
-                        type: 'bar',
-                        data: {
-                            labels,
-                            datasets: [{
-                                label: 'Terjual',
-                                data: terjual,
-                                backgroundColor: 'rgba(54, 162, 235, 0.6)',
-                                borderColor: 'rgb(54, 162, 235)',
-                                borderWidth: 1
-                            }]
-                        },
-                        options: {
-                            indexAxis: 'y',
-                            responsive: true,
-                            maintainAspectRatio: true,
-                            plugins: { legend: { display: false } },
-                            scales: {
-                                x: { beginAtZero: true }
-                            }
-                        }
-                    });
-                } else {
-                    document.getElementById('productsChart').parentElement.innerHTML = '<p class="text-muted">Belum ada data produk.</p>';
+                if (!data.success || !data.data) {
+                    throw new Error('Invalid response');
                 }
+                const byProduct = Array.isArray(data.data.byProduct)
+                    ? data.data.byProduct
+                    : (Array.isArray(data.data) ? data.data : []);
+                const byVariant = Array.isArray(data.data.byVariant) ? data.data.byVariant : [];
+
+                renderBarChart(
+                    'productsChart',
+                    byProduct,
+                    'nama',
+                    'Belum ada data produk.',
+                    'Gagal memuat data produk.',
+                    { bg: accentMuted, border: accentColor }
+                );
+                renderBarChart(
+                    'variantsChart',
+                    byVariant,
+                    'kode',
+                    'Belum ada data varian.',
+                    'Gagal memuat data varian.',
+                    { bg: variantMuted, border: variantColor }
+                );
             })
             .catch(() => {
                 document.getElementById('productsChart').parentElement.innerHTML = '<p class="text-danger">Gagal memuat data produk.</p>';
+                document.getElementById('variantsChart').parentElement.innerHTML = '<p class="text-danger">Gagal memuat data varian.</p>';
             });
     </script>
     

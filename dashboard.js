@@ -1974,6 +1974,25 @@ app.get('/transaksi', isAuthenticated, async (req, res) => {
 
     const totalPages = Math.ceil((count || 0) / limit)
 
+    const varianIds = [...new Set((transactions || []).map((t) => t.varian_id).filter(Boolean))]
+    const varianById = Object.create(null)
+    if (varianIds.length > 0) {
+      const { data: varianRows } = await supabase
+        .from('Varian')
+        .select('id, label, kode')
+        .in('id', varianIds)
+      for (const row of varianRows || []) {
+        varianById[row.id] = row
+      }
+    }
+    const enrichedTransactions = (transactions || []).map((t) => {
+      const varian = t.varian_id ? varianById[t.varian_id] : null
+      return {
+        ...t,
+        varian_label: varian ? varian.label : null,
+      }
+    })
+
     // Ambil daftar produk untuk filter dropdown
     const { data: products } = await supabase
       .from('Produk')
@@ -1987,7 +2006,7 @@ app.get('/transaksi', isAuthenticated, async (req, res) => {
       username: req.session.username,
       currentPage: 'transaksi',
       pageTitle: '🛍️ Daftar Transaksi',
-      transactions: transactions || [],
+      transactions: enrichedTransactions,
       products: products || [],
       currentPageNum: page,
       totalPages,
@@ -2028,11 +2047,33 @@ app.get('/transaksi/:id', isAuthenticated, async (req, res) => {
     }
 
     // Ambil info produk
-    const { data: produk } = await supabase
-      .from('Produk')
-      .select('*')
-      .eq('kode', transaction.kode)
-      .single()
+    let produk = null
+    if (transaction.produk_id) {
+      const { data } = await supabase
+        .from('Produk')
+        .select('*')
+        .eq('id', transaction.produk_id)
+        .single()
+      produk = data
+    }
+    if (!produk) {
+      const { data } = await supabase
+        .from('Produk')
+        .select('*')
+        .eq('kode', transaction.kode)
+        .single()
+      produk = data
+    }
+
+    let varian = null
+    if (transaction.varian_id) {
+      const { data } = await supabase
+        .from('Varian')
+        .select('id, label, kode')
+        .eq('id', transaction.varian_id)
+        .single()
+      varian = data
+    }
 
     // Ambil info user
     const { data: user } = await supabase
@@ -2048,6 +2089,7 @@ app.get('/transaksi/:id', isAuthenticated, async (req, res) => {
       req: req,
       transaction: transaction,
       produk: produk || null,
+      varian: varian || null,
       user: user || null,
       formatrupiah,
       formatTanggal
@@ -3006,45 +3048,83 @@ app.get('/api/analitik/sales', isAuthenticated, async (req, res) => {
   }
 })
 
-// API: Produk Terlaris
+// API: Produk Terlaris (variant-level + product rollup)
 app.get('/api/analitik/products', isAuthenticated, async (req, res) => {
   try {
     const { limit = 10 } = req.query
+    const limitNum = parseInt(limit, 10) || 10
     
     const { data: transactions } = await supabase
       .from('Trx')
-      .select('kode, nama, jumlah, harga')
+      .select('kode, nama, jumlah, harga, produk_id, varian_id')
 
     if (!transactions) {
-      return res.json({ success: true, data: [] })
+      return res.json({ success: true, data: { byVariant: [], byProduct: [] } })
     }
 
-    // Group by produk
-    const productStats = {}
-    transactions.forEach(t => {
-      const key = t.kode
-      if (!productStats[key]) {
-        productStats[key] = {
+    const variantStats = Object.create(null)
+    const productStats = Object.create(null)
+
+    transactions.forEach((t) => {
+      const variantKey = t.kode || t.varian_id || 'unknown'
+      if (!variantStats[variantKey]) {
+        variantStats[variantKey] = {
           kode: t.kode,
           nama: t.nama,
+          produk_id: t.produk_id,
+          varian_id: t.varian_id,
+          level: 'variant',
           totalTerjual: 0,
           totalRevenue: 0,
-          jumlahTransaksi: 0
+          jumlahTransaksi: 0,
         }
       }
-      productStats[key].totalTerjual += t.jumlah || 0
-      productStats[key].totalRevenue += t.harga || 0
-      productStats[key].jumlahTransaksi += 1
+      variantStats[variantKey].totalTerjual += t.jumlah || 0
+      variantStats[variantKey].totalRevenue += t.harga || 0
+      variantStats[variantKey].jumlahTransaksi += 1
+
+      const productKey = t.produk_id || `nama:${t.nama}`
+      if (!productStats[productKey]) {
+        productStats[productKey] = {
+          produk_id: t.produk_id || null,
+          nama: t.nama,
+          level: 'product',
+          totalTerjual: 0,
+          totalRevenue: 0,
+          jumlahTransaksi: 0,
+          variantCount: 0,
+          _variantKeys: new Set(),
+        }
+      }
+      productStats[productKey].totalTerjual += t.jumlah || 0
+      productStats[productKey].totalRevenue += t.harga || 0
+      productStats[productKey].jumlahTransaksi += 1
+      productStats[productKey]._variantKeys.add(t.kode || t.varian_id || variantKey)
     })
 
-    // Sort by total terjual dan ambil top N
-    const topProducts = Object.values(productStats)
+    const byVariant = Object.values(variantStats)
       .sort((a, b) => b.totalTerjual - a.totalTerjual)
-      .slice(0, parseInt(limit))
+      .slice(0, limitNum)
+
+    const byProduct = Object.values(productStats)
+      .map((row) => ({
+        produk_id: row.produk_id,
+        nama: row.nama,
+        level: row.level,
+        totalTerjual: row.totalTerjual,
+        totalRevenue: row.totalRevenue,
+        jumlahTransaksi: row.jumlahTransaksi,
+        variantCount: row._variantKeys.size,
+      }))
+      .sort((a, b) => b.totalTerjual - a.totalTerjual)
+      .slice(0, limitNum)
 
     res.json({
       success: true,
-      data: topProducts
+      data: {
+        byVariant,
+        byProduct,
+      },
     })
   } catch (error) {
     res.status(500).json({ success: false, error: error.message })

@@ -2,6 +2,35 @@
 <html lang="id">
 <head>
     <%- include('partials/head') %>
+    <style>
+        .catalog-summary {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        .catalog-summary .stat-card {
+            flex: 1;
+            min-width: 140px;
+        }
+        .table-card .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .catalog-meta {
+            color: var(--color-muted);
+            font-size: 14px;
+        }
+        .search-card {
+            margin-bottom: 20px;
+        }
+        .table-card {
+            margin-bottom: 20px;
+        }
+    </style>
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -12,7 +41,44 @@
         <%- include('partials/topbar') %>
         
         <div class="container">
-            <div class="card" style="margin-bottom: 20px;">
+            <%
+                const totalProducts = products.length;
+                const totalVariants = products.reduce((sum, p) => sum + (p.variant_count || 0), 0);
+                const totalStock = products.reduce((sum, p) => sum + (p.total_stock || 0), 0);
+                const activeProducts = products.filter(p => p.is_active !== false).length;
+            %>
+            <div class="catalog-summary">
+                <div class="stat-card">
+                    <div class="stat-icon">📦</div>
+                    <div class="stat-info">
+                        <h3>Total Produk</h3>
+                        <p class="stat-value"><%= totalProducts %></p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🏷️</div>
+                    <div class="stat-info">
+                        <h3>Total Varian</h3>
+                        <p class="stat-value"><%= totalVariants %></p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-info">
+                        <h3>Total Stok</h3>
+                        <p class="stat-value" style="color: var(--color-accent);"><%= totalStock %></p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">✅</div>
+                    <div class="stat-info">
+                        <h3>Aktif</h3>
+                        <p class="stat-value" style="color: var(--color-success);"><%= activeProducts %></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card search-card">
                 <div class="card-body">
                     <div class="search-container">
                         <span class="search-icon">🔍</span>
@@ -21,9 +87,10 @@
                 </div>
             </div>
             
-            <div class="card">
+            <div class="card table-card">
                 <div class="card-header">
                     <h2 class="card-title">Daftar Produk</h2>
+                    <span class="catalog-meta"><%= totalVariants %> varian · <%= totalStock %> stok total</span>
                 </div>
                 <div class="card-body">
                     <div class="table-wrapper">
@@ -54,7 +121,7 @@
                                     <% products.forEach(p => { %>
                                         <tr>
                                             <td><strong><%= p.nama %></strong></td>
-                                            <td><span class="badge badge-success" style="background:#6c47ff;"><%= p.kategori || 'umum' %></span></td>
+                                            <td><span class="badge badge-success"><%= p.kategori || 'umum' %></span></td>
                                             <td><%= p.variant_count || 0 %></td>
                                             <td>
                                                 <% 

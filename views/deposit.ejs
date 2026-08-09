@@ -2,6 +2,43 @@
 <html lang="id">
 <head>
     <%- include('partials/head') %>
+    <style>
+        .deposit-stats .stat-value.pending { color: var(--color-warning); }
+        .deposit-stats .stat-value.success { color: var(--color-success); }
+        .deposit-stats .stat-value.failed { color: var(--color-danger); }
+        .deposit-stats .stat-value.expired { color: var(--color-muted); }
+        .deposit-stats small { color: var(--color-muted); }
+        .deposit-row-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .deposit-approve-reject {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .deposit-action-btn {
+            font-size: 13px;
+            padding: 6px 10px;
+            line-height: 1.2;
+        }
+        @media (max-width: 640px) {
+            .mobile-card-actions .deposit-approve-reject {
+                flex-direction: column;
+                width: 100%;
+            }
+            .mobile-card-actions .deposit-action-btn {
+                width: 100%;
+                justify-content: center;
+            }
+            .mobile-card-actions .deposit-row-actions {
+                flex-direction: column;
+                width: 100%;
+            }
+        }
+    </style>
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -13,7 +50,7 @@
         
         <div class="container">
             <!-- Stats -->
-            <div class="stats-grid" style="margin-bottom: 20px;">
+            <div class="stats-grid deposit-stats" style="margin-bottom: 20px;">
                 <div class="stat-card">
                     <div class="stat-icon">💰</div>
                     <div class="stat-info">
@@ -25,30 +62,30 @@
                     <div class="stat-icon">⏳</div>
                     <div class="stat-info">
                         <h3>Pending</h3>
-                        <p class="stat-value" style="color: #ffc107;"><%= stats.pending %></p>
-                        <small style="color: #666;"><%= formatrupiah(stats.totalPending) %></small>
+                        <p class="stat-value pending"><%= stats.pending %></p>
+                        <small><%= formatrupiah(stats.totalPending) %></small>
                     </div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-icon">✅</div>
                     <div class="stat-info">
                         <h3>Success</h3>
-                        <p class="stat-value" style="color: #28a745;"><%= stats.success %></p>
-                        <small style="color: #666;"><%= formatrupiah(stats.totalSuccess) %></small>
+                        <p class="stat-value success"><%= stats.success %></p>
+                        <small><%= formatrupiah(stats.totalSuccess) %></small>
                     </div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-icon">❌</div>
                     <div class="stat-info">
                         <h3>Failed</h3>
-                        <p class="stat-value" style="color: #dc3545;"><%= stats.failed %></p>
+                        <p class="stat-value failed"><%= stats.failed %></p>
                     </div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-icon">⏰</div>
                     <div class="stat-info">
                         <h3>Expired</h3>
-                        <p class="stat-value" style="color: #6c757d;"><%= stats.expired %></p>
+                        <p class="stat-value expired"><%= stats.expired %></p>
                     </div>
                 </div>
             </div>
@@ -98,7 +135,7 @@
                         </div>
                         <div class="form-actions">
                             <button type="submit" class="btn btn-primary">🔍 Filter</button>
-                            <a href="/deposit" class="btn" style="background: #6c757d;">🔄 Reset</a>
+                            <a href="/deposit" class="btn btn-secondary">🔄 Reset</a>
                         </div>
                     </form>
                 </div>
@@ -195,15 +232,17 @@
                                             </td>
                                             <td><%= d.metode === 'qris' ? '💳 QRIS' : '👤 Manual' %></td>
                                             <td>
-                                                <div class="table-actions">
+                                                <div class="table-actions deposit-row-actions">
                                                     <a href="/deposit/<%= d.id %>" class="btn-icon" title="Detail">👁️</a>
                                                     <% if (d.status === 'pending') { %>
-                                                        <form method="POST" action="/deposit/<%= d.id %>/approve" style="display: inline;" onsubmit="return confirm('Yakin approve deposit ini?')">
-                                                            <button type="submit" class="btn-icon" title="Approve" style="color: #28a745;">✅</button>
-                                                        </form>
-                                                        <form method="POST" action="/deposit/<%= d.id %>/reject" style="display: inline;" onsubmit="return confirm('Yakin reject deposit ini?')">
-                                                            <button type="submit" class="btn-icon" title="Reject" style="color: #dc3545;">❌</button>
-                                                        </form>
+                                                        <div class="deposit-approve-reject">
+                                                            <form method="POST" action="/deposit/<%= d.id %>/approve" onsubmit="return confirm('Yakin approve deposit ini?')">
+                                                                <button type="submit" class="btn btn-success deposit-action-btn" title="Approve">✅ Approve</button>
+                                                            </form>
+                                                            <form method="POST" action="/deposit/<%= d.id %>/reject" onsubmit="return confirm('Yakin reject deposit ini?')">
+                                                                <button type="submit" class="btn btn-danger deposit-action-btn" title="Reject">❌ Reject</button>
+                                                            </form>
+                                                        </div>
                                                     <% } %>
                                                 </div>
                                             </td>

@@ -16,9 +16,9 @@
             gap: 12px;
             flex-wrap: wrap;
             font-size: 14px;
-            color: #666;
+            color: var(--color-muted);
         }
-        .transaksi-stats strong { color: #333; }
+        .transaksi-stats strong { color: var(--color-text); }
         .filter-card .card-header {
             display: flex;
             align-items: center;
@@ -159,6 +159,7 @@
                                     <th>Tanggal</th>
                                     <th>User ID</th>
                                     <th>Produk</th>
+                                    <th>Varian</th>
                                     <th>Kode</th>
                                     <th>Jumlah</th>
                                     <th>Harga</th>
@@ -169,7 +170,7 @@
                             <tbody>
                                 <% if (transactions.length === 0) { %>
                                     <tr>
-                                        <td colspan="8">
+                                        <td colspan="9">
                                             <div class="empty-state">
                                                 <div class="empty-state-icon">🛍️</div>
                                                 <div class="empty-state-title">Belum ada transaksi</div>
@@ -183,6 +184,13 @@
                                             <td><%= formatTanggal(t.tanggal) %></td>
                                             <td><code><%= t.id %></code></td>
                                             <td><%= t.nama %></td>
+                                            <td>
+                                                <% if (t.varian_label) { %>
+                                                    <%= t.varian_label %>
+                                                <% } else if (t.varian_id || t.kode) { %>
+                                                    <span style="color: var(--color-muted);">—</span>
+                                                <% } %>
+                                            </td>
                                             <td><code><%= t.kode %></code></td>
                                             <td><%= t.jumlah %></td>
                                             <td><%= formatrupiah(t.harga) %></td>

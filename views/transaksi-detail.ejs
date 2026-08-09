@@ -86,8 +86,14 @@
                         <span class="info-label">Nama Produk</span>
                         <span class="info-value"><%= transaction.nama %></span>
                     </div>
+                    <% if (varian && varian.label) { %>
+                        <div class="info-row">
+                            <span class="info-label">Varian</span>
+                            <span class="info-value"><%= varian.label %></span>
+                        </div>
+                    <% } %>
                     <div class="info-row">
-                        <span class="info-label">Kode Produk</span>
+                        <span class="info-label">Kode Varian</span>
                         <span class="info-value"><code><%= transaction.kode %></code></span>
                     </div>
                     <% if (produk) { %>
