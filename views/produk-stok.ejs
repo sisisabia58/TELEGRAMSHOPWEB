@@ -1,16 +1,11 @@
 <%
-    const currentPage = 'produk';
-    const pageTitle = `📦 Stok: ${produk.nama} — ${varian.label}`;
     const stokBase = `/produk/${produk.id}/varian/${varian.id}/stok`;
+
 %>
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title><%= title %></title>
-    <link rel="stylesheet" href="/css/dashboard.css">
-    <script src="/js/ui-utils.js"></script>
+    <%- include('partials/head') %>
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -18,22 +13,7 @@
     <%- include('partials/sidebar') %>
     
     <main class="main-content" id="main-content">
-        <div class="top-bar">
-            <div class="top-bar-left">
-                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
-                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
-            </div>
-            <div class="top-bar-right">
-                <div class="user-info">
-                    <span>👤 <%= username || 'Admin' %></span>
-                    <% if (req.session && req.session.role) { %>
-                        <span class="user-badge"><%= req.session.role %></span>
-                    <% } %>
-                </div>
-                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
-                <a href="/logout" class="btn-top btn-logout">Logout</a>
-            </div>
-        </div>
+        <%- include('partials/topbar') %>
         
         <div class="container">
             <!-- Success Messages -->
@@ -140,25 +120,25 @@
             <% if (totalPages > 1) { %>
                 <div class="pagination">
                     <div class="pagination-info">
-                        Halaman <%= currentPage %> dari <%= totalPages %> (<%= stats.total %> total item)
+                        Halaman <%= currentPageNum %> dari <%= totalPages %> (<%= stats.total %> total item)
                     </div>
                     <div class="pagination-controls">
-                        <% if (currentPage > 1) { %>
-                            <a href="?<%= currentStatus !== 'all' ? 'status=' + currentStatus + '&' : '' %>page=<%= currentPage - 1 %>" class="pagination-btn">
+                        <% if (currentPageNum > 1) { %>
+                            <a href="?<%= currentStatus !== 'all' ? 'status=' + currentStatus + '&' : '' %>page=<%= currentPageNum - 1 %>" class="pagination-btn">
                                 ← Sebelumnya
                             </a>
                         <% } else { %>
                             <span class="pagination-btn" style="opacity: 0.5; cursor: not-allowed;">← Sebelumnya</span>
                         <% } %>
                         
-                        <% for (let i = Math.max(1, currentPage - 2); i <= Math.min(totalPages, currentPage + 2); i++) { %>
-                            <a href="?<%= currentStatus !== 'all' ? 'status=' + currentStatus + '&' : '' %>page=<%= i %>" class="pagination-btn <%= i === currentPage ? 'active' : '' %>">
+                        <% for (let i = Math.max(1, currentPageNum - 2); i <= Math.min(totalPages, currentPageNum + 2); i++) { %>
+                            <a href="?<%= currentStatus !== 'all' ? 'status=' + currentStatus + '&' : '' %>page=<%= i %>" class="pagination-btn <%= i === currentPageNum ? 'active' : '' %>">
                                 <%= i %>
                             </a>
                         <% } %>
                         
-                        <% if (currentPage < totalPages) { %>
-                            <a href="?<%= currentStatus !== 'all' ? 'status=' + currentStatus + '&' : '' %>page=<%= currentPage + 1 %>" class="pagination-btn">
+                        <% if (currentPageNum < totalPages) { %>
+                            <a href="?<%= currentStatus !== 'all' ? 'status=' + currentStatus + '&' : '' %>page=<%= currentPageNum + 1 %>" class="pagination-btn">
                                 Selanjutnya →
                             </a>
                         <% } else { %>
@@ -202,7 +182,7 @@
                                 <% } else { %>
                                     <% stokItems.forEach((s, index) => { %>
                                         <tr>
-                                            <td><%= (currentPage - 1) * 50 + index + 1 %></td>
+                                            <td><%= (currentPageNum - 1) * 50 + index + 1 %></td>
                                             <td>
                                                 <code style="font-size: 12px; background: #f8f9fa; padding: 4px 8px; border-radius: 4px; display: inline-block; max-width: 100%; word-break: break-all;"><%= s.data %></code>
                                             </td>
@@ -252,6 +232,7 @@
             </div>
         </div>
     </main>
+    <%- include('partials/mobile-tabs') %>
     
     <!-- Quick Actions -->
     <div class="quick-actions">

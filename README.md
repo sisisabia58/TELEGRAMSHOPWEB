@@ -152,7 +152,7 @@ TELEGRAMSHOPWEB/
 │   ├── css/              # dashboard.css, login.css
 │   └── js/               # notifications.js, ui-utils.js
 ├── views/                # Template EJS
-│   ├── partials/        # layout.ejs, sidebar.ejs
+│   ├── partials/        # head.ejs, topbar.ejs, sidebar.ejs, mobile-tabs.ejs
 │   ├── dashboard.ejs, login.ejs, produk.ejs, transaksi.ejs, user.ejs, ...
 │   └── ...
 ├── Database/             # (Opsional) File JSON lokal jika tidak pakai Supabase

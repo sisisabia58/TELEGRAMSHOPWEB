@@ -1,10 +1,7 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title><%= title %></title>
-    <link rel="stylesheet" href="/css/dashboard.css">
+    <%- include('partials/head') %>
     <style>
         .form-container {
             background: white;
@@ -80,62 +77,46 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-                <div>
-                    <h1>🔄 Reset Data User</h1>
-                    <nav>
-                        <a href="/">Dashboard</a>
-                        <a href="/produk">Produk</a>
-                        <a href="/transaksi">Transaksi</a>
-                        <a href="/user">User</a>
-                    </nav>
-                </div>
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <span style="color: #666; font-size: 14px;">
-                        👤 <%= username || 'Admin' %>
-                    </span>
-                    <a href="/logout" style="padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 6px; font-size: 14px;">
-                        Logout
-                    </a>
-                </div>
-            </div>
-        </header>
-
-        <div class="form-container">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <%- include('partials/sidebar') %>
+    <main class="main-content" id="main-content">
+        <%- include('partials/topbar') %>
+        <div class="container">
+            <div class="form-container">
             <div class="warning-box">
-                <h3>⚠️ Peringatan!</h3>
-                <p>Tindakan ini akan mereset data user. Pastikan Anda yakin sebelum melanjutkan!</p>
+            <h3>⚠️ Peringatan!</h3>
+            <p>Tindakan ini akan mereset data user. Pastikan Anda yakin sebelum melanjutkan!</p>
             </div>
 
             <div class="user-info">
-                <p><strong>User ID:</strong> <code><%= user.id %></code></p>
-                <p><strong>Saldo Saat Ini:</strong> <%= formatrupiah(user.saldo || 0) %></p>
-                <p><strong>Pengeluaran Saat Ini:</strong> <%= formatrupiah(user.pengeluaran || 0) %></p>
+            <p><strong>User ID:</strong> <code><%= user.id %></code></p>
+            <p><strong>Saldo Saat Ini:</strong> <%= formatrupiah(user.saldo || 0) %></p>
+            <p><strong>Pengeluaran Saat Ini:</strong> <%= formatrupiah(user.pengeluaran || 0) %></p>
             </div>
 
             <form method="POST" action="/user/<%= user.id %>/reset">
-                <div class="checkbox-group">
-                    <label>
-                        <input type="checkbox" name="reset_saldo">
-                        <span><strong>Reset Saldo</strong> - Mengatur saldo menjadi 0</span>
-                    </label>
-                    <label>
-                        <input type="checkbox" name="reset_pengeluaran">
-                        <span><strong>Reset Pengeluaran</strong> - Mengatur pengeluaran menjadi 0</span>
-                    </label>
-                </div>
+            <div class="checkbox-group">
+            <label>
+            <input type="checkbox" name="reset_saldo">
+            <span><strong>Reset Saldo</strong> - Mengatur saldo menjadi 0</span>
+            </label>
+            <label>
+            <input type="checkbox" name="reset_pengeluaran">
+            <span><strong>Reset Pengeluaran</strong> - Mengatur pengeluaran menjadi 0</span>
+            </label>
+            </div>
 
-                <div class="form-actions">
-                    <button type="submit" class="btn-submit">
-                        🔄 Reset Data
-                    </button>
-                    <a href="/user/<%= user.id %>" class="btn-cancel">❌ Batal</a>
-                </div>
+            <div class="form-actions">
+            <button type="submit" class="btn-submit">
+            🔄 Reset Data
+            </button>
+            <a href="/user/<%= user.id %>" class="btn-cancel">❌ Batal</a>
+            </div>
             </form>
+            </div>
         </div>
-    </div>
+    </main>
+    <%- include('partials/mobile-tabs') %>
 </body>
 </html>
 

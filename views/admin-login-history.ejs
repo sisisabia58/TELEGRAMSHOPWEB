@@ -1,17 +1,12 @@
 <%
-    const currentPage = 'admin-login';
-    const pageTitle = 'Login History';
-    const fromItem = totalCount === 0 ? 0 : (currentPage - 1) * (typeof limit !== 'undefined' ? limit : 50) + 1;
-    const toItem = Math.min(currentPage * (typeof limit !== 'undefined' ? limit : 50), totalCount || 0);
+    const fromItem = totalCount === 0 ? 0 : (currentPageNum - 1) * (typeof limit !== 'undefined' ? limit : 50) + 1;
+    const toItem = Math.min(currentPageNum * (typeof limit !== 'undefined' ? limit : 50), totalCount || 0);
+
 %>
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title><%= title %></title>
-    <link rel="stylesheet" href="/css/dashboard.css">
-    <script src="/js/ui-utils.js"></script>
+    <%- include('partials/head') %>
     <style>
         .login-history-card .card-header {
             display: flex;
@@ -48,22 +43,7 @@
     <%- include('partials/sidebar') %>
 
     <main class="main-content" id="main-content">
-        <div class="top-bar">
-            <div class="top-bar-left">
-                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
-                <h1 style="font-size: 24px; color: #333; margin: 0;">📋 Login History</h1>
-            </div>
-            <div class="top-bar-right">
-                <div class="user-info">
-                    <span>👤 <%= username || 'Admin' %></span>
-                    <% if (typeof req !== 'undefined' && req.session && req.session.role) { %>
-                        <span class="user-badge"><%= req.session.role %></span>
-                    <% } %>
-                </div>
-                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
-                <a href="/logout" class="btn-top btn-logout">Logout</a>
-            </div>
-        </div>
+        <%- include('partials/topbar') %>
 
         <div class="container">
             <div class="card login-history-card">
@@ -125,15 +105,15 @@
 
                     <% if (totalPages > 1) { %>
                         <div class="pagination-bar">
-                            <span class="pagination-info">Halaman <%= currentPage %> dari <%= totalPages %></span>
+                            <span class="pagination-info">Halaman <%= currentPageNum %> dari <%= totalPages %></span>
                             <div class="pagination-controls">
-                                <% if (currentPage > 1) { %>
-                                    <a href="?page=<%= currentPage - 1 %>" class="pagination-btn">← Sebelumnya</a>
+                                <% if (currentPageNum > 1) { %>
+                                    <a href="?page=<%= currentPageNum - 1 %>" class="pagination-btn">← Sebelumnya</a>
                                 <% } else { %>
                                     <span class="pagination-btn" style="opacity: 0.5; cursor: not-allowed;">← Sebelumnya</span>
                                 <% } %>
-                                <% if (currentPage < totalPages) { %>
-                                    <a href="?page=<%= currentPage + 1 %>" class="pagination-btn">Selanjutnya →</a>
+                                <% if (currentPageNum < totalPages) { %>
+                                    <a href="?page=<%= currentPageNum + 1 %>" class="pagination-btn">Selanjutnya →</a>
                                 <% } else { %>
                                     <span class="pagination-btn" style="opacity: 0.5; cursor: not-allowed;">Selanjutnya →</span>
                                 <% } %>
@@ -144,6 +124,7 @@
             </div>
         </div>
     </main>
+    <%- include('partials/mobile-tabs') %>
 
     <div class="quick-actions">
         <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">↑</button>

@@ -16,6 +16,7 @@ const flowPreview = require('./lib/flow-preview')
 const copyLib = require('./lib/copy')
 const ejs = require('ejs')
 const { formatrupiah, formatTanggal } = require('./lib/format')
+const { buildOverviewModel, summarizeStock } = require('./lib/dashboard-overview')
 
 const app = express()
 
@@ -58,14 +59,22 @@ app.post('/webhook/pakasir', async (req, res) => {
 // Session configuration
 const session = require('express-session')
 
+const sessionSecret = process.env.SESSION_SECRET
+if (!sessionSecret && process.env.NODE_ENV === 'production') {
+  console.error('FATAL: SESSION_SECRET is required in production')
+  process.exit(1)
+}
+app.set('trust proxy', 1)
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key-change-this-in-production',
+  secret: sessionSecret || 'dev-only-change-me',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false, // Set true jika menggunakan HTTPS
-    maxAge: 24 * 60 * 60 * 1000 // 24 jam
-  }
+    secure: process.env.SECURE_COOKIES === 'true' || process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 24 * 60 * 60 * 1000,
+  },
 }))
 
 // Middleware untuk check authentication
@@ -102,6 +111,106 @@ async function renderVariantRow(produk, variant) {
     { async: true }
   )
 }
+
+function buildQueryString(params, skipAllKeys = []) {
+  const entries = Object.entries(params || {}).filter(([key, value]) => {
+    if (!value) return false
+    return !(skipAllKeys.includes(key) && value === 'all')
+  })
+  return entries.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&')
+}
+
+function productVariantTitle(prefix, locals) {
+  const produkNama = locals.produk?.nama || 'Produk'
+  const varianLabel = locals.varian?.label || 'Varian'
+  return `${prefix} ${produkNama} / ${varianLabel}`
+}
+
+const chromeLocalsByView = {
+  dashboard: () => ({ currentPage: 'dashboard', pageTitle: `Dashboard ${NamaBot}` }),
+  produk: () => ({ currentPage: 'produk', pageTitle: '📦 Daftar Produk', topbarExtra: '<a href="/produk/tambah" class="btn btn-success">➕ Tambah Produk</a>' }),
+  'produk-form': () => ({ currentPage: 'produk', pageTitle: '➕ Tambah Produk', topbarExtra: '<a href="/produk" class="btn-top">← Kembali</a>' }),
+  'produk-detail': (locals) => ({
+    currentPage: 'produk',
+    pageTitle: `📦 ${locals.produk?.nama || 'Produk'}`,
+    topbarExtra: `<a href="/produk" class="btn-top">← Daftar Produk</a> <a href="/produk/hapus/${locals.produk?.id || ''}" class="btn-top" style="color:#dc3545;">🗑️ Hapus</a>`
+  }),
+  'produk-hapus': () => ({ currentPage: 'produk', pageTitle: '🗑️ Hapus Produk', topbarExtra: '<a href="/produk" class="btn-top">← Produk</a>' }),
+  'produk-stok': (locals) => ({ currentPage: 'produk', pageTitle: `📦 Stok: ${locals.produk?.nama || 'Produk'} — ${locals.varian?.label || 'Varian'}` }),
+  'produk-stok-tambah': (locals) => ({ currentPage: 'produk', pageTitle: productVariantTitle('➕ Tambah Stok —', locals) }),
+  'produk-stok-edit': (locals) => ({ currentPage: 'produk', pageTitle: productVariantTitle('✏️ Edit Stok —', locals) }),
+  'produk-stok-hapus': (locals) => ({ currentPage: 'produk', pageTitle: productVariantTitle('🗑️ Hapus Stok —', locals) }),
+  transaksi: (locals) => {
+    const queryString = buildQueryString(locals.filters)
+    const exportUrl = queryString ? `/transaksi/export?${queryString}` : '/transaksi/export'
+    return { currentPage: 'transaksi', pageTitle: 'Daftar Transaksi', topbarExtra: `<a href="${exportUrl}" class="btn btn-success">📥 Export CSV</a>` }
+  },
+  'transaksi-detail': () => ({ currentPage: 'transaksi', pageTitle: 'Detail Transaksi', topbarExtra: '<a href="/transaksi" class="btn-top">← Transaksi</a>' }),
+  user: () => ({ currentPage: 'user', pageTitle: 'Daftar User' }),
+  'user-detail': () => ({ currentPage: 'user', pageTitle: 'Detail User', topbarExtra: '<a href="/user" class="btn-top">← User</a>' }),
+  'user-topup': (locals) => ({ currentPage: 'user', pageTitle: 'Top Up Saldo', topbarExtra: `<a href="/user/${locals.user?.id || ''}" class="btn-top">← Detail User</a>` }),
+  'user-kurangi': (locals) => ({ currentPage: 'user', pageTitle: 'Kurangi Saldo', topbarExtra: `<a href="/user/${locals.user?.id || ''}" class="btn-top">← Detail User</a>` }),
+  'user-reset': (locals) => ({ currentPage: 'user', pageTitle: '🔄 Reset Data User', topbarExtra: `<a href="/user/${locals.user?.id || ''}" class="btn-top">← Detail User</a>` }),
+  deposit: (locals) => {
+    const exportQuery = buildQueryString(locals.filters, ['status', 'metode'])
+    return { currentPage: 'deposit', pageTitle: '💰 Manajemen Deposit', topbarExtra: `<a href="/deposit/export${exportQuery ? `?${exportQuery}` : ''}" class="btn btn-success">📥 Export CSV</a>` }
+  },
+  'deposit-detail': () => ({ currentPage: 'deposit', pageTitle: 'Detail Deposit', topbarExtra: '<a href="/deposit" class="btn-top">← Deposit</a>' }),
+  analitik: () => ({ currentPage: 'analitik', pageTitle: '📊 Analitik' }),
+  laporan: () => ({ currentPage: 'laporan', pageTitle: '📋 Laporan' }),
+  voucher: () => ({ currentPage: 'voucher', pageTitle: '🎟️ Manajemen Voucher', topbarExtra: '<a href="/voucher/tambah" class="btn btn-success">➕ Tambah Voucher</a> <a href="/voucher/export" class="btn btn-primary">📥 Export CSV</a>' }),
+  'voucher-form': (locals) => ({ currentPage: 'voucher', pageTitle: locals.action === 'edit' ? 'Edit Voucher' : 'Tambah Voucher', topbarExtra: '<a href="/voucher" class="btn-top">← Kembali</a>' }),
+  'voucher-detail': () => ({ currentPage: 'voucher', pageTitle: '🎟️ Detail Voucher', topbarExtra: '<a href="/voucher" class="btn-top">← Voucher</a>' }),
+  'voucher-hapus': () => ({ currentPage: 'voucher', pageTitle: '🗑️ Hapus Voucher', topbarExtra: '<a href="/voucher" class="btn-top">← Voucher</a>' }),
+  'communication-broadcast': () => ({ currentPage: 'communication', pageTitle: '📢 Broadcast Message', topbarExtra: '<a href="/communication/history" class="btn-top">📜 History</a> <a href="/communication/templates" class="btn-top">📝 Templates</a>' }),
+  'communication-send': () => ({ currentPage: 'communication', pageTitle: '✉️ Send Message', topbarExtra: '<a href="/communication/broadcast" class="btn-top">📢 Broadcast</a> <a href="/communication/templates" class="btn-top">📝 Templates</a> <a href="/communication/history" class="btn-top">📜 History</a>' }),
+  'communication-templates': () => ({ currentPage: 'communication', pageTitle: '📝 Message Templates', topbarExtra: '<a href="/communication/templates/tambah" class="btn btn-success">➕ Tambah Template</a> <a href="/communication/broadcast" class="btn-top">📢 Broadcast</a> <a href="/communication/send" class="btn-top">✉️ Send</a> <a href="/communication/history" class="btn-top">📜 History</a>' }),
+  'communication-template-form': (locals) => ({ currentPage: 'communication', pageTitle: locals.action === 'tambah' ? '➕ Tambah Template' : '✏️ Edit Template', topbarExtra: '<a href="/communication/templates" class="btn-top">← Templates</a> <a href="/communication/broadcast" class="btn-top">📢 Broadcast</a> <a href="/communication/send" class="btn-top">✉️ Send</a> <a href="/communication/history" class="btn-top">📜 History</a>' }),
+  'communication-history': () => ({ currentPage: 'communication', pageTitle: '📜 Message History', topbarExtra: '<a href="/communication/broadcast" class="btn-top">📢 Broadcast</a> <a href="/communication/send" class="btn-top">✉️ Send</a> <a href="/communication/templates" class="btn-top">📝 Templates</a>' }),
+  'communication-history-detail': () => ({ currentPage: 'communication', pageTitle: '📜 Detail Message History', topbarExtra: '<a href="/communication/history" class="btn-top">📜 History</a> <a href="/communication/broadcast" class="btn-top">📢 Broadcast</a>' }),
+  'settings-general': () => ({ currentPage: 'settings-general', pageTitle: '⚙️ General Settings' }),
+  'settings-channel-contact': () => ({ currentPage: 'settings-channel-contact', pageTitle: 'Channel & Contact' }),
+  'settings-payment-gateway': () => ({ currentPage: 'settings-payment-gateway', pageTitle: '💳 Payment Gateway Settings' }),
+  'settings-supabase': () => ({ currentPage: 'settings-supabase', pageTitle: '🗄️ Supabase Database Settings' }),
+  'settings-notifications': () => ({ currentPage: 'settings-notifications', pageTitle: '🔔 Notification Settings' }),
+  'settings-bot-copy': () => ({ currentPage: 'settings-bot-copy', pageTitle: '📝 Bot Copy' }),
+  'settings-bot-flow': () => ({ currentPage: 'settings-bot-flow', pageTitle: '🔀 Bot Flow' }),
+  'bulk-operations': () => ({ currentPage: 'bulk', pageTitle: '⚡ Bulk Operations' }),
+  'admin-users': () => ({ currentPage: 'admin-users', pageTitle: 'Manajemen Admin', topbarExtra: '<a href="/admin/users/tambah" class="btn btn-success">➕ Tambah Admin</a>' }),
+  'admin-user-form': (locals) => ({ currentPage: 'admin-users', pageTitle: locals.action === 'tambah' ? 'Tambah Admin' : 'Edit Admin', topbarExtra: '<a href="/admin/users" class="btn-top">← Admin Users</a>' }),
+  'admin-change-password': () => ({ currentPage: 'admin-change-password', pageTitle: 'Ubah Password', topbarExtra: '<a href="/" class="btn-top">← Dashboard</a>' }),
+  'admin-login-history': () => ({ currentPage: 'admin-login', pageTitle: 'Login History' }),
+  'admin-audit-log': () => ({ currentPage: 'admin-audit', pageTitle: '📋 Audit Log' }),
+}
+
+function withChromeLocals(req, view, locals = {}) {
+  const viewName = String(view).replace(/\.ejs$/, '')
+  const resolver = chromeLocalsByView[viewName]
+  if (!resolver) return locals
+
+  const chrome = resolver(locals)
+  return {
+    req,
+    topbarExtra: '',
+    ...chrome,
+    ...locals,
+    currentPage: locals.currentPage || chrome.currentPage,
+    pageTitle: locals.pageTitle || chrome.pageTitle,
+    topbarExtra: locals.topbarExtra || chrome.topbarExtra || ''
+  }
+}
+
+app.use((req, res, next) => {
+  const render = res.render.bind(res)
+  res.render = (view, locals, callback) => {
+    if (typeof locals === 'function') {
+      callback = locals
+      locals = {}
+    }
+    return render(view, withChromeLocals(req, view, locals || {}), callback)
+  }
+  next()
+})
 
 // Helper: Send Telegram message to Feed Channel
 async function sendFeedMessage(text, type = 'stock') {
@@ -706,7 +815,7 @@ app.get('/admin/login-history', isAuthenticated, requireRole('admin'), async (re
       username: req.session.username,
       req: req,
       loginHistory: loginHistory || [],
-      currentPage: page,
+      currentPageNum: page,
       totalPages: totalPages,
       totalCount,
       limit,
@@ -797,7 +906,7 @@ app.get('/admin/audit-log', isAuthenticated, requireRole('admin'), async (req, r
       username: req.session.username,
       req: req,
       auditLogs: auditLogs || [],
-      currentPage: page,
+      currentPageNum: page,
       totalPages: totalPages,
       totalLogs: count || 0,
       filters: filters,
@@ -812,84 +921,56 @@ app.get('/admin/audit-log', isAuthenticated, requireRole('admin'), async (req, r
 // Route: Dashboard Home
 app.get('/', isAuthenticated, async (req, res) => {
   try {
-    // Ambil semua data secara parallel
+    const todayStart = moment.tz('Asia/Jakarta').startOf('day')
+    const todayEnd = todayStart.clone().add(1, 'day')
+
     const [
-      usersResult,
-      trxResult,
-      produkResult,
-      depositResult
+      pendingDepositsResult,
+      variantsResult,
+      thresholdsResult,
+      todayTrxResult,
+      recentTrxResult,
+      activeFlowResult,
     ] = await Promise.all([
-      supabase.from('User').select('*'),
-      supabase.from('Trx').select('*').order('tanggal', { ascending: false }),
-      supabase.from('Produk').select('*'),
-      supabase.from('Deposit').select('*').eq('status', 'success')
+      supabase.from('Deposit').select('*').eq('status', 'pending').order('tanggal', { ascending: true }).limit(10),
+      supabase.from('Varian').select('id, produk_id, label, kode, harga, is_active, produk:Produk(nama, slug)').eq('is_active', true).order('urutan', { ascending: true }),
+      supabase.from('ProductStockThreshold').select('varian_id, threshold, is_active'),
+      supabase
+        .from('Trx')
+        .select('harga', { count: 'exact' })
+        .gte('tanggal', todayStart.toISOString())
+        .lt('tanggal', todayEnd.toISOString()),
+      supabase.from('Trx').select('*').order('tanggal', { ascending: false }).limit(5),
+      supabase.from('BotFlow').select('draft_updated_at').eq('is_active', true).maybeSingle(),
     ])
 
-    const users = usersResult.data || []
-    const transactions = trxResult.data || []
-    const products = produkResult.data || []
-    const deposits = depositResult.data || []
+    const variants = variantsResult.data || []
+    const stockCounts = await stock.getStokCountsByKode(variants.map((v) => v.kode))
+    const thresholdsByVarianId = Object.create(null)
+    for (const row of thresholdsResult.data || []) {
+      if (row.is_active !== false) thresholdsByVarianId[row.varian_id] = row.threshold
+    }
 
-    // Hitung statistik
-    const totalUsers = users.length
-    const totalTransactions = transactions.length
-    const totalProducts = products.length
-    
-    // Total revenue dari transaksi
-    const totalRevenue = transactions.reduce((sum, t) => sum + (t.harga || 0), 0)
-    
-    // Total deposit berhasil
-    const totalDeposit = deposits.reduce((sum, d) => sum + (d.jumlah || 0), 0)
-    
-    // Total stok tersedia (rollup semua varian aktif)
-    const catalogProducts = await catalog.listProducts({ activeOnly: false, withStock: true })
-    const totalStokTersedia = catalogProducts.reduce(
-      (sum, p) => sum + (p.variants || []).reduce((s, v) => s + (v.stok_count || 0), 0),
-      0
-    )
-    
-    // Total stok terjual
-    const totalStokTerjual = products.reduce((sum, p) => sum + (p.terjual || 0), 0)
-    
-    // Total pengeluaran user
-    const totalPengeluaran = users.reduce((sum, u) => sum + (u.pengeluaran || 0), 0)
-    
-    // Total saldo user
-    const totalSaldo = users.reduce((sum, u) => sum + (u.saldo || 0), 0)
-
-    // Transaksi hari ini
-    const today = moment.tz('Asia/Jakarta').startOf('day').toISOString()
-    const todayTransactions = transactions.filter(t => 
-      moment.tz(t.tanggal, 'Asia/Jakarta').isSameOrAfter(today)
-    )
-    const revenueToday = todayTransactions.reduce((sum, t) => sum + (t.harga || 0), 0)
-
-    // Transaksi bulan ini
-    const thisMonth = moment.tz('Asia/Jakarta').startOf('month').toISOString()
-    const monthTransactions = transactions.filter(t => 
-      moment.tz(t.tanggal, 'Asia/Jakarta').isSameOrAfter(thisMonth)
-    )
-    const revenueMonth = monthTransactions.reduce((sum, t) => sum + (t.harga || 0), 0)
+    const overview = buildOverviewModel({
+      pendingDeposits: pendingDepositsResult.data || [],
+      variants: variants.map((variant) => ({
+        ...variant,
+        produk_nama: variant.produk?.nama || '',
+        produk_slug: variant.produk?.slug || '',
+        stok_count: stockCounts[String(variant.kode).toLowerCase()] || 0,
+        threshold: thresholdsByVarianId[variant.id],
+      })),
+      todayRevenue: (todayTrxResult.data || []).reduce((sum, t) => sum + (t.harga || 0), 0),
+      todayTxnCount: todayTrxResult.count ?? (todayTrxResult.data || []).length,
+      recentTxns: recentTrxResult.data || [],
+      flowDraftUpdatedAt: activeFlowResult.data?.draft_updated_at || null,
+    })
 
     res.render('dashboard', {
-      req: req,
       title: `Dashboard - ${NamaBot}`,
       namaBot: NamaBot,
       username: req.session.username,
-      stats: {
-        totalUsers,
-        totalTransactions,
-        totalProducts,
-        totalRevenue,
-        totalDeposit,
-        totalStokTersedia,
-        totalStokTerjual,
-        totalPengeluaran,
-        totalSaldo,
-        revenueToday,
-        revenueMonth
-      },
-      recentTransactions: transactions.slice(0, 10),
+      overview,
       formatrupiah,
       formatTanggal
     })
@@ -924,6 +1005,103 @@ app.get('/produk', isAuthenticated, async (req, res) => {
   } catch (error) {
     console.error('Error loading products:', error)
     res.status(500).send('Error loading products: ' + error.message)
+  }
+})
+
+app.get('/stok', isAuthenticated, async (req, res) => {
+  try {
+    const [products, thresholdsResult] = await Promise.all([
+      catalog.listProducts({ activeOnly: false, withStock: true }),
+      supabase.from('ProductStockThreshold').select('varian_id, threshold, is_active'),
+    ])
+    const thresholdsByVarianId = Object.create(null)
+    for (const row of thresholdsResult.data || []) {
+      if (row.is_active !== false) thresholdsByVarianId[row.varian_id] = row.threshold
+    }
+    const rows = []
+    for (const p of products) {
+      for (const v of p.variants || []) {
+        rows.push({
+          produk_id: p.id,
+          produk_nama: p.nama,
+          varian_id: v.id,
+          label: v.label,
+          kode: v.kode,
+          stok_count: v.stok_count || 0,
+          threshold: thresholdsByVarianId[v.id],
+          is_active: v.is_active !== false,
+        })
+      }
+    }
+    rows.sort((a, b) => a.stok_count - b.stok_count || a.produk_nama.localeCompare(b.produk_nama))
+    const stockSummary = summarizeStock(rows)
+    res.render('stok', {
+      title: `Stock - ${NamaBot}`,
+      namaBot: NamaBot,
+      username: req.session.username,
+      currentPage: 'stok',
+      pageTitle: 'Stock',
+      rows,
+      stockSummary,
+      req,
+    })
+  } catch (e) {
+    console.error(e)
+    res.status(500).send(e.message)
+  }
+})
+
+app.get('/pricing', isAuthenticated, async (req, res) => {
+  try {
+    const products = await catalog.listProducts({ activeOnly: false, withStock: false })
+    const rows = []
+    const varianIds = []
+    for (const p of products) {
+      for (const v of p.variants || []) {
+        rows.push({
+          produk_id: p.id,
+          produk_nama: p.nama,
+          varian_id: v.id,
+          label: v.label,
+          kode: v.kode,
+          harga: v.harga || 0,
+          is_active: v.is_active !== false,
+        })
+        varianIds.push(v.id)
+      }
+    }
+
+    const tierCounts = Object.create(null)
+    if (varianIds.length) {
+      const { data: tiers, error } = await supabase
+        .from('HargaTier')
+        .select('varian_id')
+        .in('varian_id', varianIds)
+      if (error) throw error
+      for (const t of tiers || []) {
+        tierCounts[t.varian_id] = (tierCounts[t.varian_id] || 0) + 1
+      }
+    }
+
+    for (const row of rows) {
+      row.tier_count = tierCounts[row.varian_id] || 0
+    }
+
+    rows.sort((a, b) => a.produk_nama.localeCompare(b.produk_nama) || a.label.localeCompare(b.label))
+
+    res.render('pricing', {
+      title: `Pricing - ${NamaBot}`,
+      namaBot: NamaBot,
+      username: req.session.username,
+      currentPage: 'pricing',
+      pageTitle: 'Pricing',
+      rows,
+      formatrupiah,
+      req,
+    })
+  } catch (e) {
+    console.error(e)
+    res.status(500).send(e.message)
   }
 })
 
@@ -1451,7 +1629,7 @@ app.get('/produk/:produkId/varian/:varianId/stok', isAuthenticated, async (req, 
       varian,
       stokItems: stokItems || [],
       stats,
-      currentPage,
+      currentPageNum: currentPage,
       totalPages,
       currentStatus: status || 'all',
       formatrupiah,
@@ -1804,6 +1982,25 @@ app.get('/transaksi', isAuthenticated, async (req, res) => {
 
     const totalPages = Math.ceil((count || 0) / limit)
 
+    const varianIds = [...new Set((transactions || []).map((t) => t.varian_id).filter(Boolean))]
+    const varianById = Object.create(null)
+    if (varianIds.length > 0) {
+      const { data: varianRows } = await supabase
+        .from('Varian')
+        .select('id, label, kode')
+        .in('id', varianIds)
+      for (const row of varianRows || []) {
+        varianById[row.id] = row
+      }
+    }
+    const enrichedTransactions = (transactions || []).map((t) => {
+      const varian = t.varian_id ? varianById[t.varian_id] : null
+      return {
+        ...t,
+        varian_label: varian ? varian.label : null,
+      }
+    })
+
     // Ambil daftar produk untuk filter dropdown
     const { data: products } = await supabase
       .from('Produk')
@@ -1817,7 +2014,7 @@ app.get('/transaksi', isAuthenticated, async (req, res) => {
       username: req.session.username,
       currentPage: 'transaksi',
       pageTitle: '🛍️ Daftar Transaksi',
-      transactions: transactions || [],
+      transactions: enrichedTransactions,
       products: products || [],
       currentPageNum: page,
       totalPages,
@@ -1858,11 +2055,33 @@ app.get('/transaksi/:id', isAuthenticated, async (req, res) => {
     }
 
     // Ambil info produk
-    const { data: produk } = await supabase
-      .from('Produk')
-      .select('*')
-      .eq('kode', transaction.kode)
-      .single()
+    let produk = null
+    if (transaction.produk_id) {
+      const { data } = await supabase
+        .from('Produk')
+        .select('*')
+        .eq('id', transaction.produk_id)
+        .single()
+      produk = data
+    }
+    if (!produk) {
+      const { data } = await supabase
+        .from('Produk')
+        .select('*')
+        .eq('kode', transaction.kode)
+        .single()
+      produk = data
+    }
+
+    let varian = null
+    if (transaction.varian_id) {
+      const { data } = await supabase
+        .from('Varian')
+        .select('id, label, kode')
+        .eq('id', transaction.varian_id)
+        .single()
+      varian = data
+    }
 
     // Ambil info user
     const { data: user } = await supabase
@@ -1878,6 +2097,7 @@ app.get('/transaksi/:id', isAuthenticated, async (req, res) => {
       req: req,
       transaction: transaction,
       produk: produk || null,
+      varian: varian || null,
       user: user || null,
       formatrupiah,
       formatTanggal
@@ -2836,45 +3056,95 @@ app.get('/api/analitik/sales', isAuthenticated, async (req, res) => {
   }
 })
 
-// API: Produk Terlaris
+// API: Produk Terlaris (variant-level + product rollup)
 app.get('/api/analitik/products', isAuthenticated, async (req, res) => {
   try {
     const { limit = 10 } = req.query
+    const limitNum = parseInt(limit, 10) || 10
     
     const { data: transactions } = await supabase
       .from('Trx')
-      .select('kode, nama, jumlah, harga')
+      .select('kode, nama, jumlah, harga, produk_id, varian_id')
 
     if (!transactions) {
-      return res.json({ success: true, data: [] })
+      return res.json({ success: true, data: { byVariant: [], byProduct: [] } })
     }
 
-    // Group by produk
-    const productStats = {}
-    transactions.forEach(t => {
-      const key = t.kode
-      if (!productStats[key]) {
-        productStats[key] = {
+    const variantStats = Object.create(null)
+    const productStats = Object.create(null)
+
+    transactions.forEach((t) => {
+      const variantKey = t.kode || t.varian_id || 'unknown'
+      if (!variantStats[variantKey]) {
+        variantStats[variantKey] = {
           kode: t.kode,
           nama: t.nama,
+          produk_id: t.produk_id,
+          varian_id: t.varian_id,
+          level: 'variant',
           totalTerjual: 0,
           totalRevenue: 0,
-          jumlahTransaksi: 0
+          jumlahTransaksi: 0,
         }
       }
-      productStats[key].totalTerjual += t.jumlah || 0
-      productStats[key].totalRevenue += t.harga || 0
-      productStats[key].jumlahTransaksi += 1
+      variantStats[variantKey].totalTerjual += t.jumlah || 0
+      variantStats[variantKey].totalRevenue += t.harga || 0
+      variantStats[variantKey].jumlahTransaksi += 1
+
+      const productKey = t.produk_id || `nama:${t.nama}`
+      if (!productStats[productKey]) {
+        productStats[productKey] = {
+          produk_id: t.produk_id || null,
+          nama: t.nama,
+          level: 'product',
+          totalTerjual: 0,
+          totalRevenue: 0,
+          jumlahTransaksi: 0,
+          variantCount: 0,
+          _variantKeys: new Set(),
+        }
+      }
+      productStats[productKey].totalTerjual += t.jumlah || 0
+      productStats[productKey].totalRevenue += t.harga || 0
+      productStats[productKey].jumlahTransaksi += 1
+      productStats[productKey]._variantKeys.add(t.kode || t.varian_id || variantKey)
     })
 
-    // Sort by total terjual dan ambil top N
-    const topProducts = Object.values(productStats)
+    const byVariant = Object.values(variantStats)
       .sort((a, b) => b.totalTerjual - a.totalTerjual)
-      .slice(0, parseInt(limit))
+      .slice(0, limitNum)
+
+    const produkIds = [...new Set(Object.values(productStats).map((row) => row.produk_id).filter(Boolean))]
+    const produkById = Object.create(null)
+    if (produkIds.length > 0) {
+      const { data: produkRows } = await supabase
+        .from('Produk')
+        .select('id, nama')
+        .in('id', produkIds)
+      for (const row of produkRows || []) {
+        produkById[row.id] = row.nama
+      }
+    }
+
+    const byProduct = Object.values(productStats)
+      .map((row) => ({
+        produk_id: row.produk_id,
+        nama: (row.produk_id && produkById[row.produk_id]) ? produkById[row.produk_id] : row.nama,
+        level: row.level,
+        totalTerjual: row.totalTerjual,
+        totalRevenue: row.totalRevenue,
+        jumlahTransaksi: row.jumlahTransaksi,
+        variantCount: row._variantKeys.size,
+      }))
+      .sort((a, b) => b.totalTerjual - a.totalTerjual)
+      .slice(0, limitNum)
 
     res.json({
       success: true,
-      data: topProducts
+      data: {
+        byVariant,
+        byProduct,
+      },
     })
   } catch (error) {
     res.status(500).json({ success: false, error: error.message })
@@ -4300,7 +4570,7 @@ app.get('/communication/history', isAuthenticated, async (req, res) => {
       namaBot: NamaBot,
       username: req.session.username,
       messages: messages || [],
-      currentPage: page,
+      currentPageNum: page,
       totalPages: totalPages,
       formatTanggal,
       filters: {

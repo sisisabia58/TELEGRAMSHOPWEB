@@ -1,15 +1,36 @@
-<%
-    const currentPage = 'produk';
-    const pageTitle = '📦 Daftar Produk';
-%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title><%= title %></title>
-    <link rel="stylesheet" href="/css/dashboard.css">
-    <script src="/js/ui-utils.js"></script>
+    <%- include('partials/head') %>
+    <style>
+        .catalog-summary {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        .catalog-summary .stat-card {
+            flex: 1;
+            min-width: 140px;
+        }
+        .table-card .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .catalog-meta {
+            color: var(--color-muted);
+            font-size: 14px;
+        }
+        .search-card {
+            margin-bottom: 20px;
+        }
+        .table-card {
+            margin-bottom: 20px;
+        }
+    </style>
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -17,26 +38,47 @@
     <%- include('partials/sidebar') %>
     
     <main class="main-content" id="main-content">
-        <div class="top-bar">
-            <div class="top-bar-left">
-                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
-                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
-            </div>
-            <div class="top-bar-right">
-                <div class="user-info">
-                    <span>👤 <%= username || 'Admin' %></span>
-                    <% if (req.session.role) { %>
-                        <span class="user-badge"><%= req.session.role %></span>
-                    <% } %>
-                </div>
-                <a href="/produk/tambah" class="btn btn-success">➕ Tambah Produk</a>
-                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
-                <a href="/logout" class="btn-top btn-logout">Logout</a>
-            </div>
-        </div>
+        <%- include('partials/topbar') %>
         
         <div class="container">
-            <div class="card" style="margin-bottom: 20px;">
+            <%
+                const totalProducts = products.length;
+                const totalVariants = products.reduce((sum, p) => sum + (p.variant_count || 0), 0);
+                const totalStock = products.reduce((sum, p) => sum + (p.total_stock || 0), 0);
+                const activeProducts = products.filter(p => p.is_active !== false).length;
+            %>
+            <div class="catalog-summary">
+                <div class="stat-card">
+                    <div class="stat-icon">📦</div>
+                    <div class="stat-info">
+                        <h3>Total Produk</h3>
+                        <p class="stat-value"><%= totalProducts %></p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🏷️</div>
+                    <div class="stat-info">
+                        <h3>Total Varian</h3>
+                        <p class="stat-value"><%= totalVariants %></p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-info">
+                        <h3>Total Stok</h3>
+                        <p class="stat-value" style="color: var(--color-accent);"><%= totalStock %></p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">✅</div>
+                    <div class="stat-info">
+                        <h3>Aktif</h3>
+                        <p class="stat-value" style="color: var(--color-success);"><%= activeProducts %></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card search-card">
                 <div class="card-body">
                     <div class="search-container">
                         <span class="search-icon">🔍</span>
@@ -45,9 +87,10 @@
                 </div>
             </div>
             
-            <div class="card">
+            <div class="card table-card">
                 <div class="card-header">
                     <h2 class="card-title">Daftar Produk</h2>
+                    <span class="catalog-meta"><%= totalVariants %> varian · <%= totalStock %> stok total</span>
                 </div>
                 <div class="card-body">
                     <div class="table-wrapper">
@@ -78,7 +121,7 @@
                                     <% products.forEach(p => { %>
                                         <tr>
                                             <td><strong><%= p.nama %></strong></td>
-                                            <td><span class="badge badge-success" style="background:#6c47ff;"><%= p.kategori || 'umum' %></span></td>
+                                            <td><span class="badge badge-success"><%= p.kategori || 'umum' %></span></td>
                                             <td><%= p.variant_count || 0 %></td>
                                             <td>
                                                 <% 
@@ -110,6 +153,7 @@
             </div>
         </div>
     </main>
+    <%- include('partials/mobile-tabs') %>
     
     <div class="quick-actions">
         <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">

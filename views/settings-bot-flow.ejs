@@ -1,38 +1,15 @@
-<%
-    const currentPage = 'settings-bot-flow';
-    const pageTitle = '🔀 Bot Flow';
-%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title><%= title %></title>
-    <link rel="stylesheet" href="/css/dashboard.css">
+    <%- include('partials/head') %>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.css">
     <link rel="stylesheet" href="/css/flow-builder.css">
-    <script src="/js/ui-utils.js"></script>
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <%- include('partials/sidebar') %>
     <main class="main-content" id="main-content">
-        <div class="top-bar">
-            <div class="top-bar-left">
-                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
-                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
-            </div>
-            <div class="top-bar-right">
-                <div class="user-info">
-                    <span>👤 <%= username || 'Admin' %></span>
-                    <% if (req.session.role) { %>
-                        <span class="user-badge"><%= req.session.role %></span>
-                    <% } %>
-                </div>
-                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
-                <a href="/logout" class="btn-top btn-logout">Logout</a>
-            </div>
-        </div>
+        <%- include('partials/topbar') %>
 
         <div class="flow-toolbar">
             <label class="flow-toggle">
@@ -71,6 +48,7 @@
             </div>
         </div>
     </main>
+    <%- include('partials/mobile-tabs') %>
     <script src="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.js"></script>
     <script src="/js/flow-builder.js"></script>
 </body>

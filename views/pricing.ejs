@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <%- include('partials/head') %>
+    <style>
+        .catalog-summary {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        .catalog-summary .stat-card {
+            flex: 1;
+            min-width: 140px;
+        }
+        .table-card .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .catalog-meta {
+            color: var(--color-muted);
+            font-size: 14px;
+        }
+        .price-cell {
+            font-weight: 600;
+            color: var(--color-text);
+        }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <%- include('partials/sidebar') %>
+
+    <main class="main-content" id="main-content">
+        <%- include('partials/topbar') %>
+
+        <div class="container">
+            <%
+                const totalVariants = rows.length;
+                const withTiers = rows.filter(r => r.tier_count > 0).length;
+                const noTiers = totalVariants - withTiers;
+            %>
+            <div class="catalog-summary">
+                <div class="stat-card">
+                    <div class="stat-icon">💰</div>
+                    <div class="stat-info">
+                        <h3>Total Varian</h3>
+                        <p class="stat-value"><%= totalVariants %></p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-info">
+                        <h3>Dengan Tier</h3>
+                        <p class="stat-value" style="color: var(--color-accent);"><%= withTiers %></p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">—</div>
+                    <div class="stat-info">
+                        <h3>Harga Dasar Saja</h3>
+                        <p class="stat-value" style="color: var(--color-muted);"><%= noTiers %></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card table-card">
+                <div class="card-header">
+                    <h2 class="card-title">Pricing by Variant</h2>
+                    <span class="catalog-meta">Base price + tier count</span>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Produk</th>
+                                    <th>Varian</th>
+                                    <th>Kode</th>
+                                    <th>Harga Dasar</th>
+                                    <th>Tier</th>
+                                    <th>Status</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (rows.length === 0) { %>
+                                    <tr>
+                                        <td colspan="7">
+                                            <div class="empty-state">
+                                                <div class="empty-state-icon">💰</div>
+                                                <div class="empty-state-title">Belum ada varian</div>
+                                                <div class="empty-state-description">Tambahkan produk dan varian untuk mengatur harga bertingkat</div>
+                                                <a href="/produk/tambah" class="empty-state-action">➕ Tambah Produk</a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% } else { %>
+                                    <% rows.forEach(row => { %>
+                                        <tr>
+                                            <td><strong><%= row.produk_nama %></strong></td>
+                                            <td><%= row.label %></td>
+                                            <td><code><%= row.kode %></code></td>
+                                            <td class="price-cell"><%= formatrupiah(row.harga) %></td>
+                                            <td>
+                                                <% if (row.tier_count > 0) { %>
+                                                    <span class="badge badge-success"><%= row.tier_count %> tier</span>
+                                                <% } else { %>
+                                                    <span class="badge badge-secondary">0</span>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <% if (row.is_active) { %>
+                                                    <span class="badge badge-success">Aktif</span>
+                                                <% } else { %>
+                                                    <span class="badge badge-danger">Nonaktif</span>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <div class="table-actions">
+                                                    <a href="/produk/<%= row.produk_id %>#tierPanel" class="btn-icon" title="Kelola tier">✏️</a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <% }) %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    <%- include('partials/mobile-tabs') %>
+
+    <div class="quick-actions">
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
+            ↑
+        </button>
+    </div>
+
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('sidebar');
+            const toggleBtn = document.querySelector('.sidebar-toggle');
+
+            if (window.innerWidth <= 768 &&
+                sidebar.classList.contains('open') &&
+                !sidebar.contains(e.target) &&
+                !toggleBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth > 768) {
+                sidebar.classList.remove('open');
+            }
+        });
+    </script>
+</body>
+</html>

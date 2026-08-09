@@ -1,6 +1,4 @@
 <%
-    const currentPage = 'produk';
-    const pageTitle = `📦 ${produk.nama}`;
     const kategoriList = [
         ['umum', '📦 Umum'],
         ['game', '🎮 Game'],
@@ -14,15 +12,12 @@
     if (!kategoriList.some(([nilai]) => nilai === kategoriTerpilih)) {
         kategoriList.push([kategoriTerpilih, `⚠️ ${kategoriTerpilih} (tidak dikenali bot)`]);
     }
+
 %>
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title><%= title %></title>
-    <link rel="stylesheet" href="/css/dashboard.css">
-    <script src="/js/ui-utils.js"></script>
+    <%- include('partials/head') %>
     <style>
         .variant-table .variant-field { padding: 6px 8px; font-size: 13px; }
         .variant-actions { flex-wrap: wrap; }
@@ -65,24 +60,7 @@
     <%- include('partials/sidebar') %>
 
     <main class="main-content" id="main-content">
-        <div class="top-bar">
-            <div class="top-bar-left">
-                <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
-                <h1 style="font-size: 24px; color: #333; margin: 0;"><%= pageTitle %></h1>
-            </div>
-            <div class="top-bar-right">
-                <div class="user-info">
-                    <span>👤 <%= username || 'Admin' %></span>
-                    <% if (req.session.role) { %>
-                        <span class="user-badge"><%= req.session.role %></span>
-                    <% } %>
-                </div>
-                <a href="/produk" class="btn-top">← Daftar Produk</a>
-                <a href="/produk/hapus/<%= produk.id %>" class="btn-top" style="color:#dc3545;">🗑️ Hapus</a>
-                <a href="/admin/change-password" class="btn-top">🔐 Ubah Password</a>
-                <a href="/logout" class="btn-top btn-logout">Logout</a>
-            </div>
-        </div>
+        <%- include('partials/topbar') %>
 
         <div class="container">
             <div class="card" style="margin-bottom: 20px;">
@@ -231,6 +209,7 @@
             <% } %>
         </div>
     </main>
+    <%- include('partials/mobile-tabs') %>
 
     <div class="quick-actions">
         <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top">↑</button>
