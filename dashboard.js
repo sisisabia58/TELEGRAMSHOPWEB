@@ -10,6 +10,7 @@ const runtimeSettings = require('./lib/runtime-settings')
 const stock = require('./lib/stock')
 const catalog = require('./lib/catalog')
 const pricing = require('./lib/pricing')
+const bulk = require('./lib/bulk')
 const ejs = require('ejs')
 const { formatrupiah, formatTanggal } = require('./lib/format')
 
@@ -5876,102 +5877,86 @@ app.post('/bulk/produk/import', isAuthenticated, upload.single('file'), async (r
       return res.json({ success: false, error: 'File kosong atau tidak valid' })
     }
 
-    // Validate dan process data
+    const { products, failures } = bulk.groupCatalogRows(data)
     const results = {
       success: [],
-      failed: [],
-      skipped: []
+      failed: failures.map((f) => ({ row: f.row, error: f.error })),
+      skipped: [],
     }
 
-    for (let i = 0; i < data.length; i++) {
-      const row = data[i]
-      const rowNum = i + 2 // +2 karena header + 1-based index
-      
+    for (const product of products) {
       try {
-        // Normalize column names (case insensitive)
-        const nama = (row.nama || row.Nama || row.NAMA || '').trim()
-        const kode = (row.kode || row.Kode || row.KODE || '').trim()
-        const harga = row.harga || row.Harga || row.HARGA || row.price || row.Price
-        const deskripsi = (row.deskripsi || row.Deskripsi || row.DESKRIPSI || row.description || '').trim()
-        const snk = (row.snk || row.SNK || row.syarat || row.Syarat || '').trim()
-        const format = (row.format || row.Format || row.FORMAT || '').trim() || null
-
-        // Validation
-        if (!nama || !kode || !harga || !deskripsi || !snk) {
-          results.failed.push({
-            row: rowNum,
-            data: row,
-            error: 'Field wajib kosong: nama, kode, harga, deskripsi, atau snk'
-          })
-          continue
-        }
-
-        const kodeLower = kode.toLowerCase()
-        const hargaInt = parseInt(harga)
-        
-        if (isNaN(hargaInt) || hargaInt < 0) {
-          results.failed.push({
-            row: rowNum,
-            data: row,
-            error: 'Harga tidak valid'
-          })
-          continue
-        }
-
-        // Cek apakah kode sudah ada
-        const { data: existing } = await supabase
+        const { data: existingProduk } = await supabase
           .from('Produk')
-          .select('kode')
-          .eq('kode', kodeLower)
-          .single()
+          .select('id, slug')
+          .eq('slug', product.slug)
+          .maybeSingle()
 
-        if (existing) {
-          results.skipped.push({
-            row: rowNum,
-            data: row,
-            reason: 'Kode produk sudah ada'
-          })
-          continue
+        let produkId = existingProduk?.id || null
+
+        if (!produkId) {
+          const { data: created, error: createErr } = await supabase
+            .from('Produk')
+            .insert([{
+              nama: product.nama,
+              slug: product.slug,
+              kategori: product.kategori,
+              deskripsi: product.deskripsi,
+              snk: product.snk,
+              is_active: true,
+              urutan: 0,
+            }])
+            .select('id')
+            .single()
+          if (createErr) {
+            results.failed.push({ row: null, error: `Produk ${product.slug}: ${createErr.message}` })
+            continue
+          }
+          produkId = created.id
+          await logActivity(req, 'BULK_IMPORT_PRODUK', 'Produk', produkId, { slug: product.slug, nama: product.nama })
         }
 
-        // Insert produk
-        const { data: newProduct, error: insertError } = await supabase
-          .from('Produk')
-          .insert([{
-            nama: nama,
-            kode: kodeLower,
-            harga: hargaInt,
-            deskripsi: deskripsi,
-            snk: snk,
-            format: format,
-            data: [],
-            terjual: 0
-          }])
-          .select()
-          .single()
+        for (const varian of product.variants) {
+          const { data: existingVar } = await supabase
+            .from('Varian')
+            .select('id, kode')
+            .eq('kode', varian.kode)
+            .maybeSingle()
 
-        if (insertError) {
-          results.failed.push({
-            row: rowNum,
-            data: row,
-            error: insertError.message
-          })
-        } else {
-          results.success.push({
-            row: rowNum,
-            product: newProduct
-          })
-          await logActivity(req, 'BULK_IMPORT_PRODUK', 'Produk', newProduct.id, { 
-            nama: newProduct.nama,
-            kode: newProduct.kode 
-          })
+          if (existingVar) {
+            results.skipped.push({ kode: varian.kode, reason: 'varian_kode sudah ada' })
+            continue
+          }
+
+          const { count } = await supabase
+            .from('Varian')
+            .select('*', { count: 'exact', head: true })
+            .eq('produk_id', produkId)
+
+          const { data: newVar, error: varErr } = await supabase
+            .from('Varian')
+            .insert([{
+              produk_id: produkId,
+              label: varian.label,
+              kode: varian.kode,
+              harga: varian.harga,
+              format: varian.format,
+              is_active: true,
+              urutan: count || 0,
+              terjual: 0,
+            }])
+            .select('id, kode')
+            .single()
+
+          if (varErr) {
+            results.failed.push({ kode: varian.kode, error: varErr.message })
+          } else {
+            results.success.push({ produk_id: produkId, varian_id: newVar.id, kode: newVar.kode })
+            await logActivity(req, 'BULK_IMPORT_VARIAN', 'Varian', newVar.id, { kode: newVar.kode })
+          }
         }
       } catch (error) {
-        results.failed.push({
-          row: rowNum,
-          data: row,
-          error: error.message
-        })
+        results.failed.push({ slug: product.slug, error: error.message })
       }
     }
 
@@ -5984,12 +5969,8 @@ app.post('/bulk/produk/import', isAuthenticated, upload.single('file'), async (r
         success: results.success.length,
         failed: results.failed.length,
         skipped: results.skipped.length,
-        details: {
-          success: results.success,
-          failed: results.failed,
-          skipped: results.skipped
-        }
-      }
+        details: results,
+      },
     })
   } catch (error) {
     if (filePath) cleanupFile(filePath)
@@ -6000,26 +5981,38 @@ app.post('/bulk/produk/import', isAuthenticated, upload.single('file'), async (r
 
 // Route: Download Template Import Produk
 app.get('/bulk/produk/template', isAuthenticated, (req, res) => {
-  const csvContent = `nama,kode,harga,deskripsi,snk,format
-Contoh Produk 1,contoh1,50000,Deskripsi produk contoh 1,Syarat dan ketentuan produk 1,Email:Password
-Contoh Produk 2,contoh2,75000,Deskripsi produk contoh 2,Syarat dan ketentuan produk 2,Username:Password
-Contoh Produk 3,contoh3,100000,Deskripsi produk contoh 3,Syarat dan ketentuan produk 3,`
+  const csvContent = `produk_nama,produk_slug,kategori,deskripsi,snk,varian_label,varian_kode,harga,format
+Netflix,netflix,streaming,Akun Netflix,S&K berlaku,7 Hari,netflix-7d,15000,Email:Password
+Netflix,netflix,streaming,Akun Netflix,S&K berlaku,1 Bulan,netflix-1b,45000,Email:Password
+Spotify Solo,spotify-solo,streaming,Akun Spotify,S&K berlaku,Default,spotify-solo,25000,Email:Password
+`
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-  res.setHeader('Content-Disposition', 'attachment; filename=template-import-produk.csv')
+  res.setHeader('Content-Disposition', 'attachment; filename=template-import-katalog.csv')
   res.send('\ufeff' + csvContent)
 })
 
-// Route: Bulk Update Harga Produk
+app.get('/bulk/tiers/template', isAuthenticated, (req, res) => {
+  const csvContent = `varian_kode,min_qty,harga
+netflix-7d,5,12000
+netflix-7d,10,10000
+`
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+  res.setHeader('Content-Disposition', 'attachment; filename=template-import-tiers.csv')
+  res.send('\ufeff' + csvContent)
+})
+
+// Route: Bulk Update Harga Varian
 app.post('/bulk/produk/update-harga', isAuthenticated, async (req, res) => {
   try {
-    const { produk_ids, update_type, value } = req.body // update_type: 'percentage' atau 'fixed', value: angka
+    const { varian_ids, update_type, value } = req.body
 
-    if (!produk_ids || !Array.isArray(produk_ids) || produk_ids.length === 0) {
-      return res.json({ success: false, error: 'Pilih minimal 1 produk' })
+    if (!varian_ids || !Array.isArray(varian_ids) || varian_ids.length === 0) {
+      return res.json({ success: false, error: 'Pilih minimal 1 varian' })
     }
 
-    if (!update_type || !value) {
+    if (!update_type || value === undefined || value === null || value === '') {
       return res.json({ success: false, error: 'Tipe update dan nilai wajib diisi' })
     }
 
@@ -6028,72 +6021,45 @@ app.post('/bulk/produk/update-harga', isAuthenticated, async (req, res) => {
       return res.json({ success: false, error: 'Nilai tidak valid' })
     }
 
-    // Ambil produk yang akan diupdate
-    const { data: products, error: fetchError } = await supabase
-      .from('Produk')
-      .select('id, nama, kode, harga')
-      .in('id', produk_ids)
+    const { data: variants, error: fetchError } = await supabase
+      .from('Varian')
+      .select('id, label, kode, harga, produk_id')
+      .in('id', varian_ids)
 
     if (fetchError) throw fetchError
 
     const results = {
       success: [],
-      failed: []
+      failed: [],
     }
 
-    for (const product of products) {
-      try {
-        let newHarga = product.harga
+    for (const variant of variants || []) {
+      const computed = bulk.computeNewHarga(variant.harga, update_type, valueNum)
+      if (!computed.ok) {
+        results.failed.push({ varian_id: variant.id, error: computed.error })
+        continue
+      }
 
-        if (update_type === 'percentage') {
-          newHarga = Math.round(product.harga * (1 + valueNum / 100))
-        } else if (update_type === 'fixed') {
-          newHarga = product.harga + valueNum
-        } else {
-          results.failed.push({
-            product_id: product.id,
-            error: 'Tipe update tidak valid'
-          })
-          continue
-        }
+      const { error: updateError } = await supabase
+        .from('Varian')
+        .update({ harga: computed.harga })
+        .eq('id', variant.id)
 
-        if (newHarga < 0) {
-          results.failed.push({
-            product_id: product.id,
-            error: 'Harga baru tidak boleh negatif'
-          })
-          continue
-        }
-
-        const { error: updateError } = await supabase
-          .from('Produk')
-          .update({ harga: newHarga })
-          .eq('id', product.id)
-
-        if (updateError) {
-          results.failed.push({
-            product_id: product.id,
-            error: updateError.message
-          })
-        } else {
-          results.success.push({
-            product_id: product.id,
-            nama: product.nama,
-            kode: product.kode,
-            harga_lama: product.harga,
-            harga_baru: newHarga
-          })
-          await logActivity(req, 'BULK_UPDATE_HARGA', 'Produk', product.id, {
-            nama: product.nama,
-            harga_lama: product.harga,
-            harga_baru: newHarga,
-            update_type: update_type
-          })
-        }
-      } catch (error) {
-        results.failed.push({
-          product_id: product.id,
-          error: error.message
+      if (updateError) {
+        results.failed.push({ varian_id: variant.id, error: updateError.message })
+      } else {
+        results.success.push({
+          varian_id: variant.id,
+          kode: variant.kode,
+          label: variant.label,
+          harga_lama: variant.harga,
+          harga_baru: computed.harga,
+        })
+        await logActivity(req, 'BULK_UPDATE_HARGA', 'Varian', variant.id, {
+          kode: variant.kode,
+          harga_lama: variant.harga,
+          harga_baru: computed.harga,
+          update_type,
         })
       }
     }
@@ -6101,17 +6067,88 @@ app.post('/bulk/produk/update-harga', isAuthenticated, async (req, res) => {
     res.json({
       success: true,
       results: {
-        total: products.length,
+        total: (variants || []).length,
         success: results.success.length,
         failed: results.failed.length,
-        details: {
-          success: results.success,
-          failed: results.failed
-        }
-      }
+        details: results,
+      },
     })
   } catch (error) {
     console.error('Error bulk updating prices:', error)
+    res.json({ success: false, error: error.message })
+  }
+})
+
+app.post('/bulk/tiers/import', isAuthenticated, upload.single('file'), async (req, res) => {
+  let filePath = null
+  try {
+    if (!req.file) return res.json({ success: false, error: 'File tidak ditemukan' })
+
+    filePath = req.file.path
+    const fileExt = path.extname(req.file.originalname).toLowerCase()
+    let data = []
+    if (fileExt === '.csv') data = await parseCSV(filePath)
+    else if (fileExt === '.xlsx' || fileExt === '.xls') data = await parseExcel(filePath)
+    else {
+      cleanupFile(filePath)
+      return res.json({ success: false, error: 'Format file tidak didukung' })
+    }
+
+    const results = { success: [], failed: [] }
+    for (let i = 0; i < data.length; i++) {
+      const rowNum = i + 2
+      const norm = bulk.normalizeTierRow(data[i])
+      if (!norm.ok) {
+        results.failed.push({ row: rowNum, error: norm.error })
+        continue
+      }
+      const { varian_kode, min_qty, harga } = norm.value
+      const { data: varian } = await supabase
+        .from('Varian')
+        .select('id, kode')
+        .eq('kode', varian_kode)
+        .maybeSingle()
+      if (!varian) {
+        results.failed.push({ row: rowNum, error: `varian tidak ditemukan: ${varian_kode}` })
+        continue
+      }
+
+      const { data: existing } = await supabase
+        .from('HargaTier')
+        .select('id')
+        .eq('varian_id', varian.id)
+        .eq('min_qty', min_qty)
+        .maybeSingle()
+
+      if (existing) {
+        const { error } = await supabase
+          .from('HargaTier')
+          .update({ harga })
+          .eq('id', existing.id)
+        if (error) results.failed.push({ row: rowNum, error: error.message })
+        else results.success.push({ row: rowNum, action: 'update', varian_kode, min_qty, harga })
+      } else {
+        const { error } = await supabase
+          .from('HargaTier')
+          .insert([{ varian_id: varian.id, min_qty, harga }])
+        if (error) results.failed.push({ row: rowNum, error: error.message })
+        else results.success.push({ row: rowNum, action: 'insert', varian_kode, min_qty, harga })
+      }
+    }
+
+    cleanupFile(filePath)
+    res.json({
+      success: true,
+      results: {
+        total: data.length,
+        success: results.success.length,
+        failed: results.failed.length,
+        details: results,
+      },
+    })
+  } catch (error) {
+    if (filePath) cleanupFile(filePath)
+    console.error('Error bulk importing tiers:', error)
     res.json({ success: false, error: error.message })
   }
 })
@@ -6137,10 +6174,7 @@ app.post('/bulk/stok/tambah', isAuthenticated, async (req, res) => {
 
     const produk = varian.produk || { nama: 'Produk' }
 
-    const dataArray = data_stok
-      .split(/[\n\r,]+/)
-      .map((item) => item.trim())
-      .filter((item) => item !== '')
+    const dataArray = bulk.parseStockLines(data_stok)
 
     if (dataArray.length === 0) {
       return res.json({ success: false, error: 'Tidak ada data stok yang valid' })
@@ -6412,16 +6446,31 @@ app.get('/bulk/export', isAuthenticated, async (req, res) => {
     let headers = []
 
     switch (export_type) {
-      case 'produk':
-        const { data: products } = await supabase
-          .from('Produk')
-          .select('*')
-          .order('created_at', { ascending: false })
-        
-        data = products || []
-        filename = 'produk'
-        headers = ['Nama', 'Kode', 'Harga', 'Deskripsi', 'SNK', 'Format', 'Terjual', 'Created At']
+      case 'produk': {
+        const list = await catalog.listProducts({ activeOnly: false, withStock: false })
+        data = []
+        for (const p of list) {
+          for (const v of p.variants || []) {
+            data.push({
+              produk_nama: p.nama,
+              produk_slug: p.slug,
+              kategori: p.kategori,
+              deskripsi: p.deskripsi,
+              snk: p.snk,
+              varian_label: v.label,
+              varian_kode: v.kode,
+              harga: v.harga,
+              format: v.format || '',
+            })
+          }
+        }
+        filename = 'katalog'
+        headers = [
+          'produk_nama', 'produk_slug', 'kategori', 'deskripsi', 'snk',
+          'varian_label', 'varian_kode', 'harga', 'format',
+        ]
         break
+      }
 
       case 'user':
         const { data: users } = await supabase
@@ -6469,14 +6518,15 @@ app.get('/bulk/export', isAuthenticated, async (req, res) => {
         switch (export_type) {
           case 'produk':
             row.push(
-              `"${(item.nama || '').replace(/"/g, '""')}"`,
-              `"${(item.kode || '').replace(/"/g, '""')}"`,
-              item.harga || 0,
+              `"${(item.produk_nama || '').replace(/"/g, '""')}"`,
+              `"${(item.produk_slug || '').replace(/"/g, '""')}"`,
+              `"${(item.kategori || '').replace(/"/g, '""')}"`,
               `"${(item.deskripsi || '').replace(/"/g, '""')}"`,
               `"${(item.snk || '').replace(/"/g, '""')}"`,
-              `"${(item.format || '').replace(/"/g, '""')}"`,
-              item.terjual || 0,
-              moment.tz(item.created_at, 'Asia/Jakarta').format('YYYY-MM-DD HH:mm:ss')
+              `"${(item.varian_label || '').replace(/"/g, '""')}"`,
+              `"${(item.varian_kode || '').replace(/"/g, '""')}"`,
+              item.harga || 0,
+              `"${(item.format || '').replace(/"/g, '""')}"`
             )
             break
           case 'user':

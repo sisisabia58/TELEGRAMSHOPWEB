@@ -887,6 +887,37 @@ async function addStokItems(varianId, varianKode, dataArray) {
   }
 }
 
+async function buildAddStokVariantEntries() {
+  const list = await catalog.listProducts({ activeOnly: true, withStock: true })
+  const entries = []
+  for (const p of list) {
+    for (const v of p.variants || []) {
+      if (v.is_active === false) continue
+      entries.push({
+        id: v.id,
+        kode: v.kode,
+        label: v.label,
+        nama: p.nama,
+        harga: v.harga,
+        stok_count: v.stok_count ?? 0,
+      })
+    }
+  }
+  return entries
+}
+
+async function resolveVarianForAddStok(kode) {
+  const item = await catalog.getVariantByKode(kode)
+  if (!item) return null
+  return {
+    id: item.id,
+    kode: item.kode,
+    label: item.label,
+    harga: item.harga,
+    nama: item.produk?.nama || item.label,
+  }
+}
+
 // getStokItems -> lib/stock.js (di-require di bagian atas file)
 
 // Update stok item (untuk edit)
@@ -1509,95 +1540,75 @@ Format yang benar:
 =======================
 💡 Atau gunakan \`/addstok\` tanpa parameter untuk mode interaktif yang lebih mudah!`, { parse_mode: "Markdown" })
     }
-    let f = null
-    let { data: Produk } = await supabase
-    .from("Produk")
-    .select("*")
-    Object.keys(Produk).forEach((g) => {
-      if (Produk[g].kode.toLowerCase() === kode.toLowerCase()) f = g
-    })
-    if (f !== null) {
-      const namaProduk = Produk[f].nama
-      const produkId = Produk[f].id
-      const stokSebelumnya = await getStokCount(kode.toLowerCase())
-      const dataArray = data.split(/[\n\r\s]+/).filter(item => item.trim() !== "")
-      if (dataArray.length === 0) {
-        return await sendMessage(msg.from.id, `❌ *Data Stok Kosong!*
+    const item = await resolveVarianForAddStok(kode)
+    if (!item) {
+      return await sendMessage(msg.from.id, `❌ *VARIAN TIDAK DITEMUKAN*
+=======================
+Kode \`${kode}\` tidak ditemukan.
+
+=======================
+💡 Pastikan kode **varian** sudah benar.`, { parse_mode: "Markdown" })
+    }
+    const stokSebelumnya = await getStokCount(item.kode)
+    const dataArray = data.split(/[\n\r\s]+/).filter(itemLine => itemLine.trim() !== "")
+    if (dataArray.length === 0) {
+      return await sendMessage(msg.from.id, `❌ *Data Stok Kosong!*
 =======================
 Tidak ada data stok yang valid untuk ditambahkan.
 
 Pastikan format:
 \`/addstok ${kode}|DataProduk\``, { parse_mode: "Markdown" })
-      }
-      
-      // Tambah stok ke tabel Stok
-      const { data: stokBaru, error } = await addStokItems(produkId, kode.toLowerCase(), dataArray)
-      
-      if (error) {
-        return await sendMessage(msg.from.id, `❌ *ERROR MENAMBAH STOK*
+    }
+
+    const { data: stokBaru, error } = await addStokItems(item.id, item.kode, dataArray)
+
+    if (error) {
+      return await sendMessage(msg.from.id, `❌ *ERROR MENAMBAH STOK*
 =======================
 Terjadi kesalahan saat menambah stok:
 \`${error.message}\`
 
 =======================
 💡 Silakan coba lagi atau hubungi admin.`, { parse_mode: "Markdown" })
-      }
-      
-      const stokSekarang = await getStokCount(kode.toLowerCase())
+    }
 
-      // Kirim notifikasi ke feed channel
-      const formattedPrice = formatrupiah(Produk[f].harga)
-      await sendFeedMessage(
-        `📢 ${dataArray.length} new stock added for ${namaProduk}!\n\n` +
-        `✨ Available: ${stokSekarang} items\n` +
-        `🪙 Price: ${formattedPrice}`,
-        'stock'
-      ).catch(err => console.error('Error sending stock feed message:', err))
-      
-      await sendMessage(msg.from.id, `✅ *STOK BERHASIL DITAMBAHKAN*
+    const stokSekarang = await getStokCount(item.kode)
+    const formattedPrice = formatrupiah(item.harga)
+    await sendFeedMessage(
+      `📢 ${dataArray.length} new stock added for ${item.nama} (${item.label})!\n\n` +
+      `✨ Available: ${stokSekarang} items\n` +
+      `🪙 Price: ${formattedPrice}`,
+      'stock'
+    ).catch(err => console.error('Error sending stock feed message:', err))
+
+    await sendMessage(msg.from.id, `✅ *STOK BERHASIL DITAMBAHKAN*
 =======================
-📦 *Produk:* ${namaProduk}
-🔖 *Kode:* \`${kode.toLowerCase()}\`
+📦 *Produk:* ${item.nama}
+🏷️ *Varian:* ${item.label}
+🔖 *Kode:* \`${item.kode}\`
 📊 *Stok Sebelumnya:* ${stokSebelumnya}
 ➕ *Stok Ditambahkan:* ${dataArray.length}
 📊 *Stok Sekarang:* ${stokSekarang}
 =======================
 💡 Total ${dataArray.length} stok berhasil ditambahkan!`, { parse_mode: "Markdown" })
-    } else {
-      await sendMessage(msg.from.id, `❌ *PRODUK TIDAK DITEMUKAN*
-=======================
-Kode produk \`${kode}\` tidak ditemukan di database.
-
-=======================
-💡 Pastikan kode produk sudah benar.`, { parse_mode: "Markdown" })
-    }
     return
   }
   
   // Mode interaktif
-  let { data: Produk } = await supabase
-    .from("Produk")
-    .select("*")
+  const variantEntries = await buildAddStokVariantEntries()
   
-  if (Produk.length === 0) {
-    return await bot.sendMessage(msg.from.id, `⚠️ *TIDAK ADA PRODUK*
+  if (variantEntries.length === 0) {
+    return await bot.sendMessage(msg.from.id, `⚠️ *TIDAK ADA VARIAN*
 =======================
-Belum ada produk yang terdaftar.
+Belum ada varian aktif yang terdaftar.
 
 =======================
-💡 Gunakan \`/addproduk\` untuk menambah produk terlebih dahulu.`, { parse_mode: "Markdown" })
+💡 Tambah produk/varian lewat dashboard terlebih dahulu.`, { parse_mode: "Markdown" })
   }
   
-  // Hitung stok untuk setiap produk
-  const produkWithStok = await Promise.all(Produk.map(async (p) => {
-    const stokCount = await getStokCount(p.kode)
-    return { ...p, stok_count: stokCount }
-  }))
-  
-  // Buat inline keyboard untuk pilih produk
-  const buttons = produkWithStok.map((p, idx) => ({
-    text: `${idx + 1}. ${p.nama} (${p.stok_count} stok)`,
-    callback_data: `addstok_select_${p.kode}`
+  const buttons = variantEntries.map((v, idx) => ({
+    text: `${idx + 1}. ${v.nama} — ${v.label} (${v.stok_count} stok)`,
+    callback_data: `addstok_select_${v.kode}`
   }))
   
   const inlineKeyboard = []
@@ -1608,9 +1619,9 @@ Belum ada produk yang terdaftar.
   
   await bot.sendMessage(msg.from.id, `📦 *MODE INTERAKTIF - TAMBAH STOK*
 =======================
-Pilih produk yang ingin ditambah stoknya:
+Pilih varian yang ingin ditambah stoknya:
 
-💡 Setelah memilih produk, Anda bisa mengirim stok satu per satu atau sekaligus (pisahkan dengan baris baru).`, {
+💡 Setelah memilih varian, Anda bisa mengirim stok satu per satu atau sekaligus (pisahkan dengan baris baru).`, {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: inlineKeyboard
@@ -6121,25 +6132,22 @@ if (cmd === "addstok") {
   }
   
   // Trigger the same flow as /addstok command
-  let { data: Produk } = await supabase
-    .from("Produk")
-    .select("*")
+  const variantEntries = await buildAddStokVariantEntries()
   
-  if (!Produk || Produk.length === 0) {
+  if (!variantEntries.length) {
     await bot.answerCallbackQuery(query.id)
-    await bot.sendMessage(query.from.id, `⚠️ *TIDAK ADA PRODUK*
+    await bot.sendMessage(query.from.id, `⚠️ *TIDAK ADA VARIAN*
 ━━━━━━━━━━━━━━━━━━━━
-Belum ada produk yang terdaftar.
+Belum ada varian aktif yang terdaftar.
 
 ━━━━━━━━━━━━━━━━━━━━
-💡 Gunakan \`/addproduk\` untuk menambah produk terlebih dahulu.`, { parse_mode: "Markdown" })
+💡 Tambah produk/varian lewat dashboard terlebih dahulu.`, { parse_mode: "Markdown" })
     return
   }
   
-  // Buat inline keyboard untuk pilih produk
-  const buttons = Produk.map((p, idx) => ({
-    text: `${idx + 1}. ${p.nama} (${p.data.length} stok)`,
-    callback_data: `addstok_select_${p.kode}`
+  const buttons = variantEntries.map((v, idx) => ({
+    text: `${idx + 1}. ${v.nama} — ${v.label} (${v.stok_count} stok)`,
+    callback_data: `addstok_select_${v.kode}`
   }))
   
   const inlineKeyboard = []
@@ -6149,11 +6157,11 @@ Belum ada produk yang terdaftar.
   inlineKeyboard.push([{ text: "❌ Batal", callback_data: "addstok_cancel" }])
   
   await bot.answerCallbackQuery(query.id)
-  await bot.sendMessage(query.from.id, `📦 *TAMBAH STOK PRODUK*
+  await bot.sendMessage(query.from.id, `📦 *TAMBAH STOK VARIAN*
 ━━━━━━━━━━━━━━━━━━━━
-Pilih produk yang ingin ditambah stoknya:
+Pilih varian yang ingin ditambah stoknya:
 
-💡 Setelah memilih produk, Anda bisa mengirim stok satu per satu atau sekaligus (pisahkan dengan baris baru).`, {
+💡 Setelah memilih varian, Anda bisa mengirim stok satu per satu atau sekaligus (pisahkan dengan baris baru).`, {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: inlineKeyboard
@@ -7859,31 +7867,30 @@ if (cmd === "bataleditstok") {
 if (cmd.startsWith("addstok_select_")) {
   const kode = cmd.replace("addstok_select_", "")
   
-  let { data: Produk } = await supabase
-    .from("Produk")
-    .select("*")
-    .eq("kode", kode.toLowerCase())
-    .single()
+  const item = await resolveVarianForAddStok(kode)
   
-  if (!Produk) {
-    await bot.answerCallbackQuery(query.id, { text: "❌ Produk tidak ditemukan!", show_alert: true })
+  if (!item) {
+    await bot.answerCallbackQuery(query.id, { text: "❌ Varian tidak ditemukan!", show_alert: true })
     return
   }
   
   addStokState[query.from.id] = {
     step: 2,
     data: {
-      kode: kode.toLowerCase(),
-      nama: Produk.nama
+      kode: item.kode,
+      varian_id: item.id,
+      nama: item.nama,
+      label: item.label,
+      harga: item.harga,
     }
   }
   
-  const stokSaatIni = await getStokCount(kode.toLowerCase())
+  const stokSaatIni = await getStokCount(item.kode)
   
   await bot.answerCallbackQuery(query.id)
-  await bot.editMessageText(`✅ *Produk Dipilih: ${Produk.nama}*
+  await bot.editMessageText(`✅ *Varian Dipilih: ${item.nama} — ${item.label}*
 =======================
-🔖 *Kode:* \`${kode.toLowerCase()}\`
+🔖 *Kode:* \`${item.kode}\`
 📊 *Stok Saat Ini:* ${stokSaatIni}
 
 *Pilih Metode Input:*
@@ -8061,33 +8068,24 @@ if (cmd.startsWith("addstok_confirm_")) {
   
   const dataArray = state.data.pendingStok
   
-  // Ambil produk untuk mendapatkan ID
-  const { data: ProdukData } = await supabase
-    .from("Produk")
-    .select("id, harga")
-    .eq('kode', state.data.kode)
-    .single()
+  const item = await resolveVarianForAddStok(state.data.kode)
   
-  if (!ProdukData) {
-    await bot.answerCallbackQuery(query.id, { text: "❌ Produk tidak ditemukan!", show_alert: true })
+  if (!item) {
+    await bot.answerCallbackQuery(query.id, { text: "❌ Varian tidak ditemukan!", show_alert: true })
     return
   }
   
-  // Ambil stok sebelumnya
   const stokSebelumnya = await getStokCount(state.data.kode)
   
-  // Ambil stok yang sudah ada untuk cek duplikat
   const existingStokItems = await getStokItems(state.data.kode)
   const existingStokData = existingStokItems.map(s => s.data)
   
-  // Filter duplikat jika ada
   const dataToAdd = state.data.skipDuplicates 
-    ? dataArray.filter(item => !existingStokData.includes(item.trim()))
+    ? dataArray.filter(line => !existingStokData.includes(line.trim()))
     : dataArray
   
-  // Tambahkan stok ke tabel Stok
   const { data: stokBaru, error } = await addStokItems(
-    ProdukData.id,
+    item.id,
     state.data.kode,
     dataToAdd
   )
@@ -8096,13 +8094,12 @@ if (cmd.startsWith("addstok_confirm_")) {
   const gagal = dataToAdd.length - berhasil
   const duplicatesCount = state.data.skipDuplicates ? dataArray.length - dataToAdd.length : 0
   
-  // Ambil stok terbaru
   const stokSekarang = await getStokCount(state.data.kode)
   
   if (berhasil > 0) {
-    const formattedPrice = formatrupiah(ProdukData.harga)
+    const formattedPrice = formatrupiah(item.harga)
     await sendFeedMessage(
-      `📢 ${berhasil} new stock added for ${state.data.nama}!\n\n` +
+      `📢 ${berhasil} new stock added for ${item.nama} (${item.label})!\n\n` +
       `✨ Available: ${stokSekarang} items\n` +
       `🪙 Price: ${formattedPrice}`,
       'stock'
@@ -8112,7 +8109,8 @@ if (cmd.startsWith("addstok_confirm_")) {
   await bot.answerCallbackQuery(query.id)
   await bot.editMessageText(`✅ *STOK BERHASIL DITAMBAHKAN*
 =======================
-📦 *Produk:* ${state.data.nama}
+📦 *Produk:* ${item.nama}
+🏷️ *Varian:* ${item.label}
 🔖 *Kode:* \`${state.data.kode}\`
 📊 *Stok Sebelumnya:* ${stokSebelumnya}
 ➕ *Stok Ditambahkan:* ${berhasil}
@@ -10998,21 +10996,17 @@ Tidak ada data stok yang valid untuk ditambahkan.
     // Ambil stok sebelumnya
     const stokSebelumnya = await getStokCount(state.data.kode)
     
-    // Ambil produk untuk mendapatkan ID
-    const { data: ProdukData } = await supabase
-      .from("Produk")
-      .select("id, nama, harga")
-      .eq('kode', state.data.kode)
-      .single()
+    const item = state.data.varian_id
+      ? { id: state.data.varian_id, kode: state.data.kode, harga: state.data.harga, nama: state.data.nama, label: state.data.label }
+      : await resolveVarianForAddStok(state.data.kode)
     
-    if (!ProdukData) {
+    if (!item) {
       delete addStokState[msg.from.id]
-      return await sendMessage(msg.from.id, `❌ Produk tidak ditemukan!`)
+      return await sendMessage(msg.from.id, `❌ Varian tidak ditemukan!`)
     }
     
-    // Tambahkan stok ke tabel Stok
     const { data: stokBaru, error } = await addStokItems(
-      ProdukData.id,
+      item.id,
       state.data.kode,
       dataArray
     )
@@ -11020,13 +11014,12 @@ Tidak ada data stok yang valid untuk ditambahkan.
     const berhasil = stokBaru ? stokBaru.length : 0
     const gagal = dataArray.length - berhasil
     
-    // Ambil stok terbaru
     const stokSekarang = await getStokCount(state.data.kode)
     
     if (berhasil > 0) {
-      const formattedPrice = formatrupiah(ProdukData.harga)
+      const formattedPrice = formatrupiah(item.harga)
       await sendFeedMessage(
-        `📢 ${berhasil} new stock added for ${ProdukData.nama}!\n\n` +
+        `📢 ${berhasil} new stock added for ${item.nama} (${item.label || item.nama})!\n\n` +
         `✨ Available: ${stokSekarang} items\n` +
         `🪙 Price: ${formattedPrice}`,
         'stock'
@@ -11035,7 +11028,8 @@ Tidak ada data stok yang valid untuk ditambahkan.
     
     await bot.sendMessage(msg.from.id, `✅ *STOK BERHASIL DITAMBAHKAN*
 =======================
-📦 *Produk:* ${ProdukData.nama}
+📦 *Produk:* ${item.nama}
+🏷️ *Varian:* ${item.label || item.kode}
 🔖 *Kode:* \`${state.data.kode}\`
 📊 *Stok Sebelumnya:* ${stokSebelumnya}
 ➕ *Stok Ditambahkan:* ${berhasil}
@@ -11702,14 +11696,9 @@ File yang Anda upload tidak berisi data stok yang valid.
       }
       
       // Ambil stok sebelumnya dan cek duplikat
-      const { data: ProdukBefore } = await supabase
-        .from("Produk")
-        .select("data")
-        .eq('kode', state.data.kode)
-        .single()
-      
-      const existingStok = ProdukBefore ? ProdukBefore.data : []
-      const duplicates = dataArray.filter(item => existingStok.includes(item.trim()))
+      const existingStokItems = await getStokItems(state.data.kode)
+      const existingStok = existingStokItems.map((s) => s.data)
+      const duplicates = dataArray.filter(line => existingStok.includes(line.trim()))
       
       // Simpan data sementara
       state.data.pendingStok = dataArray
