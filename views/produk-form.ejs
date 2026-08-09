@@ -1,6 +1,16 @@
 <%
     const currentPage = 'produk';
-    const pageTitle = action === 'tambah' ? '➕ Tambah Produk' : '✏️ Edit Produk';
+    const pageTitle = '➕ Tambah Produk';
+    const kategoriList = [
+        ['umum', '📦 Umum'],
+        ['game', '🎮 Game'],
+        ['streaming', '📺 Streaming'],
+        ['software', '💻 Software'],
+        ['social media', '📱 Social Media'],
+        ['voucher', '🎟️ Voucher'],
+        ['education', '📚 Education']
+    ];
+    const kategoriTerpilih = (produk && produk.kategori ? produk.kategori : 'umum').toLowerCase();
 %>
 <!DOCTYPE html>
 <html lang="id">
@@ -36,146 +46,63 @@
         </div>
         
         <div class="container">
+            <% if (error) { %>
+                <div class="alert alert-error" style="margin-bottom:16px;">❌ <%= error %></div>
+            <% } %>
             <div class="form-container">
                 <div class="card">
                     <div class="card-header">
-                        <h2 class="card-title"><%= action === 'tambah' ? 'Tambah Produk Baru' : 'Edit Produk' %></h2>
+                        <h2 class="card-title">Tambah Produk Baru</h2>
                     </div>
                     <div class="card-body">
-                        <form method="POST" action="<%= action === 'tambah' ? '/produk/tambah' : '/produk/edit/' + produk.id %>" data-loading>
+                        <form method="POST" action="/produk/tambah" data-loading>
+                            <h3 style="margin:0 0 16px;font-size:16px;color:#333;">Informasi Produk</h3>
                             <div class="form-group">
-                                <label class="form-label">
-                                    Nama Produk <span class="required">*</span>
-                                </label>
-                                <input 
-                                    type="text" 
-                                    name="nama" 
-                                    class="form-input" 
-                                    value="<%= produk ? produk.nama : '' %>"
-                                    required 
-                                    placeholder="Contoh: Netflix Premium 1 Bulan"
-                                >
-                                <div class="form-help">Nama produk yang akan ditampilkan ke customer</div>
+                                <label class="form-label">Nama Produk <span class="required">*</span></label>
+                                <input type="text" name="nama" class="form-input" value="<%= produk ? produk.nama : '' %>" required placeholder="Contoh: Netflix Premium">
                             </div>
-
-                            <div class="form-group">
-                                <label class="form-label">
-                                    Kode Produk <span class="required">*</span>
-                                </label>
-                                <input 
-                                    type="text" 
-                                    name="kode" 
-                                    class="form-input" 
-                                    value="<%= produk ? produk.kode : '' %>"
-                                    required 
-                                    placeholder="Contoh: netflix-1bulan"
-                                    pattern="[a-z0-9-]+"
-                                    title="Hanya huruf kecil, angka, dan tanda hubung"
-                                >
-                                <div class="form-help">Kode akan otomatis diubah ke huruf kecil. Harus unik.</div>
-                            </div>
-
-                            <div class="form-group">
-                                <label class="form-label">
-                                    Harga (Rp) <span class="required">*</span>
-                                </label>
-                                <input 
-                                    type="number" 
-                                    name="harga" 
-                                    class="form-input" 
-                                    value="<%= produk ? produk.harga : '' %>"
-                                    required 
-                                    min="0"
-                                    placeholder="Contoh: 25000"
-                                >
-                            </div>
-
-                            <div class="form-group">
-                                <label class="form-label">
-                                    Deskripsi <span class="required">*</span>
-                                </label>
-                                <textarea 
-                                    name="deskripsi" 
-                                    class="form-textarea" 
-                                    rows="5" 
-                                    required
-                                    placeholder="Deskripsi produk yang akan ditampilkan ke customer"
-                                ><%= produk ? produk.deskripsi : '' %></textarea>
-                            </div>
-
-                            <div class="form-group">
-                                <label class="form-label">
-                                    Syarat & Ketentuan <span class="required">*</span>
-                                </label>
-                                <textarea 
-                                    name="snk" 
-                                    class="form-textarea" 
-                                    rows="5" 
-                                    required
-                                    placeholder="Syarat dan ketentuan produk"
-                                ><%= produk ? produk.snk : '' %></textarea>
-                            </div>
-
-                            <div class="form-group">
-                                <label class="form-label">Format Produk (Opsional)</label>
-                                <input 
-                                    type="text" 
-                                    name="format" 
-                                    class="form-input" 
-                                    value="<%= produk ? (produk.format || '') : '' %>"
-                                    placeholder="Contoh: Email:Password atau Email:Password|email@example.com:*****"
-                                >
-                                <div class="form-help">Format manual produk. Jika kosong, akan auto-detect dari data stok. Gunakan | untuk memisahkan format dan contoh.</div>
-                            </div>
-
                             <div class="form-group">
                                 <label class="form-label">Kategori</label>
-                                <%
-                                    // Terbatas pada kategori yang dikenali bot — getKategoriEmoji()
-                                    // dan getKategoriName() di index.js menampilkan "Umum" untuk
-                                    // nilai lain, jadi kategori bebas akan tampil salah di bot.
-                                    const kategoriList = [
-                                        ['umum', '📦 Umum'],
-                                        ['game', '🎮 Game'],
-                                        ['streaming', '📺 Streaming'],
-                                        ['software', '💻 Software'],
-                                        ['social media', '📱 Social Media'],
-                                        ['voucher', '🎟️ Voucher'],
-                                        ['education', '📚 Education']
-                                    ];
-                                    const kategoriTerpilih = (produk && produk.kategori ? produk.kategori : 'umum').toLowerCase();
-                                    // Produk lama bisa punya kategori bebas (dulu diset via /editkategori
-                                    // di bot). Tanpa ini, option tidak ada yang terpilih dan browser
-                                    // memilih opsi pertama — menyimpan form akan mengubah kategori
-                                    // secara diam-diam. Jadi tampilkan nilai lamanya juga.
-                                    if (!kategoriList.some(([nilai]) => nilai === kategoriTerpilih)) {
-                                        kategoriList.push([kategoriTerpilih, `⚠️ ${kategoriTerpilih} (tidak dikenali bot)`]);
-                                    }
-                                %>
                                 <select name="kategori" class="form-input">
                                     <% kategoriList.forEach(([nilai, label]) => { %>
                                         <option value="<%= nilai %>" <%= kategoriTerpilih === nilai ? 'selected' : '' %>><%= label %></option>
                                     <% }) %>
                                 </select>
-                                <div class="form-help">Kategori dipakai bot untuk mengelompokkan dan memfilter produk.</div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Deskripsi <span class="required">*</span></label>
+                                <textarea name="deskripsi" class="form-textarea" rows="4" required placeholder="Deskripsi produk"><%= produk ? produk.deskripsi : '' %></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Syarat & Ketentuan <span class="required">*</span></label>
+                                <textarea name="snk" class="form-textarea" rows="4" required placeholder="Syarat dan ketentuan"><%= produk ? produk.snk : '' %></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Banner URL</label>
+                                <input type="url" name="banner_url" class="form-input" value="<%= produk ? (produk.banner_url || '') : '' %>" placeholder="https://...">
                             </div>
 
+                            <h3 style="margin:24px 0 16px;font-size:16px;color:#333;padding-top:16px;border-top:1px solid #eee;">Varian Awal</h3>
                             <div class="form-group">
-                                <label class="form-label">Grup Produk <span style="color:#888;font-weight:400;">(Opsional)</span></label>
-                                <input 
-                                    type="text" 
-                                    name="grup" 
-                                    class="form-input" 
-                                    value="<%= produk ? (produk.grup || '') : '' %>"
-                                    placeholder="Contoh: Netflix, ChatGPT"
-                                >
-                                <div class="form-help">Produk dengan nama grup yang sama ditampilkan bersama di bot sebagai satu entri. Kosongkan jika produk berdiri sendiri.</div>
+                                <label class="form-label">Label Varian</label>
+                                <input type="text" name="varian_label" class="form-input" value="<%= produk ? (produk.varian_label || 'Default') : 'Default' %>" placeholder="Contoh: 1 Bulan">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Kode Varian <span class="required">*</span></label>
+                                <input type="text" name="varian_kode" class="form-input" value="<%= produk ? produk.varian_kode : '' %>" required pattern="[a-z0-9-]+" placeholder="netflix-1bulan">
+                                <div class="form-help">Kode unik untuk pembelian — huruf kecil, angka, dan tanda hubung.</div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Harga (Rp) <span class="required">*</span></label>
+                                <input type="number" name="harga" class="form-input" value="<%= produk ? produk.harga : '' %>" required min="0" placeholder="25000">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Format Produk (Opsional)</label>
+                                <input type="text" name="format" class="form-input" value="<%= produk ? (produk.format || '') : '' %>" placeholder="Email:Password">
                             </div>
 
                             <div class="form-actions">
-                                <button type="submit" class="btn btn-primary">
-                                    <%= action === 'tambah' ? '💾 Simpan Produk' : '💾 Update Produk' %>
-                                </button>
+                                <button type="submit" class="btn btn-primary">💾 Simpan Produk</button>
                                 <a href="/produk" class="btn" style="background: #6c757d;">❌ Batal</a>
                             </div>
                         </form>
@@ -186,9 +113,7 @@
     </main>
     
     <div class="quick-actions">
-        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top" title="Scroll to top">
-            ↑
-        </button>
+        <button class="quick-action-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" aria-label="Scroll to top">↑</button>
     </div>
     
     <script>
@@ -197,34 +122,10 @@
             sidebar.classList.toggle('collapsed');
             sidebar.classList.toggle('open');
         }
-        
-        document.addEventListener('click', (e) => {
-            const sidebar = document.getElementById('sidebar');
-            const toggleBtn = document.querySelector('.sidebar-toggle');
-            
-            if (window.innerWidth <= 768 && 
-                sidebar.classList.contains('open') && 
-                !sidebar.contains(e.target) && 
-                !toggleBtn.contains(e.target)) {
-                sidebar.classList.remove('open');
-            }
-        });
-        
-        window.addEventListener('resize', () => {
-            const sidebar = document.getElementById('sidebar');
-            if (window.innerWidth > 768) {
-                sidebar.classList.remove('open');
-            }
-        });
-        
-        // Form validation
         document.querySelector('form').addEventListener('submit', (e) => {
-            if (!FormValidator.validate(e.target)) {
-                e.preventDefault();
-            }
+            if (!FormValidator.validate(e.target)) e.preventDefault();
         });
     </script>
-    
     <script src="/js/notifications.js"></script>
 </body>
 </html>

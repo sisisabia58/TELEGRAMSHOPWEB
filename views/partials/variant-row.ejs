@@ -1,0 +1,31 @@
+<tr class="variant-row" data-variant-id="<%= variant.id %>">
+    <td data-label="Label">
+        <input type="text" class="form-input variant-field" data-field="label" value="<%= variant.label %>" style="min-width:120px;">
+    </td>
+    <td data-label="Kode">
+        <code><input type="text" class="form-input variant-field" data-field="kode" value="<%= variant.kode %>" pattern="[a-z0-9-]+" style="min-width:120px;font-family:monospace;"></code>
+    </td>
+    <td data-label="Harga">
+        <input type="number" class="form-input variant-field" data-field="harga" value="<%= variant.harga %>" min="0" style="width:100px;">
+    </td>
+    <td data-label="Stok">
+        <% const stok = variant.stok_count !== undefined ? variant.stok_count : 0; %>
+        <% const badgeClass = stok === 0 ? 'badge-danger' : (stok < 10 ? 'badge-warning' : 'badge-success'); %>
+        <span class="badge <%= badgeClass %>"><%= stok %></span>
+    </td>
+    <td data-label="Terjual"><%= variant.terjual || 0 %></td>
+    <td data-label="Aktif">
+        <label class="variant-active-toggle" style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" class="variant-active" <%= variant.is_active !== false ? 'checked' : '' %>>
+            <span><%= variant.is_active !== false ? 'Ya' : 'Tidak' %></span>
+        </label>
+    </td>
+    <td data-label="Aksi">
+        <div class="table-actions variant-actions">
+            <a href="/produk/<%= produk.id %>/varian/<%= variant.id %>/stok" class="btn-icon" title="Kelola stok">📦</a>
+            <button type="button" class="btn-icon variant-move-up" title="Naik">▲</button>
+            <button type="button" class="btn-icon variant-move-down" title="Turun">▼</button>
+            <button type="button" class="btn-icon variant-delete" title="Hapus varian" style="color:#dc3545;">🗑️</button>
+        </div>
+    </td>
+</tr>

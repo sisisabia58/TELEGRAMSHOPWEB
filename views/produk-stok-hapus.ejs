@@ -1,6 +1,7 @@
 <%
     const currentPage = 'produk';
-    const pageTitle = `🗑️ Hapus Stok - ${produk.nama}`;
+    const pageTitle = `🗑️ Hapus Stok — ${produk.nama} / ${varian.label}`;
+    const stokBase = `/produk/${produk.id}/varian/${varian.id}/stok`;
 %>
 <!DOCTYPE html>
 <html lang="id">
@@ -55,8 +56,8 @@
                                 <span><%= produk.nama %></span>
                             </div>
                             <div>
-                                <strong style="color: #666; display: inline-block; min-width: 100px;">Kode:</strong>
-                                <code><%= produk.kode %></code>
+                                <strong style="color: #666; display: inline-block; min-width: 100px;">Varian:</strong>
+                                <span><%= varian.label %> (<code><%= varian.kode %></code>)</span>
                             </div>
                             <div>
                                 <strong style="color: #666; display: inline-block; min-width: 100px;">Data Stok:</strong>
@@ -81,12 +82,12 @@
                         </div>
                     </div>
 
-                    <form method="POST" action="/produk/<%= produk.id %>/stok/hapus/<%= stokItem.id %>">
+                    <form method="POST" action="<%= stokBase %>/hapus/<%= stokItem.id %>">
                         <div class="form-actions" style="display: flex; gap: 12px; margin-top: 30px;">
                             <button type="submit" class="btn btn-danger" style="flex: 1;">
                                 🗑️ Ya, Hapus Stok
                             </button>
-                            <a href="/produk/<%= produk.id %>/stok" class="btn" style="background: #6c757d; flex: 1; text-align: center;">
+                            <a href="<%= stokBase %>" class="btn" style="background: #6c757d; flex: 1; text-align: center;">
                                 ❌ Batal
                             </a>
                         </div>

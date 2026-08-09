@@ -99,10 +99,9 @@
             <div class="product-info">
                 <h3>Informasi Produk:</h3>
                 <p><strong>Nama:</strong> <%= produk.nama %></p>
-                <p><strong>Kode:</strong> <code><%= produk.kode %></code></p>
-                <p><strong>Harga:</strong> <%= formatrupiah(produk.harga) %></p>
-                <p><strong>Stok Tersedia:</strong> <%= Array.isArray(produk.data) ? produk.data.length : 0 %></p>
-                <p><strong>Terjual:</strong> <%= produk.terjual || 0 %></p>
+                <p><strong>Kategori:</strong> <%= produk.kategori || 'umum' %></p>
+                <p><strong>Varian:</strong> <%= (produk.variants || []).length %></p>
+                <p><strong>Total Stok:</strong> <%= (produk.variants || []).reduce((s, v) => s + (v.stok_count || 0), 0) %></p>
             </div>
 
             <form method="POST" action="/produk/hapus/<%= produk.id %>">
