@@ -11,3 +11,12 @@
    - **Trust proxy:** `dashboard.js` sets `app.set('trust proxy', 1)` so Express treats Railway’s HTTPS reverse proxy as secure when setting `Secure` session cookies. If login fails after deploy, verify `SESSION_SECRET` is set, secure cookies are enabled, and the proxy trust setting is present.
 
 See plan: `docs/superpowers/plans/2026-08-09-dashboard-ia-mobile.md`.
+
+## Verification gates (Task 8)
+
+- `node --test` — 69/69 pass
+- `node --check dashboard.js` — OK
+- Purple hardcodes (`667eea` / `764ba2`) in `public/css/dashboard.css` — zero matches
+- `partials/layout` references in `views/` — none (dead `layout.ejs` removed)
+- `include('partials/sidebar')` — 45 authenticated views
+- `public/js/inline-edit.js` — `patchAndSwap` stable; used on produk-detail variant rows (tier panel uses JSON REST, unchanged)
