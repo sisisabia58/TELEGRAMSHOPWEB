@@ -11,6 +11,8 @@ const stock = require('./lib/stock')
 const catalog = require('./lib/catalog')
 const pricing = require('./lib/pricing')
 const bulk = require('./lib/bulk')
+const flowDraft = require('./lib/flow-draft')
+const copyLib = require('./lib/copy')
 const ejs = require('ejs')
 const { formatrupiah, formatTanggal } = require('./lib/format')
 
@@ -5508,52 +5510,174 @@ const FLOW_ACTIONS = [
   'product_list', 'product_card', 'kategori_menu', 'stok', 'riwayat', 'deposit_menu', 'noop',
 ]
 
-function parseButtonsField(raw) {
-  const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-  if (!Array.isArray(parsed)) throw new Error('buttons must be a JSON array of rows')
-  for (const row of parsed) {
-    if (!Array.isArray(row)) throw new Error('each buttons row must be an array')
-    for (const btn of row) {
-      const modes = [btn.go, btn.callback, btn.url_from, btn.url].filter((x) => x !== undefined && x !== null && x !== '')
-      if (modes.length !== 1) throw new Error('each button needs exactly one of go|callback|url_from|url')
-    }
+async function loadActiveFlowBundle() {
+  const { data: flow, error } = await supabase
+    .from('BotFlow')
+    .select('*')
+    .eq('is_active', true)
+    .maybeSingle()
+  if (error) throw error
+  if (!flow) return { flow: null, nodes: [], copyByKey: {} }
+  const { data: nodes, error: nErr } = await supabase
+    .from('BotFlowNode')
+    .select('*')
+    .eq('flow_id', flow.id)
+    .order('key')
+  if (nErr) throw nErr
+  const screenKeys = (nodes || [])
+    .filter((n) => n.kind === 'screen' && n.screen_key)
+    .map((n) => n.screen_key)
+  const copyByKey = {}
+  if (screenKeys.length) {
+    const { data: copies } = await supabase
+      .from('BotCopy')
+      .select('key, body')
+      .in('key', screenKeys)
+    for (const row of copies || []) copyByKey[row.key] = row.body
   }
-  return parsed
+  return { flow, nodes: nodes || [], copyByKey }
 }
 
 app.get('/settings/bot-flow', isAuthenticated, async (req, res) => {
   try {
-    const { data: flow } = await supabase
-      .from('BotFlow')
-      .select('*')
-      .eq('is_active', true)
-      .maybeSingle()
-    const { data: nodes } = flow
-      ? await supabase.from('BotFlowNode').select('*').eq('flow_id', flow.id).order('key')
-      : { data: [] }
-    const { data: flag } = await supabase
-      .from('NotificationSettings')
-      .select('setting_value')
-      .eq('setting_key', 'flow_engine_enabled')
-      .maybeSingle()
-    const enabledDb = !!(flag?.setting_value && flag.setting_value.value === true)
     res.render('settings-bot-flow', {
       title: `Bot Flow - ${NamaBot}`,
       namaBot: NamaBot,
       username: req.session.username,
       currentPage: 'settings-bot-flow',
       pageTitle: '🔀 Bot Flow',
-      flow,
-      nodes: nodes || [],
-      enabled: enabledDb,
-      actions: FLOW_ACTIONS,
       req,
-      success: req.query.success || '',
-      error: req.query.error || '',
     })
   } catch (e) {
     console.error(e)
     res.status(500).send(e.message)
+  }
+})
+
+app.get('/api/bot-flow', isAuthenticated, async (req, res) => {
+  try {
+    const { flow, nodes, copyByKey } = await loadActiveFlowBundle()
+    const publishedKeys = nodes.map((n) => n.key)
+    const draft = flow?.draft || flowDraft.draftFromPublished(nodes, copyByKey, flow?.entry_key)
+    if (flow && !draft.entry_key) draft.entry_key = flow.entry_key || 'welcome'
+    const { data: flag } = await supabase
+      .from('NotificationSettings')
+      .select('setting_value')
+      .eq('setting_key', 'flow_engine_enabled')
+      .maybeSingle()
+    const enabled = !!(flag?.setting_value && flag.setting_value.value === true)
+    res.json({
+      success: true,
+      flow: flow ? {
+        id: flow.id,
+        name: flow.name,
+        entry_key: flow.entry_key,
+        draft_updated_at: flow.draft_updated_at,
+      } : null,
+      publishedKeys,
+      draft,
+      enabled,
+      actions: FLOW_ACTIONS,
+    })
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+app.post('/api/bot-flow/draft', isAuthenticated, async (req, res) => {
+  try {
+    const { flow, nodes } = await loadActiveFlowBundle()
+    if (!flow) throw new Error('No active flow')
+    const publishedKeys = nodes.map((n) => n.key)
+    const draft = req.body.draft
+    const v = flowDraft.validateDraft(draft, publishedKeys)
+    if (!v.ok) return res.status(400).json({ success: false, errors: v.errors })
+    const { error } = await supabase
+      .from('BotFlow')
+      .update({ draft, draft_updated_at: new Date().toISOString() })
+      .eq('id', flow.id)
+    if (error) throw error
+    res.json({ success: true })
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+app.post('/api/bot-flow/preview-step', isAuthenticated, async (req, res) => {
+  try {
+    const { flow, nodes, copyByKey } = await loadActiveFlowBundle()
+    if (!flow) throw new Error('No active flow')
+    const draft = req.body.draft || flow.draft || flowDraft.draftFromPublished(nodes, copyByKey, flow.entry_key)
+    const nodeKey = String(req.body.nodeKey || draft.entry_key || 'welcome')
+    const node = (draft.nodes || []).find((n) => n.key === nodeKey)
+    if (!node) return res.status(404).json({ success: false, error: 'node not found' })
+    const vars = req.body.vars || {
+      first_name: 'Preview',
+      nama_bot: NamaBot,
+      user_count: 1,
+      stok_terjual: 0,
+      stok_tersedia: 0,
+      saldo: 'Rp0',
+    }
+    if (node.kind === 'action') {
+      return res.json({ success: true, type: 'action', action: node.action, key: node.key })
+    }
+    const body = typeof node.body === 'string' && node.body
+      ? node.body
+      : (copyByKey[node.screen_key] || copyLib.DEFAULTS[node.screen_key] || '')
+    const caption = copyLib.render(body, vars)
+    res.json({ success: true, type: 'screen', key: node.key, caption, buttons: node.buttons || [] })
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+app.post('/api/bot-flow/publish', isAuthenticated, async (req, res) => {
+  try {
+    const { flow, nodes } = await loadActiveFlowBundle()
+    if (!flow) throw new Error('No active flow')
+    const publishedKeys = nodes.map((n) => n.key)
+    const draft = req.body.draft || flow.draft
+    if (!draft) throw new Error('No draft to publish')
+    const v = flowDraft.validateDraft(draft, publishedKeys)
+    if (!v.ok) return res.status(400).json({ success: false, errors: v.errors })
+    const plan = flowDraft.publishPlan(draft)
+    for (const patch of plan.nodes) {
+      const { error } = await supabase
+        .from('BotFlowNode')
+        .update({
+          kind: patch.kind,
+          screen_key: patch.screen_key,
+          action: patch.action,
+          description: patch.description,
+          buttons: patch.buttons,
+          pos_x: patch.pos_x,
+          pos_y: patch.pos_y,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('flow_id', flow.id)
+        .eq('key', patch.key)
+      if (error) throw error
+    }
+    for (const c of plan.copies) {
+      const { error } = await supabase
+        .from('BotCopy')
+        .update({ body: c.body, updated_at: new Date().toISOString() })
+        .eq('key', c.key)
+      if (error) throw error
+    }
+    await supabase
+      .from('BotFlow')
+      .update({ draft, draft_updated_at: new Date().toISOString() })
+      .eq('id', flow.id)
+    await runtimeSettings.bump()
+    res.json({ success: true })
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ success: false, error: e.message })
   }
 })
 
@@ -5567,43 +5691,15 @@ app.post('/settings/bot-flow/toggle', isAuthenticated, async (req, res) => {
     }, { onConflict: 'setting_key' })
     if (error) throw error
     await runtimeSettings.bump()
+    if (req.headers.accept && req.headers.accept.includes('application/json')) {
+      return res.json({ success: true })
+    }
     res.redirect('/settings/bot-flow?success=toggle')
   } catch (e) {
     console.error(e)
-    res.redirect('/settings/bot-flow?error=' + encodeURIComponent(e.message))
-  }
-})
-
-app.post('/settings/bot-flow/nodes/:key', isAuthenticated, async (req, res) => {
-  try {
-    const key = req.params.key
-    const { data: flow } = await supabase.from('BotFlow').select('id').eq('is_active', true).maybeSingle()
-    if (!flow) throw new Error('No active flow')
-    const kind = String(req.body.kind || '')
-    if (kind !== 'screen' && kind !== 'action') throw new Error('kind must be screen|action')
-    const buttons = parseButtonsField(req.body.buttons || '[]')
-    const patch = {
-      kind,
-      screen_key: kind === 'screen' ? String(req.body.screen_key || '') : null,
-      action: kind === 'action' ? String(req.body.action || '') : null,
-      buttons,
-      description: String(req.body.description || ''),
-      updated_at: new Date().toISOString(),
+    if (req.headers.accept && req.headers.accept.includes('application/json')) {
+      return res.status(500).json({ success: false, error: e.message })
     }
-    if (kind === 'action' && !FLOW_ACTIONS.includes(patch.action)) {
-      throw new Error('action not in allowlist')
-    }
-    if (kind === 'screen' && !patch.screen_key) throw new Error('screen_key required')
-    const { error } = await supabase
-      .from('BotFlowNode')
-      .update(patch)
-      .eq('flow_id', flow.id)
-      .eq('key', key)
-    if (error) throw error
-    await runtimeSettings.bump()
-    res.redirect('/settings/bot-flow?success=1')
-  } catch (e) {
-    console.error(e)
     res.redirect('/settings/bot-flow?error=' + encodeURIComponent(e.message))
   }
 })

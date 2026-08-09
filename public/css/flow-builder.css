@@ -1,0 +1,300 @@
+.flow-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.flow-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.flow-toolbar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.flow-status {
+  font-size: 13px;
+  color: #666;
+  margin-left: auto;
+}
+
+.flow-status.ok { color: #155724; }
+.flow-status.err { color: #721c24; }
+
+.flow-meta {
+  padding: 0 24px;
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+
+.flow-layout {
+  display: flex;
+  height: calc(100vh - 160px);
+  min-height: 480px;
+}
+
+.flow-canvas {
+  flex: 1;
+  background: #f3f4f6;
+  position: relative;
+  overflow: hidden;
+}
+
+.flow-panel {
+  width: 360px;
+  min-width: 280px;
+  border-left: 1px solid #ddd;
+  overflow: auto;
+  padding: 16px;
+  background: #fff;
+}
+
+.flow-panel-empty {
+  margin: 0;
+}
+
+.flow-panel h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-family: monospace;
+}
+
+.flow-panel label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #444;
+}
+
+.flow-panel .field {
+  margin-bottom: 14px;
+}
+
+.flow-panel input[type="text"],
+.flow-panel textarea,
+.flow-panel select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.flow-panel textarea {
+  min-height: 120px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.flow-panel .readonly {
+  background: #f9fafb;
+  color: #555;
+}
+
+.flow-buttons-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.flow-buttons-table th,
+.flow-buttons-table td {
+  border: 1px solid #e5e7eb;
+  padding: 6px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.flow-buttons-table th {
+  background: #f9fafb;
+  font-weight: 600;
+}
+
+.flow-buttons-table input,
+.flow-buttons-table select {
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.flow-node-inner {
+  min-width: 160px;
+  max-width: 220px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.flow-node-header {
+  font-weight: 700;
+  font-family: monospace;
+  padding: 6px 8px;
+  border-radius: 4px 4px 0 0;
+  color: #fff;
+}
+
+.flow-node-screen .flow-node-header {
+  background: #059669;
+}
+
+.flow-node-action .flow-node-header {
+  background: #7c3aed;
+}
+
+.flow-node-body {
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  color: #374151;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 72px;
+  overflow: hidden;
+}
+
+.drawflow .drawflow-node.flow-node-screen.selected {
+  background: transparent;
+}
+
+.drawflow .drawflow-node.flow-node-action.selected {
+  background: transparent;
+}
+
+.preview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-modal.hidden {
+  display: none;
+}
+
+.preview-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.phone-frame {
+  position: relative;
+  width: 390px;
+  max-width: calc(100vw - 32px);
+  height: 680px;
+  max-height: calc(100vh - 32px);
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.phone-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #2481cc;
+  color: #fff;
+  font-weight: 600;
+}
+
+.phone-close {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.phone-caption {
+  flex: 1;
+  padding: 16px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 15px;
+  line-height: 1.45;
+  color: #111;
+}
+
+.phone-keyboard {
+  padding: 8px;
+  background: #f0f2f5;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 45%;
+  overflow: auto;
+}
+
+.phone-keyboard .phone-row {
+  display: flex;
+  gap: 6px;
+}
+
+.phone-keyboard button {
+  flex: 1;
+  padding: 10px 8px;
+  border: none;
+  border-radius: 6px;
+  background: #fff;
+  color: #2481cc;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.phone-keyboard button:hover {
+  background: #f9fafb;
+}
+
+.phone-keyboard button.stub {
+  color: #666;
+  font-style: italic;
+}
+
+.muted {
+  color: #888;
+}
+
+@media (max-width: 900px) {
+  .flow-layout {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .flow-canvas {
+    min-height: 360px;
+  }
+
+  .flow-panel {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid #ddd;
+    max-height: 420px;
+  }
+}
