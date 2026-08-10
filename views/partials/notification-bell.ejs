@@ -1,0 +1,20 @@
+<%# views/partials/notification-bell.ejs %>
+<div class="notification-center" id="notificationCenter">
+  <button type="button" class="notification-bell" id="notificationBell" aria-label="Notifikasi" aria-expanded="false" aria-controls="notificationPanel">
+    <svg class="icon" aria-hidden="true"><use href="#i-bell"></use></svg>
+    <span class="notification-badge" id="notificationBadge" hidden>0</span>
+  </button>
+  <div class="notification-panel" id="notificationPanel" role="region" aria-label="Daftar notifikasi" hidden>
+    <div class="notification-panel-header">
+      <strong>Notifikasi</strong>
+      <button type="button" class="notification-mark-all" id="notificationMarkAll">Tandai dibaca</button>
+    </div>
+    <div class="notification-panel-body">
+      <p class="notification-empty" id="notificationEmpty">Tidak ada notifikasi</p>
+      <ul class="notification-list" id="notificationList"></ul>
+    </div>
+    <div class="notification-panel-footer">
+      <a href="/settings/notifications">Pengaturan notifikasi</a>
+    </div>
+  </div>
+</div>
