@@ -67,3 +67,19 @@ test('get unknown key returns fallback or key', () => {
   assert.equal(copy.get('no.such', {}, 'FALL'), 'FALL')
   assert.equal(copy.get('no.such'), 'no.such')
 })
+
+test('err and btn defaults exist and render vars', () => {
+  const copy = muatCopy()
+  assert.match(copy.get('err.stock_insufficient', { count: 3 }), /3/)
+  assert.match(copy.get('err.voucher_not_found', { kode: 'ABC' }), /ABC/)
+  assert.equal(copy.get('btn.konfirmasi'), '✅ Konfirmasi')
+  assert.match(
+    copy.get('err.retired_command', { dashboard_line: '\n\n🔗 https://dash.example' }),
+    /dash\.example/
+  )
+})
+
+test('unknown err key falls back', () => {
+  const copy = muatCopy()
+  assert.equal(copy.get('err.does_not_exist', {}, 'fallback'), 'fallback')
+})
