@@ -5753,11 +5753,12 @@ app.post('/api/settings/channel-contact', isAuthenticated, async (req, res) => {
 
 app.get('/settings/bot-copy', isAuthenticated, async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('BotCopy')
-      .select('*')
-      .order('kind', { ascending: true })
-      .order('key', { ascending: true })
+    const kind = String(req.query.kind || '').trim()
+    let q = supabase.from('BotCopy').select('*').order('kind').order('key')
+    if (['screen', 'msg', 'err', 'btn'].includes(kind)) {
+      q = q.eq('kind', kind)
+    }
+    const { data: rows, error } = await q
     if (error) throw error
     res.render('settings-bot-copy', {
       title: `Bot Copy - ${NamaBot}`,
@@ -5765,9 +5766,10 @@ app.get('/settings/bot-copy', isAuthenticated, async (req, res) => {
       username: req.session.username,
       currentPage: 'settings-bot-copy',
       pageTitle: '📝 Bot Copy',
-      rows: data || [],
+      rows: rows || [],
+      filterKind: kind || 'all',
       req,
-      success: req.query.success || '',
+      success: req.query.success || null,
     })
   } catch (e) {
     console.error(e)

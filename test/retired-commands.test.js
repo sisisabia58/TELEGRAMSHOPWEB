@@ -1,11 +1,44 @@
 const test = require('node:test')
 const assert = require('node:assert')
+
+const jalurClient = require.resolve('../lib/supabase.js')
+const jalurCopy = require.resolve('../lib/copy.js')
+const jalurRetired = require.resolve('../lib/retired-commands.js')
+
+function muatRetiredCommands() {
+  delete require.cache[jalurRetired]
+  delete require.cache[jalurCopy]
+  require.cache[jalurClient] = {
+    id: jalurClient,
+    filename: jalurClient,
+    loaded: true,
+    exports: {
+      from() {
+        const b = {
+          select() { return b },
+          then(res, rej) {
+            return Promise.resolve({ data: [], error: null }).then(res, rej)
+          },
+        }
+        return b
+      },
+    },
+  }
+  return require(jalurRetired)
+}
+
 const {
   RETIRED_OWNER_COMMANDS,
   KEPT_OWNER_COMMANDS,
   isRetiredOwnerCommand,
   retiredOwnerHelpText,
-} = require('../lib/retired-commands')
+} = muatRetiredCommands()
+
+test.after(() => {
+  delete require.cache[jalurClient]
+  delete require.cache[jalurCopy]
+  delete require.cache[jalurRetired]
+})
 
 test('retired list includes addproduk and excludes stok', () => {
   assert.ok(RETIRED_OWNER_COMMANDS.includes('addproduk'))

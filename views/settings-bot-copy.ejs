@@ -17,7 +17,7 @@
             resize: vertical;
         }
         .form-textarea:focus {
-            border-color: #667eea;
+            border-color: var(--color-accent);
             outline: none;
         }
         .success-banner {
@@ -58,11 +58,20 @@
                 </div>
                 <div class="card-body">
                     <p style="color: #666; margin: 0;">
-                        Edit teks layar dan label tombol bot. Gunakan <code>{{variabel}}</code> untuk bagian dinamis.
-                        Perubahan aktif otomatis tanpa restart bot (~10 detik).
+                        Edit teks layar (<code>screen</code>), pesan (<code>msg</code>), error (<code>err</code>), dan label tombol (<code>btn</code>).
+                        Gunakan <code>{{variabel}}</code> untuk bagian dinamis. Perubahan aktif ~10 detik tanpa restart bot.
                     </p>
                 </div>
             </div>
+
+            <p style="margin-bottom: 16px;">
+                <% const kinds = ['all','screen','msg','err','btn']; %>
+                <% kinds.forEach(k => { %>
+                    <a class="btn <%= filterKind === k ? 'btn-primary' : 'btn-secondary' %>"
+                       href="/settings/bot-copy<%= k === 'all' ? '' : '?kind=' + k %>"
+                       style="margin-right: 6px;"><%= k %></a>
+                <% }) %>
+            </p>
 
             <% rows.forEach(row => { %>
                 <div class="card" style="margin-bottom: 16px;">

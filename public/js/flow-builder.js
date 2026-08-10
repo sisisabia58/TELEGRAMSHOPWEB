@@ -345,7 +345,7 @@
         const btn = {}
         if (label) {
           if (prev.label_key && label === prev.label_key) btn.label_key = label
-          else if (prev.label_key && !prev.label && label.startsWith('msg.')) btn.label_key = label
+          else if (prev.label_key && !prev.label && (label.startsWith('msg.') || label.startsWith('btn.'))) btn.label_key = label
           else btn.label = label
         }
         if (mode === 'go') btn.go = target
