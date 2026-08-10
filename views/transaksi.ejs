@@ -107,11 +107,11 @@
             <div class="toolbar" id="filterCard">
                 <form method="GET" action="/transaksi" id="filterForm" class="transaksi-toolbar-form">
                     <div class="search-container">
-                        <span class="search-icon">🔍</span>
+                        <span class="search-icon"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg></span>
                         <input type="text" name="search" class="search-input" placeholder="Cari (Trx ID, nama produk, atau User ID)..." value="<%= filters.search || '' %>">
                     </div>
                     <button type="button" class="filter-toggle" id="filterToggle" aria-expanded="false" aria-controls="filterBody">
-                        <span aria-hidden="true">🔍</span> Filter
+                        <svg class="icon" aria-hidden="true"><use href="#i-filter"></use></svg> Filter
                     </button>
                     <div class="filter-body" id="filterBody">
                         <div class="filter-group">
