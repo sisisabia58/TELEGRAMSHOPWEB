@@ -1100,12 +1100,12 @@ async function createDepositTransaction(userId, username, firstName, jumlah, cha
   
   if (!Pakasir.project) {
     console.error("Pakasir project slug is not configured in .env");
-    return await sendMessage(chatId, `❌ *ERROR*\n=======================\nSistem QRIS belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`)
+    return await sendMessage(chatId, copy.get('err.deposit_qris_not_configured'))
   }
 
   if (!Pakasir.apiKey) {
     console.error("Pakasir API key is not configured in .env");
-    return await sendMessage(chatId, `❌ *ERROR*\n=======================\nSistem verifikasi pembayaran belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`)
+    return await sendMessage(chatId, copy.get('err.deposit_verify_not_configured'))
   }
 
   try {
@@ -1195,14 +1195,7 @@ Scan QRIS diatas untuk melakukan pembayaran.`
             console.warn('Error deleting message:', err.message);
           }
         });
-        await sendMessage(chatId, `⏰ *DEPOSIT EXPIRED*
-=======================
-Pembayaran deposit telah expired.
-
-Kode Deposit: \`${uniq}\`
-
-=======================
-💡 Gunakan \`/deposit\` untuk membuat deposit baru.`)
+        await sendMessage(chatId, copy.get('err.deposit_expired', { kode: uniq }))
         break;
       }
       
@@ -1280,14 +1273,7 @@ Saldo Baru: ${formatrupiah(saldoBaru)}
     }
   } catch (err) {
     console.error(err)
-    await sendMessage(chatId, `❌ *ERROR*
-=======================
-Terjadi kesalahan saat membuat deposit.
-
-Error: \`${err.message}\`
-
-=======================
-💡 Silakan coba lagi atau hubungi admin.`)
+    await sendMessage(chatId, copy.get('err.deposit_create_failed', { error: err.message }))
   }
 }
 
@@ -1429,7 +1415,7 @@ bot.onText(retiredCmdPattern, async (msg) => {
 })
 
 bot.onText(/\/listuser/, async (msg) => {
-  if (!isOwner(msg)) return await sendMessage(msg.from.id, `⚠️ Hanya bisa diakses oleh owner!`)
+  if (!isOwner(msg)) return await sendMessage(msg.from.id, copy.get('err.owner_only'))
   
   await bot.sendMessage(msg.from.id, `⏳ Sedang mengambil data user...`)
   
@@ -1438,12 +1424,7 @@ bot.onText(/\/listuser/, async (msg) => {
     .select("*")
   
   if (!User || User.length === 0) {
-    return await bot.sendMessage(msg.from.id, `📭 *TIDAK ADA USER*
-━━━━━━━━━━━━━━━━━━━━
-Belum ada user yang terdaftar di database.
-
-━━━━━━━━━━━━━━━━━━━━
-💡 User akan otomatis terdaftar saat menggunakan /start.`, { parse_mode: "Markdown" })
+    return await bot.sendMessage(msg.from.id, copy.get('err.no_users'), { parse_mode: "Markdown" })
   }
   
   await sendUserPage(User, msg.from.id, 0, null, null, {})
@@ -1590,7 +1571,7 @@ async function sendProductCard(chatId, slug, msgId = null) {
   try {
     const produk = await catalog.getProductBySlug(slug)
     if (!produk) {
-      return bot.sendMessage(chatId, `⚠️ Produk tidak ditemukan.`)
+      return bot.sendMessage(chatId, copy.get('err.product_not_found'))
     }
     const active = (produk.variants || []).filter((v) => v.is_active !== false)
     if (catalog.shouldSkipVariantPicker(active)) {
@@ -1648,7 +1629,7 @@ async function sendProductCard(chatId, slug, msgId = null) {
     }
   } catch (error) {
     console.error('Error sendProductCard:', error)
-    await bot.sendMessage(chatId, `⚠️ Terjadi kesalahan saat memuat produk.`)
+    await bot.sendMessage(chatId, copy.get('err.load_product_failed'))
   }
 }
 
@@ -1794,14 +1775,7 @@ bot.onText(/\/deposit/, async (msg) => {
   
   const jumlah = parseInt(text)
   if (isNaN(jumlah) || jumlah < 1000) {
-    return await bot.sendMessage(msg.from.id, `❌ *JUMLAH TIDAK VALID*
-=======================
-Minimum deposit: *Rp 1.000*
-
-Jumlah yang Anda masukkan: \`${text}\`
-
-=======================
-💡 Silakan masukkan jumlah minimal Rp 1.000`, {
+    return await bot.sendMessage(msg.from.id, copy.get('err.deposit_amount_invalid', { text }), {
       parse_mode: "Markdown"
     })
   }
@@ -1818,12 +1792,7 @@ bot.onText(/\/riwayatdeposit/, async (msg) => {
     .limit(10)
   
   if (!Deposits || Deposits.length === 0) {
-    return await bot.sendMessage(msg.from.id, `📋 *RIWAYAT DEPOSIT*
-=======================
-Belum ada riwayat deposit.
-
-=======================
-💡 Gunakan \`/deposit\` untuk top up saldo.`, {
+    return await bot.sendMessage(msg.from.id, copy.get('err.deposit_no_history'), {
       parse_mode: "Markdown"
     })
   }
@@ -1923,13 +1892,13 @@ bot.onText(/\/start/, async (msg) => {
     })
   } catch (error) {
     console.error('Error in /start:', error)
-    await bot.sendMessage(msg.from.id, `⚠️ Terjadi kesalahan saat memuat data. Silakan coba lagi.`)
+    await bot.sendMessage(msg.from.id, copy.get('err.load_failed'))
   }
 })
 
 
 bot.onText(/\/rekap/, async (msg) => {
-  if (!isOwner(msg)) return await sendMessage(msg.from.id, `⚠️ Hanya bisa diakses oleh owner!`)
+  if (!isOwner(msg)) return await sendMessage(msg.from.id, copy.get('err.owner_only'))
   const tahun = new Date().getFullYear()
   const keyboard = generateTahunKeyboard(tahun)
   await bot.sendMessage(msg.from.id, `📅 *REKAP TRANSAKSI*
@@ -1948,12 +1917,7 @@ bot.onText(/\/stok/, async (msg) => {
       .select("*")
     
     if (!Produk || Produk.length === 0) {
-      await bot.sendMessage(msg.from.id, `⚠️ *TIDAK ADA PRODUK*
-━━━━━━━━━━━━━━━━━━━━
-Belum ada produk yang terdaftar.
-
-━━━━━━━━━━━━━━━━━━━━
-💡 Gunakan \`/addproduk\` untuk menambah produk.`, { parse_mode: "Markdown" })
+      await bot.sendMessage(msg.from.id, copy.get('err.no_products'), { parse_mode: "Markdown" })
       return
     }
     
@@ -2066,7 +2030,7 @@ Belum ada produk yang terdaftar.
     })
   } catch (error) {
     console.error('Error in /stok:', error)
-    await bot.sendMessage(msg.from.id, `⚠️ Terjadi kesalahan saat memuat data stok.`)
+    await bot.sendMessage(msg.from.id, copy.get('err.load_stok_failed'))
   }
 })
 
@@ -2104,12 +2068,7 @@ async function openProductList(query) {
   }
 
   if (!Produk || Produk.length === 0) {
-    return bot.sendMessage(query.from.id, `⚠️ *BELUM ADA PRODUK*
-━━━━━━━━━━━━━━━━━━━━
-Belum ada produk yang terdaftar.
-
-━━━━━━━━━━━━━━━━━━━━
-💡 Hubungi admin untuk informasi lebih lanjut.`, {
+    return bot.sendMessage(query.from.id, copy.get('err.no_products'), {
       parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: [
@@ -2132,7 +2091,7 @@ async function openKategoriMenu(query) {
   const { data: Produk } = await supabase.from('Produk').select('*')
 
   if (!Produk || Produk.length === 0) {
-    await bot.answerCallbackQuery(query.id, { text: '⚠️ Belum ada produk!', show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_products'), show_alert: true })
     return
   }
 
@@ -2201,12 +2160,7 @@ async function openStokBuyer(query) {
 
   if (!Produk || Produk.length === 0) {
     await bot.answerCallbackQuery(query.id)
-    await sendMessage(query.from.id, `⚠️ *TIDAK ADA PRODUK*
-━━━━━━━━━━━━━━━━━━━━
-Belum ada produk yang terdaftar.
-
-━━━━━━━━━━━━━━━━━━━━
-💡 Gunakan \`/addproduk\` untuk menambah produk.`, { parse_mode: 'Markdown' })
+    await sendMessage(query.from.id, copy.get('err.no_products'), { parse_mode: 'Markdown' })
     return
   }
 
@@ -2303,7 +2257,7 @@ Belum ada produk yang terdaftar.
 async function openRiwayat(query) {
   const { data: Trx } = await supabase.from('Trx').select('*')
   if (!Trx || Trx.length === 0) {
-    return sendMessage(query.from.id, '⚠️ Belum ada transaksi apapun!')
+    return sendMessage(query.from.id, copy.get('err.no_transactions'))
   }
   await bot.deleteMessage(query.message.chat.id, query.message.message_id)
   await sendPage(Trx, query.from.id, 0)
@@ -2374,7 +2328,7 @@ try {
     const kode = cmd.includes(':') ? cmd.split(':').slice(1).join(':') : ''
     await bot.answerCallbackQuery(query.id)
     const varian = await catalog.getVariantByKode(kode)
-    if (!varian) return bot.sendMessage(query.from.id, `⚠️ Produk tidak ditemukan!`)
+    if (!varian) return bot.sendMessage(query.from.id, copy.get('err.product_not_found'))
     const stokCount = await getStokCount(varian.kode)
     if (stokCount === 0) {
       return bot.answerCallbackQuery(query.id, { text: `⚠️ Stok ${varian.label} habis!`, show_alert: true })
@@ -2407,7 +2361,7 @@ try {
 
   if (cmd.startsWith('deposit_preset:')) {
     const amount = parseInt(cmd.split(':')[1])
-    await bot.answerCallbackQuery(query.id, { text: `💸 Menyiapkan deposit Rp ${formatrupiah(amount)}` })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.toast_deposit_preparing', { amount: formatrupiah(amount) }) })
     try {
       await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     } catch (e) {}
@@ -2526,15 +2480,7 @@ Silakan ketik \`/deposit <jumlah>\` untuk melakukan top up saldo dengan nominal 
     const minimalSaldo = 40000
     
     if (userSaldo < minimalSaldo) {
-      return await sendMessage(query.from.id, `❌ *SALDO TIDAK MENCUKUPI*
-━━━━━━━━━━━━━━━━━━━━
-Saldo Anda: *${formatrupiah(userSaldo)}*
-Saldo Minimal: *${formatrupiah(minimalSaldo)}*
-
-━━━━━━━━━━━━━━━━━━━━
-💡 Anda perlu memiliki saldo mengendap minimal *${formatrupiah(minimalSaldo)}* untuk mengakses produk premium.
-
-💡 Saldo ini akan tetap di akun Anda, hanya digunakan sebagai jaminan akses.`, {
+      return await sendMessage(query.from.id, copy.get('err.saldo_insufficient'), {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
@@ -2718,7 +2664,7 @@ Current Date: ${formattedTime}`, {
         }
       })
     } else {
-      await bot.sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, mungkin sudah dihapus!`)
+      await bot.sendMessage(query.from.id, copy.get('err.product_not_found'))
     }
 }
 
@@ -2729,17 +2675,12 @@ if (cmd === "lanjut") {
     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     let Data = await cart.get(query.from.id)
     const item = await getVarianForCart(Data.kode)
-    if (!item) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+    if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
     
     const stokCount = item.stok_count
     
     if (stokCount === 0) {
-      return await sendMessage(query.from.id, `⚠️ *STOK KOSONG*
-
-Produk *${item.nama}* tidak memiliki stok tersedia.
-
-━━━━━━━━━━━━━━━━━━━━
-💡 Silakan pilih produk lain.`, {
+      return await sendMessage(query.from.id, copy.get('err.stock_empty', { nama: item.nama }), {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
@@ -2793,7 +2734,7 @@ Produk *${item.nama}* tidak memiliki stok tersedia.
       }
     })
   } else {
-    await sendMessage(query.from.id, `⚠️ Harap ulangi pilih produk!`)
+    await sendMessage(query.from.id, copy.get('err.cart_session_lost'))
   }
 }
 
@@ -3063,7 +3004,7 @@ if (cmd.startsWith("checkout_payment:")) {
     
     if (validIds.length !== Data.selectedStokIds.length) {
       await bot.answerCallbackQuery(query.id, { 
-        text: `⚠️ Beberapa stok yang dipilih sudah tidak tersedia!`, 
+        text: copy.get('err.stock_selection_unavailable'), 
         show_alert: true 
       })
       Data.selectedStokIds = validIds
@@ -3088,7 +3029,7 @@ if (cmd.startsWith("checkout_payment:")) {
     } else {
       const item = await getVarianForCart(Data.kode)
       if (!item) {
-        return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+        return await sendMessage(query.from.id, copy.get('err.product_not_found'))
       }
       
       const resolved = await hargaUntukQty(item, Data.jumlah)
@@ -3157,7 +3098,7 @@ if (cmd === "reset") {
       Data.jumlah = 1
     await cart.save(query.from.id, Data)
      const item = await getVarianForCart(Data.kode)
-     if (!item) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+     if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
      const stokCountReset = item.stok_count
      const resolvedReset = await hargaUntukQty(item, Data.jumlah)
     await bot.editMessageText(`*KONFIRMASI PESANAN*
@@ -3189,7 +3130,7 @@ Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
 })
     }
   } else {
-    await sendMessage(query.from.id, `⚠️ Harap ulangi pilih produk!`)
+    await sendMessage(query.from.id, copy.get('err.cart_session_lost'))
   }
 }
 
@@ -3198,7 +3139,7 @@ if (cmd === "konfirmasi") {
     let Data = await cart.get(query.from.id)
     const item = await getVarianForCart(Data.kode)
     if (!item) {
-      return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+      return await sendMessage(query.from.id, copy.get('err.product_not_found'))
     }
     {
       // Validasi stok yang dipilih masih tersedia
@@ -3212,7 +3153,7 @@ if (cmd === "konfirmasi") {
         
         if (validIds.length !== Data.selectedStokIds.length) {
           await bot.answerCallbackQuery(query.id, { 
-            text: `⚠️ Beberapa stok yang dipilih sudah tidak tersedia!`, 
+            text: copy.get('err.stock_selection_unavailable'), 
             show_alert: true 
           })
           Data.selectedStokIds = validIds
@@ -3221,7 +3162,7 @@ if (cmd === "konfirmasi") {
         }
         
         if (validIds.length === 0) {
-          return await sendMessage(query.from.id, `⚠️ Stok yang dipilih sudah tidak tersedia! Silakan pilih ulang.`, {
+          return await sendMessage(query.from.id, copy.get('err.stock_selection_unavailable'), {
             reply_markup: {
               inline_keyboard: [
                 [{text: "🔙 Kembali Pilih Stok", callback_data: "lanjut"}]
@@ -3234,7 +3175,7 @@ if (cmd === "konfirmasi") {
         const stokCount = await getStokCount(Data.kode.toLowerCase())
         if (stokCount < Data.jumlah) {
           await bot.answerCallbackQuery(query.id, { 
-            text: `⚠️ Stok produk tidak mencukupi! Stok tersedia: ${stokCount}`, 
+            text: copy.get('err.stock_insufficient', { count: stokCount }), 
             show_alert: true 
           })
           return
@@ -3388,7 +3329,7 @@ ${item.snk.length > 100 ? item.snk.substring(0, 100) + '...' : item.snk}
       })
     }
   } else {
-    await sendMessage(query.from.id, `⚠️ Harap ulangi pilih produk!`)
+    await sendMessage(query.from.id, copy.get('err.cart_session_lost'))
   }
 }
 
@@ -3398,7 +3339,7 @@ if (cmd === "pilih_payment_method") {
     let Data = await cart.get(query.from.id)
     const item = await getVarianForCart(Data.kode)
     if (!item) {
-      await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+      await sendMessage(query.from.id, copy.get('err.product_not_found'))
     } else {
     const resolved = await hargaUntukQty(item, Data.jumlah)
       const userSaldo = await cekSaldo(query.from.id)
@@ -3496,7 +3437,7 @@ if (cmd === "lihat_voucher") {
     let Data = await cart.get(query.from.id)
     const item = await getVarianForCart(Data.kode)
     if (!item) {
-      await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+      await sendMessage(query.from.id, copy.get('err.product_not_found'))
     } else {
     const resolved = await hargaUntukQty(item, Data.jumlah)
       let hargaAwal = resolved.subtotal
@@ -3510,7 +3451,7 @@ if (cmd === "lihat_voucher") {
       
       if (availableVouchers.length === 0) {
         await bot.answerCallbackQuery(query.id, { 
-          text: "Tidak ada voucher yang tersedia!", 
+          text: copy.get('err.voucher_none_available'), 
           show_alert: true 
         })
         return
@@ -3568,7 +3509,7 @@ if (cmd.startsWith("apply_voucher_")) {
     let Data = await cart.get(query.from.id)
     const item = await getVarianForCart(Data.kode)
     if (!item) {
-      await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+      await sendMessage(query.from.id, copy.get('err.product_not_found'))
     } else {
     const resolved = await hargaUntukQty(item, Data.jumlah)
       let { data: Voucher } = await supabase.from("Voucher").select("*")
@@ -3576,7 +3517,7 @@ if (cmd.startsWith("apply_voucher_")) {
       
       if (!vcr) {
         await bot.answerCallbackQuery(query.id, { 
-          text: "Voucher tidak ditemukan!", 
+          text: copy.get('err.voucher_not_found', { kode: voucherKode }), 
           show_alert: true 
         })
         return
@@ -3584,7 +3525,7 @@ if (cmd.startsWith("apply_voucher_")) {
       
       if (vcr.user.some(a => a === query.from.id)) {
         await bot.answerCallbackQuery(query.id, { 
-          text: "Anda sudah menggunakan voucher ini!", 
+          text: copy.get('err.voucher_already_used'), 
           show_alert: true 
         })
         return
@@ -3592,7 +3533,7 @@ if (cmd.startsWith("apply_voucher_")) {
       
       if (vcr.limit <= 0) {
         await bot.answerCallbackQuery(query.id, { 
-          text: "Voucher sudah habis!", 
+          text: copy.get('err.voucher_exhausted'), 
           show_alert: true 
         })
         return
@@ -3601,7 +3542,7 @@ if (cmd.startsWith("apply_voucher_")) {
       let hargaAwal = resolved.subtotal
       if (vcr.minimal_pembelian && hargaAwal < vcr.minimal_pembelian) {
         await bot.answerCallbackQuery(query.id, { 
-          text: `Minimal pembelian ${formatrupiah(vcr.minimal_pembelian)}!`, 
+          text: copy.get('err.voucher_min_purchase', { amount: formatrupiah(vcr.minimal_pembelian) }), 
           show_alert: true 
         })
         return
@@ -3714,7 +3655,7 @@ if (cmd === "punya") {
     })
     msgg[query.from.id] = df
   } else {
-    await sendMessage(query.from.id, `⚠️ Harap ulangi pilih produk!`)
+    await sendMessage(query.from.id, copy.get('err.cart_session_lost'))
   }
 }
 
@@ -3788,14 +3729,14 @@ if (cmd === "konfirmasi_kembali") {
     let Data = await cart.get(query.from.id)
     const item = await getVarianForCart(Data.kode)
     if (!item) {
-      await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+      await sendMessage(query.from.id, copy.get('err.product_not_found'))
     } else {
     const resolved = await hargaUntukQty(item, Data.jumlah)
       // Re-check stok menggunakan tabel Stok
       const stokCount = await getStokCount(Data.kode.toLowerCase())
       if (stokCount < Data.jumlah) {
         await bot.answerCallbackQuery(query.id, { 
-          text: `⚠️ Stok produk tidak mencukupi! Stok tersedia: ${stokCount}`, 
+          text: copy.get('err.stock_insufficient', { count: stokCount }), 
           show_alert: true 
         })
         return
@@ -3900,7 +3841,7 @@ if (cmd.startsWith("stok_detail_")) {
     .single()
   
   if (!Produk) {
-    await bot.answerCallbackQuery(query.id, { text: "❌ Produk tidak ditemukan!", show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.product_not_found'), show_alert: true })
     return
   }
   
@@ -4230,7 +4171,7 @@ if (cmd.startsWith("stok_viewall_")) {
     .single()
   
   if (!Produk) {
-    await bot.answerCallbackQuery(query.id, { text: "❌ Produk tidak ditemukan!", show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.product_not_found'), show_alert: true })
     return
   }
   
@@ -4296,7 +4237,7 @@ if (cmd.startsWith("stok_history_")) {
     .single()
   
   if (!Produk) {
-    await bot.answerCallbackQuery(query.id, { text: "❌ Produk tidak ditemukan!", show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.product_not_found'), show_alert: true })
     return
   }
   
@@ -4365,7 +4306,7 @@ if (cmd === "batalvoucher") {
     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     const userSaldo = await cekSaldo(query.from.id)
     const item = await getVarianForCart(Data.kode)
-    if (!item) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan!`)
+    if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
     const resolvedSaldo = await hargaUntukQty(item, Data.jumlah)
     let { data: Voucher } = await supabase.from("Voucher").select("*")
     let harga = applyVoucherPotongan(resolvedSaldo.subtotal, query.from.id, Data.voucher, Voucher)
@@ -4391,7 +4332,7 @@ ${userSaldo >= harga ? '✅ Saldo mencukupi\n' : '⚠️ Saldo tidak mencukupi\n
       }
     })
   } else {
-    await sendMessage(query.from.id, `⚠️ Harap ulangi pilih produk!`)
+    await sendMessage(query.from.id, copy.get('err.cart_session_lost'))
   }
 }
 
@@ -4407,7 +4348,7 @@ if (cmd.startsWith("min:")) {
     Data.jumlah -= Number(jumlah)
     await cart.save(query.from.id, Data)
      const item = await getVarianForCart(Data.kode)
-     if (!item) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+     if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
      const stokCount = item.stok_count ?? await getStokCount(item.kode)
      const resolvedMin = await hargaUntukQty(item, Data.jumlah)
     await bot.editMessageText(`*KONFIRMASI PESANAN*
@@ -4438,7 +4379,7 @@ Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
   message_id: query.message.message_id
 })
   } else {
-    await sendMessage(query.from.id, `⚠️ Harap ulangi pilih produk!`)
+    await sendMessage(query.from.id, copy.get('err.cart_session_lost'))
   }
 }
 if (cmd.startsWith("plus:")) {
@@ -4446,16 +4387,16 @@ if (cmd.startsWith("plus:")) {
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
     const item = await getVarianForCart(Data.kode)
-     if (!item) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+     if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
      const stokCount = item.stok_count ?? await getStokCount(item.kode)
      if (stokCount < (Data.jumlah+Number(jumlah))) {
-       await bot.answerCallbackQuery(query.id, { text: "⚠️ Stok produk tidak mencukupi", show_alert: true })
+       await bot.answerCallbackQuery(query.id, { text: copy.get('err.stock_insufficient', { count: 0 }), show_alert: true })
        return
      }
      Data.jumlah += Number(jumlah)
     await cart.save(query.from.id, Data)
      const itemUpdated = await getVarianForCart(Data.kode)
-     if (!itemUpdated) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+     if (!itemUpdated) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
      const stokCountUpdated = itemUpdated.stok_count ?? await getStokCount(itemUpdated.kode)
      const resolvedPlus = await hargaUntukQty(itemUpdated, Data.jumlah)
      
@@ -4487,7 +4428,7 @@ Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
   message_id: query.message.message_id
 })
   } else {
-    await sendMessage(query.from.id, `⚠️ Harap ulangi pilih produk!`)
+    await sendMessage(query.from.id, copy.get('err.cart_session_lost'))
   }
 }
 
@@ -4503,7 +4444,7 @@ if (cmd === "batalbeli") {
     
     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     await cart.clear(query.from.id)
-    await sendMessage(query.from.id,`✅ Pesananmu berhasil dibatalkan.`)
+    await sendMessage(query.from.id,copy.get('err.order_cancelled'))
   }
 }
 
@@ -4514,7 +4455,7 @@ if (cmd === "bayarsaldo") {
     } catch (e) {}
     let Data = await cart.get(query.from.id)
     const item = await getVarianForCart(Data.kode)
-    if (!item) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+    if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
     
     const resolvedSaldo = await hargaUntukQty(item, Data.jumlah)
     let { data: Voucher } = await supabase.from("Voucher").select("*")
@@ -4522,13 +4463,7 @@ if (cmd === "bayarsaldo") {
     
     const userSaldo = await cekSaldo(query.from.id)
     if (userSaldo < harga) {
-      return await bot.sendMessage(query.from.id, `❌ *SALDO TIDAK CUKUP*
-=======================
-💰 *Saldo Anda:* ${formatrupiah(userSaldo)}
-💵 *Total Bayar:* ${formatrupiah(harga)}
-⚠️ *Kurang:* ${formatrupiah(harga - userSaldo)}
-=======================
-💡 Top up saldo dengan \`/deposit\` atau gunakan metode pembayaran lain.`, {
+      return await bot.sendMessage(query.from.id, copy.get('err.saldo_insufficient_checkout', { saldo: formatrupiah(userSaldo), total: formatrupiah(harga), kurang: formatrupiah(harga - userSaldo) }), {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
@@ -4552,7 +4487,7 @@ if (cmd === "bayarsaldo") {
           // Release semua reservation
           releaseReservation(Data.selectedStokIds)
           
-          return await sendMessage(query.from.id, `⚠️ Beberapa stok sudah tidak tersedia atau timeout reservasi! Silakan pilih ulang.`, {
+          return await sendMessage(query.from.id, copy.get('err.stock_reservation_timeout'), {
             reply_markup: {
               inline_keyboard: [
                 [{text: "🔙 Kembali Pilih Stok", callback_data: "lanjut"}]
@@ -4566,7 +4501,7 @@ if (cmd === "bayarsaldo") {
         // Release semua reservation
         releaseReservation(Data.selectedStokIds)
         
-        return await sendMessage(query.from.id, `⚠️ Beberapa stok yang dipilih sudah tidak tersedia! Silakan pilih ulang.`, {
+        return await sendMessage(query.from.id, copy.get('err.stock_selection_unavailable'), {
           reply_markup: {
             inline_keyboard: [
               [{text: "🔙 Kembali Pilih Stok", callback_data: "lanjut"}]
@@ -4578,13 +4513,13 @@ if (cmd === "bayarsaldo") {
       // Fallback ke FIFO jika tidak ada pilihan
       const stokCount = await getStokCount(Data.kode.toLowerCase())
       if (Data.jumlah > stokCount) {
-        return await sendMessage(query.from.id, `⚠️ Stok produk tidak mencukupi! Stok tersedia: ${stokCount}`)
+        return await sendMessage(query.from.id, copy.get('err.stock_insufficient', { count: stokCount }))
       }
       
       stokItems = await getStokForTransaction(Data.kode.toLowerCase(), Data.jumlah)
       
       if (stokItems.length < Data.jumlah) {
-        return await sendMessage(query.from.id, `⚠️ Stok tidak mencukupi! Stok tersedia: ${stokItems.length}`)
+        return await sendMessage(query.from.id, copy.get('err.stock_insufficient', { count: stokItems.length }))
       }
     }
     
@@ -4900,7 +4835,7 @@ di *${NamaBot}*! 🙏`, {
       reply_markup: welcomeInlineKeyboard()
     })
   } else {
-    await sendMessage(query.from.id, `⚠️ Harap ulangi pilih produk!`)
+    await sendMessage(query.from.id, copy.get('err.cart_session_lost'))
   }
 }
 
@@ -4911,7 +4846,7 @@ if (cmd === "bayar") {
     } catch (e) {}
     let Data = await cart.get(query.from.id)
     const item = await getVarianForCart(Data.kode)
-    if (!item) return await sendMessage(query.from.id, `⚠️ Produk tidak ditemukan, harap ulangi pilih produk!`)
+    if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
     let DataProduk = ""
     const resolvedBayar = await hargaUntukQty(item, Data.jumlah)
     let { data: Voucher } = await supabase.from("Voucher").select("*")
@@ -4923,7 +4858,7 @@ if (cmd === "bayar") {
       const validIds = Data.selectedStokIds.filter(id => tersediaIds.includes(id))
       
       if (validIds.length !== Data.selectedStokIds.length) {
-        return await sendMessage(query.from.id, `⚠️ Beberapa stok yang dipilih sudah tidak tersedia! Silakan pilih ulang.`, {
+        return await sendMessage(query.from.id, copy.get('err.stock_selection_unavailable'), {
           reply_markup: {
             inline_keyboard: [
               [{text: "🔙 Kembali Pilih Stok", callback_data: "lanjut"}]
@@ -4935,7 +4870,7 @@ if (cmd === "bayar") {
       // Fallback ke cek stok count jika tidak ada pilihan
       const stokCount = await getStokCount(Data.kode.toLowerCase())
       if (Data.jumlah > stokCount) {
-        return await sendMessage(query.from.id, `⚠️ Stok produk tidak mencukupi! Stok tersedia: ${stokCount}`)
+        return await sendMessage(query.from.id, copy.get('err.stock_insufficient', { count: stokCount }))
       }
     }
     
@@ -4944,12 +4879,12 @@ if (cmd === "bayar") {
     
     if (!Pakasir.project) {
       console.error("Pakasir project slug is not configured in .env");
-      return await sendMessage(query.from.id, `❌ *ERROR*\n=======================\nSistem QRIS belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`)
+      return await sendMessage(query.from.id, copy.get('err.deposit_qris_not_configured'))
     }
 
     if (!Pakasir.apiKey) {
       console.error("Pakasir API key is not configured in .env");
-      return await sendMessage(query.from.id, `❌ *ERROR*\n=======================\nSistem verifikasi pembayaran belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.`)
+      return await sendMessage(query.from.id, copy.get('err.deposit_verify_not_configured'))
     }
 
     try {
@@ -5031,7 +4966,7 @@ Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik s
               console.warn('Error deleting message:', err.message);
             }
           });
-          await sendMessage(query.from.id, `Pesananmu telah expired, harap pesan kembali!`)
+          await sendMessage(query.from.id, copy.get('err.order_expired'))
           await supabase.from("Payment").update({ status: 'expired' }).eq('order_id', Data.trxid).eq('status', 'pending')
           pakasir.cancelTransaction({ orderId: Data.trxid, amount: harga }).catch(() => {})
           await cart.clear(query.from.id)
@@ -5575,10 +5510,10 @@ di *${NamaBot}*! 🙏`, {
       }
     } catch (err) {
       console.error('Error creating QRIS payment:', err)
-      await sendMessage(query.from.id, `❌ *ERROR*\n=======================\nTerjadi kesalahan saat membuat QRIS pembayaran.\n\nError: \`${err.message}\`\n\nSilakan coba lagi atau hubungi admin.`)
+      await sendMessage(query.from.id, copy.get('err.deposit_qris_create_failed', { error: err.message }))
     }
   } else {
-    await sendMessage(query.from.id, `⚠️ Harap ulangi pilih produk!`)
+    await sendMessage(query.from.id, copy.get('err.cart_session_lost'))
   }
 }
 
@@ -5620,7 +5555,7 @@ if (cmd.startsWith("detail_trx_")) {
       }
     })
   } else {
-    await bot.answerCallbackQuery(query.id, { text: "❌ Transaksi tidak ditemukan!", show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.transaction_not_found'), show_alert: true })
   }
 }
 
@@ -5633,7 +5568,7 @@ if (cmd.startsWith("redownload_")) {
     
     // Verify ownership
     if (tempData.userId !== query.from.id) {
-      await bot.answerCallbackQuery(query.id, { text: "❌ Anda tidak memiliki akses!", show_alert: true })
+      await bot.answerCallbackQuery(query.id, { text: copy.get('err.access_denied'), show_alert: true })
       return
     }
     
@@ -5675,7 +5610,7 @@ File produk berhasil diunduh ulang!`
     
     fs.unlinkSync(pathtxt)
   } else {
-    await bot.answerCallbackQuery(query.id, { text: "❌ File tidak tersedia lagi!", show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.file_unavailable'), show_alert: true })
   }
 }
 
@@ -5688,7 +5623,7 @@ if (cmd.startsWith("copy_data_")) {
     
     // Verify ownership
     if (tempData.userId !== query.from.id) {
-      await bot.answerCallbackQuery(query.id, { text: "❌ Anda tidak memiliki akses!", show_alert: true })
+      await bot.answerCallbackQuery(query.id, { text: copy.get('err.access_denied'), show_alert: true })
       return
     }
     
@@ -5709,7 +5644,7 @@ ${tempData.produkData.trim()}
       parse_mode: "Markdown"
     })
   } else {
-    await bot.answerCallbackQuery(query.id, { text: "❌ Data tidak tersedia lagi!", show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.data_unavailable'), show_alert: true })
   }
 }
 
@@ -5893,7 +5828,7 @@ if (cmd === "user_filter_active") {
     .select("*")
   
   if (!User || User.length === 0) {
-    await bot.answerCallbackQuery(query.id, { text: "⚠️ Tidak ada user!", show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users'), show_alert: true })
     return
   }
   
@@ -5911,7 +5846,7 @@ if (cmd === "user_filter_inactive") {
     .select("*")
   
   if (!User || User.length === 0) {
-    await bot.answerCallbackQuery(query.id, { text: "⚠️ Tidak ada user!", show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users'), show_alert: true })
     return
   }
   
@@ -5929,7 +5864,7 @@ if (cmd === "user_filter_vip") {
     .select("*")
   
   if (!User || User.length === 0) {
-    await bot.answerCallbackQuery(query.id, { text: "⚠️ Tidak ada user!", show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users'), show_alert: true })
     return
   }
   
@@ -5952,7 +5887,7 @@ if (cmd.startsWith("user_prev:") || cmd.startsWith("user_next:")) {
     .select("*")
   
   if (!User || User.length === 0) {
-    await bot.answerCallbackQuery(query.id, { text: "⚠️ Tidak ada user!", show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users'), show_alert: true })
     return
   }
   
@@ -5984,7 +5919,7 @@ if (cmd === "listuser") {
     .select("*")
   
   if (!User || User.length === 0) {
-    await bot.answerCallbackQuery(query.id, { text: "⚠️ Tidak ada user!", show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users'), show_alert: true })
     return
   }
   
@@ -6383,12 +6318,7 @@ if (cmd.startsWith("bataldeposit_")) {
   
   await bot.answerCallbackQuery(query.id, { text: "✅ Deposit dibatalkan", show_alert: true })
   await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-  await sendMessage(query.from.id, `❌ *DEPOSIT DIBATALKAN*
-=======================
-Kode Deposit: \`${kodeDeposit}\`
-
-=======================
-💡 Gunakan \`/deposit\` untuk membuat deposit baru.`)
+  await sendMessage(query.from.id, copy.get('err.deposit_cancelled', { kode: kodeDeposit }))
 }
 
  if (cmd === "kembaliawal") {
@@ -6470,7 +6400,7 @@ Kode Deposit: \`${kodeDeposit}\`
       .select("*")
     
     if (!Produk || Produk.length === 0) {
-      await bot.answerCallbackQuery(query.id, { text: "⚠️ Belum ada produk!", show_alert: true })
+      await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_products'), show_alert: true })
       return
     }
     
@@ -6549,7 +6479,7 @@ Pilih periode yang ingin Anda lihat:
       .select("*")
     
     if (!Trx || Trx.length === 0) {
-      await bot.answerCallbackQuery(query.id, { text: "⚠️ Belum ada transaksi!", show_alert: true })
+      await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_transactions'), show_alert: true })
       return
     }
     
@@ -6930,7 +6860,7 @@ Ketik \`/batal\` untuk membatalkan.`, {
     if (Data.voucher_status === "waiting") {
       // FIX: Cek apakah text ada sebelum digunakan
       if (!text || typeof text !== 'string' || text.trim() === '') {
-        return await bot.sendMessage(msg.from.id, `⚠️ Silakan kirim kode voucher dalam bentuk teks.`, {
+        return await bot.sendMessage(msg.from.id, copy.get('err.voucher_text_required'), {
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
@@ -6966,12 +6896,7 @@ Ketik \`/batal\` untuk membatalkan.`, {
       
       if (!vv) {
         // Voucher tidak ditemukan
-        return await bot.sendMessage(msg.from.id, `❌ *Kode Voucher Tidak Ditemukan!*
-=======================
-Kode voucher \`${voucherNormalized}\` tidak terdaftar di database.
-
-=======================
-💡 Pastikan kode voucher sudah benar atau hubungi admin.`, {
+        return await bot.sendMessage(msg.from.id, copy.get('err.voucher_not_found', { kode: voucherNormalized }), {
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
@@ -6987,12 +6912,7 @@ Kode voucher \`${voucherNormalized}\` tidak terdaftar di database.
       // Cek apakah user sudah menggunakan voucher ini
       const sudahPakai = vv.user && vv.user.some(us => us === msg.from.id)
       if (sudahPakai) {
-        return await bot.sendMessage(msg.from.id, `❌ *Voucher Sudah Digunakan!*
-=======================
-Kode voucher \`${vv.kode}\` sudah pernah Anda gunakan sebelumnya.
-
-=======================
-💡 Setiap voucher hanya bisa digunakan sekali per user.`, {
+        return await bot.sendMessage(msg.from.id, copy.get('err.voucher_already_used'), {
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
@@ -7007,12 +6927,7 @@ Kode voucher \`${vv.kode}\` sudah pernah Anda gunakan sebelumnya.
       
       // Cek limit voucher
       if (vv.limit <= 0) {
-        return await bot.sendMessage(msg.from.id, `❌ *Voucher Habis!*
-=======================
-Kode voucher \`${vv.kode}\` sudah mencapai batas penggunaan.
-
-=======================
-💡 Limit voucher: ${vv.limit}`, {
+        return await bot.sendMessage(msg.from.id, copy.get('err.voucher_exhausted'), {
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
@@ -7032,18 +6947,7 @@ Kode voucher \`${vv.kode}\` sudah mencapai batas penggunaan.
       )
       
       if (!produkValid) {
-        return await bot.sendMessage(msg.from.id, `❌ *Voucher Tidak Berlaku!*
-=======================
-Kode voucher \`${vv.kode}\` tidak berlaku untuk produk ini.
-
-*Produk yang berlaku:*
-${vv.produk[0] === "all" ? "Semua Produk" : vv.produk.join(", ")}
-
-*Produk Anda:*
-${Data.kode}
-
-=======================
-💡 Gunakan voucher yang sesuai dengan produk.`, {
+        return await bot.sendMessage(msg.from.id, copy.get('err.voucher_wrong_product'), {
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
@@ -7107,12 +7011,7 @@ ${infoText}`, {
         .select("*")
       
       if (!Produk || Produk.length === 0) {
-        return await bot.sendMessage(msg.from.id, `⚠️ *BELUM ADA PRODUK*
-━━━━━━━━━━━━━━━━━━━━
-Belum ada produk yang terdaftar.
-
-━━━━━━━━━━━━━━━━━━━━
-💡 Hubungi admin untuk informasi lebih lanjut.`, {
+        return await bot.sendMessage(msg.from.id, copy.get('err.no_products'), {
           parse_mode: "Markdown"
         })
       }
@@ -7134,7 +7033,7 @@ Belum ada produk yang terdaftar.
         .select("*")
       
       if (!Trx || Trx.length === 0) {
-        return await bot.sendMessage(msg.from.id, `⚠️ Belum ada transaksi apapun!`)
+        return await bot.sendMessage(msg.from.id, copy.get('err.no_transactions'))
       }
       await sendPage(Trx, msg.from.id, 0)
       return

@@ -57,56 +57,56 @@ INSERT INTO "BotCopy" (key, kind, body, description, variables) VALUES
 (
   'err.deposit_qris_not_configured',
   'err',
-  'Sistem QRIS belum dikonfigurasi. Hubungi admin.',
+  E'❌ *ERROR*\n=======================\nSistem QRIS belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.',
   'QRIS payment not configured',
   '[]'::jsonb
 ),
 (
   'err.deposit_verify_not_configured',
   'err',
-  'Sistem verifikasi pembayaran belum dikonfigurasi. Hubungi admin.',
+  E'❌ *ERROR*\n=======================\nSistem verifikasi pembayaran belum dikonfigurasi dengan benar oleh pemilik toko. Silakan hubungi admin.',
   'Payment verification not configured',
   '[]'::jsonb
 ),
 (
   'err.deposit_create_failed',
   'err',
-  E'Terjadi kesalahan saat membuat deposit.\n\nError: `{{error}}`',
+  E'❌ *ERROR*\n=======================\nTerjadi kesalahan saat membuat deposit.\n\nError: `{{error}}`\n\n=======================\n💡 Silakan coba lagi atau hubungi admin.',
   'Deposit creation failed',
   '["error"]'::jsonb
 ),
 (
   'err.deposit_qris_create_failed',
   'err',
-  E'Terjadi kesalahan saat membuat QRIS pembayaran.\n\nError: `{{error}}`',
+  E'❌ *ERROR*\n=======================\nTerjadi kesalahan saat membuat QRIS pembayaran.\n\nError: `{{error}}`\n\nSilakan coba lagi atau hubungi admin.',
   'QRIS deposit creation failed',
   '["error"]'::jsonb
 ),
 (
   'err.deposit_expired',
   'err',
-  E'⏰ *DEPOSIT EXPIRED*\n\nDeposit Anda telah kedaluwarsa. Silakan buat deposit baru.',
+  E'⏰ *DEPOSIT EXPIRED*\n=======================\nPembayaran deposit telah expired.\n\nKode Deposit: `{{kode}}`\n\n=======================\n💡 Gunakan `/deposit` untuk membuat deposit baru.',
   'Deposit session expired',
-  '[]'::jsonb
+  '["kode"]'::jsonb
 ),
 (
   'err.deposit_cancelled',
   'err',
-  E'❌ *DEPOSIT DIBATALKAN*\n\nDeposit berhasil dibatalkan.',
+  E'❌ *DEPOSIT DIBATALKAN*\n=======================\nKode Deposit: `{{kode}}`\n\n=======================\n💡 Gunakan `/deposit` untuk membuat deposit baru.',
   'Deposit cancelled confirmation',
-  '[]'::jsonb
+  '["kode"]'::jsonb
 ),
 (
   'err.deposit_amount_invalid',
   'err',
-  E'❌ *JUMLAH TIDAK VALID*\n\nMasukkan nominal yang valid.',
+  E'❌ *JUMLAH TIDAK VALID*\n=======================\nMinimum deposit: *Rp 1.000*\n\nJumlah yang Anda masukkan: `{{text}}`\n\n=======================\n💡 Silakan masukkan jumlah minimal Rp 1.000',
   'Invalid deposit amount',
-  '[]'::jsonb
+  '["text"]'::jsonb
 ),
 (
   'err.deposit_no_history',
   'err',
-  E'📋 *RIWAYAT DEPOSIT*\n\nBelum ada riwayat deposit.',
+  E'📋 *RIWAYAT DEPOSIT*\n=======================\nBelum ada riwayat deposit.\n\n=======================\n💡 Gunakan `/deposit` untuk top up saldo.',
   'Empty deposit history',
   '[]'::jsonb
 ),
@@ -125,6 +125,13 @@ INSERT INTO "BotCopy" (key, kind, body, description, variables) VALUES
   '[]'::jsonb
 ),
 (
+  'err.saldo_insufficient_checkout',
+  'err',
+  E'❌ *SALDO TIDAK CUKUP*\n=======================\n💰 *Saldo Anda:* {{saldo}}\n💵 *Total Bayar:* {{total}}\n⚠️ *Kurang:* {{kurang}}\n=======================\n💡 Top up saldo dengan `/deposit` atau gunakan metode pembayaran lain.',
+  'Insufficient balance at checkout with amounts',
+  '["saldo","total","kurang"]'::jsonb
+),
+(
   'err.order_expired',
   'err',
   'Pesananmu telah expired, harap pesan kembali!',
@@ -141,7 +148,7 @@ INSERT INTO "BotCopy" (key, kind, body, description, variables) VALUES
 (
   'err.stock_empty',
   'err',
-  E'⚠️ *STOK KOSONG*\n\nStok *{{nama}}* sedang kosong. Silakan pilih produk lain.',
+  E'⚠️ *STOK KOSONG*\n\nProduk *{{nama}}* tidak memiliki stok tersedia.\n\n━━━━━━━━━━━━━━━━━━━━\n💡 Silakan pilih produk lain.',
   'Selected product out of stock',
   '["nama"]'::jsonb
 ),
