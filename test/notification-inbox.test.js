@@ -7,6 +7,7 @@ const {
   getNotificationHref,
   sortInboxItems,
   countActionable,
+  computeInboxTotal,
 } = require('../lib/notification-inbox')
 
 test('buildDepositSummaryItem returns null when count is 0', () => {
@@ -38,6 +39,21 @@ test('getNotificationHref maps large_transaction to transaksi detail', () => {
     getNotificationHref('large_transaction', { trx_uuid: 'abc-123' }),
     '/transaksi/abc-123'
   )
+})
+
+test('getNotificationHref maps deposit_pending with deposit_id to detail page', () => {
+  assert.strictEqual(
+    getNotificationHref('deposit_pending', { deposit_id: 'dep-42' }),
+    '/deposit/dep-42'
+  )
+})
+
+test('getNotificationHref maps deposit_pending without deposit_id to pending list', () => {
+  assert.strictEqual(getNotificationHref('deposit_pending', {}), '/deposit?status=pending')
+})
+
+test('computeInboxTotal sums entity counts not panel rows', () => {
+  assert.strictEqual(computeInboxTotal({ pendingCount: 2, lowStockCount: 7, largeTransactionCount: 0 }), 9)
 })
 
 test('sortInboxItems orders high priority first', () => {

@@ -19,10 +19,10 @@ node --test
 node --check dashboard.js
 ```
 
-**No toast stack** — OK (no matches for legacy popup container / `showInAppNotification`)
+**No toast stack** — OK (no matches for legacy popup container / `showInAppNotification` / `notification-toast`)
 
 ```bash
-rg -n "notification-container|showInAppNotification" public/js || echo OK
+rg -n "notification-container|notification-toast|showInAppNotification" public/js || echo OK
 ```
 
 **Purple purge** — OK (no matches)
@@ -58,6 +58,8 @@ rg -n "notificationBell|notification-panel" views public/css | head
 
 1. Click a **deposit pending** summary row → navigates to `/deposit?status=pending`.
 2. Click a **low stock** row → navigates to the variant stok page (`/produk/:id/stok` or equivalent `href` from inbox API).
+3. Click a **large transaction** row (if unread `NotificationLog` exists) → navigates to `/transaksi/:trx_uuid`.
+4. “Mark all read” clears unread **large_transaction** log rows; deposit/low-stock rows are state-derived and remain until resolved in admin.
 
 ### SSE live prepend (sandbox)
 

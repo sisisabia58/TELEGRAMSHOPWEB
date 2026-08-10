@@ -4940,6 +4940,24 @@ async function getProductStockThreshold(varianId) {
   }
 }
 
+async function getProductStockThresholdMap(varianIds, defaultThreshold) {
+  const map = Object.create(null)
+  if (!varianIds.length) return map
+
+  const { data } = await supabase
+    .from('ProductStockThreshold')
+    .select('varian_id, threshold, is_active')
+    .in('varian_id', varianIds)
+
+  for (const row of data || []) {
+    if (row.is_active) map[row.varian_id] = row.threshold
+  }
+  for (const id of varianIds) {
+    if (map[id] === undefined) map[id] = defaultThreshold
+  }
+  return map
+}
+
 // Helper: Check if current time is in quiet hours
 async function isQuietHours() {
   try {
@@ -4971,6 +4989,8 @@ async function buildNotificationInbox() {
   const settings = await getNotificationSettings()
   const items = []
   let pendingCount = 0
+  let lowStockCount = 0
+  let largeTransactionCount = 0
 
   if (settings.depositNotificationEnabled) {
     const { data: deposits, count } = await supabase
@@ -4988,16 +5008,22 @@ async function buildNotificationInbox() {
     if (summary) items.push(summary)
   }
 
-  if (settings.stockNotificationEnabled) {
+  if (settings.stockNotificationEnabled && settings.lowStockEnabled) {
     const { data: variants } = await supabase
       .from('Varian')
       .select('id, label, kode, produk_id, produk:Produk(id, nama)')
       .eq('is_active', true)
 
-    for (const variant of variants || []) {
-      const threshold = await getProductStockThreshold(variant.id)
-      const stokCount = await stock.getStokCountByVarianId(variant.id)
-      if (stokCount !== null && stokCount <= threshold) {
+    const variantList = variants || []
+    const varianIds = variantList.map((v) => v.id)
+    const thresholdMap = await getProductStockThresholdMap(varianIds, settings.lowStockThreshold)
+    const stockCounts = await stock.getStokCountsByKode(variantList.map((v) => v.kode))
+
+    for (const variant of variantList) {
+      const threshold = thresholdMap[variant.id] ?? settings.lowStockThreshold
+      const stokCount = stockCounts[String(variant.kode).toLowerCase()] ?? 0
+      if (stokCount <= threshold) {
+        lowStockCount++
         items.push(inbox.buildLowStockItem({
           variant,
           produkId: variant.produk_id || variant.produk?.id,
@@ -5008,7 +5034,7 @@ async function buildNotificationInbox() {
     }
   }
 
-  if (settings.transactionNotificationEnabled) {
+  if (settings.transactionNotificationEnabled && settings.largeTransactionEnabled) {
     const { data: logs } = await supabase
       .from('NotificationLog')
       .select('*')
@@ -5017,6 +5043,7 @@ async function buildNotificationInbox() {
       .order('created_at', { ascending: false })
       .limit(5)
 
+    largeTransactionCount = (logs || []).length
     for (const log of logs || []) {
       items.push({
         id: log.id,
@@ -5036,8 +5063,9 @@ async function buildNotificationInbox() {
   return {
     counts: {
       deposit_pending: pendingCount,
-      low_stock: sorted.filter((i) => i.type === 'low_stock').length,
-      total: inbox.countActionable(sorted),
+      low_stock: lowStockCount,
+      large_transaction: largeTransactionCount,
+      total: inbox.computeInboxTotal({ pendingCount, lowStockCount, largeTransactionCount }),
     },
     items: sorted,
   }
@@ -5123,8 +5151,8 @@ async function checkLargeTransaction(transaction) {
         priority: 'medium'
       }
       
-      await broadcastNotification(notification)
       await createNotificationLog('large_transaction', notification.title, notification.message, notification.data)
+      await broadcastNotification(notification)
     }
   } catch (error) {
     console.error('Error checking large transaction:', error)
@@ -5152,8 +5180,8 @@ async function checkNewDeposit(deposit) {
         priority: 'high'
       }
       
-      await broadcastNotification(notification)
       await createNotificationLog('deposit_pending', notification.title, notification.message, notification.data)
+      await broadcastNotification(notification)
     }
   } catch (error) {
     console.error('Error checking new deposit:', error)

@@ -2,6 +2,9 @@
 class NotificationCenter {
   constructor() {
     this.items = []
+    this.actionableTotal = 0
+    this.inboxReady = false
+    this.pendingLive = []
     this.panelOpen = false
     this.eventSource = null
     this.badgeElements = {}
@@ -58,16 +61,38 @@ class NotificationCenter {
       const data = await res.json()
       if (!data.success) return
       this.items = data.items || []
+      this.actionableTotal = data.counts?.total ?? 0
       this.render()
-      this.updateHeaderBadge(data.counts?.total || 0)
+      this.updateHeaderBadge(this.actionableTotal)
+      this.inboxReady = true
+      const buffered = this.pendingLive.splice(0)
+      for (const notification of buffered) {
+        this.applyLiveNotification(notification)
+      }
     } catch (error) {
       console.error('Error loading notification inbox:', error)
+      this.inboxReady = true
     }
+  }
+
+  itemKey(item) {
+    if (!item) return ''
+    if (item.type === 'deposit_pending') {
+      if (item.data?.deposit_id) return `deposit-${item.data.deposit_id}`
+      return 'deposit-pending'
+    }
+    if (item.type === 'low_stock') {
+      return item.id || `low-stock-${item.data?.varian_id || ''}`
+    }
+    if (item.type === 'large_transaction') {
+      return item.id || `trx-${item.data?.trx_uuid || ''}`
+    }
+    return String(item.id || '')
   }
 
   render() {
     const { list, empty } = this.els
-    list.innerHTML = ''
+    list.replaceChildren()
     if (!this.items.length) {
       empty.hidden = false
       return
@@ -76,14 +101,26 @@ class NotificationCenter {
     for (const item of this.items) {
       const li = document.createElement('li')
       li.className = `notification-item notification-item--${item.type}`
-      li.innerHTML = `<a href="${item.href}"><div class="notification-item-title">${item.title}</div><div class="notification-item-message">${item.message}</div></a>`
-      list.appendChild(li)
+      const link = document.createElement('a')
+      link.href = item.href || '/'
+      const titleEl = document.createElement('div')
+      titleEl.className = 'notification-item-title'
+      titleEl.textContent = item.title || ''
+      const messageEl = document.createElement('div')
+      messageEl.className = 'notification-item-message'
+      messageEl.textContent = item.message || ''
+      link.append(titleEl, messageEl)
+      li.append(link)
+      list.append(li)
     }
   }
 
   hrefFor(notification) {
     const type = notification.type
     const data = notification.data || {}
+    if (type === 'deposit_pending' && data.deposit_id) {
+      return `/deposit/${data.deposit_id}`
+    }
     if (type === 'deposit_pending') return '/deposit?status=pending'
     if (type === 'low_stock' && data.produk_id && data.varian_id) {
       return `/produk/${data.produk_id}/varian/${data.varian_id}/stok`
@@ -91,15 +128,30 @@ class NotificationCenter {
     if (type === 'large_transaction' && data.trx_uuid) {
       return `/transaksi/${data.trx_uuid}`
     }
-    if (type === 'deposit_pending' && data.deposit_id) {
-      return `/deposit/${data.deposit_id}`
-    }
     return '/'
+  }
+
+  mergeLiveRow(row) {
+    const key = this.itemKey(row)
+    const existed = this.items.some((item) => this.itemKey(item) === key)
+    this.items = [row, ...this.items.filter((item) => this.itemKey(item) !== key)].slice(0, 50)
+    if (!existed) {
+      this.actionableTotal += 1
+    }
+    this.render()
+    this.updateHeaderBadge(this.actionableTotal)
   }
 
   handleLiveNotification(notification) {
     if (!notification || notification.type === 'connected') return
+    if (!this.inboxReady) {
+      this.pendingLive.push(notification)
+      return
+    }
+    this.applyLiveNotification(notification)
+  }
 
+  applyLiveNotification(notification) {
     if (Notification.permission === 'granted') {
       new Notification(notification.title, {
         body: notification.message,
@@ -108,19 +160,20 @@ class NotificationCenter {
       })
     }
 
-    const href = this.hrefFor(notification)
     const row = {
-      id: notification.data?.deposit_id || notification.data?.trx_uuid || notification.data?.varian_id || Date.now(),
+      id: notification.data?.deposit_id
+        || notification.data?.trx_uuid
+        || (notification.data?.varian_id ? `low-stock-${notification.data.varian_id}` : null)
+        || Date.now(),
       type: notification.type,
       title: notification.title,
       message: notification.message,
-      href,
+      href: this.hrefFor(notification),
       priority: notification.priority || 'medium',
       created_at: notification.timestamp || new Date().toISOString(),
+      data: notification.data || {},
     }
-    this.items = [row, ...this.items.filter((i) => i.id !== row.id)].slice(0, 50)
-    this.render()
-    this.updateHeaderBadge(this.items.length)
+    this.mergeLiveRow(row)
   }
 
   togglePanel(open) {
