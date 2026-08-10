@@ -1,7 +1,19 @@
 <% const activePage = typeof currentPage !== 'undefined' ? currentPage : '' %>
 <nav class="mobile-tabs" aria-label="Mobile primary">
-  <a href="/" class="<%= activePage === 'dashboard' ? 'active' : '' %>">Overview</a>
-  <a href="/produk" class="<%= ['produk','stok','pricing','bulk'].includes(activePage) ? 'active' : '' %>">Catalog</a>
-  <a href="/user" class="<%= ['user','deposit','transaksi','voucher'].includes(activePage) ? 'active' : '' %>">Customers</a>
-  <a href="#" onclick="toggleSidebar(); return false;" class="<%= ['dashboard','produk','stok','pricing','bulk','user','deposit','transaksi','voucher'].includes(activePage) ? '' : 'active' %>">More</a>
+  <a href="/" class="mobile-tab <%= activePage === 'dashboard' ? 'active' : '' %>">
+    <svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg>
+    <span>Overview</span>
+  </a>
+  <a href="/produk" class="mobile-tab <%= ['produk','stok','pricing','bulk'].includes(activePage) ? 'active' : '' %>">
+    <svg class="icon" aria-hidden="true"><use href="#i-box"></use></svg>
+    <span>Catalog</span>
+  </a>
+  <a href="/user" class="mobile-tab <%= ['user','deposit','transaksi','voucher'].includes(activePage) ? 'active' : '' %>">
+    <svg class="icon" aria-hidden="true"><use href="#i-users"></use></svg>
+    <span>Customers</span>
+  </a>
+  <a href="#" onclick="toggleSidebar(); return false;" class="mobile-tab <%= ['dashboard','produk','stok','pricing','bulk','user','deposit','transaksi','voucher'].includes(activePage) ? '' : 'active' %>">
+    <svg class="icon" aria-hidden="true"><use href="#i-more-horizontal"></use></svg>
+    <span>More</span>
+  </a>
 </nav>

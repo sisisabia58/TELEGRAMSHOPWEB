@@ -3,7 +3,11 @@
     const queryString = filterParams.length > 0 ? filterParams.join('&') : '';
     const fromItem = totalCount === 0 ? 0 : (currentPageNum - 1) * (typeof limit !== 'undefined' ? limit : 50) + 1;
     const toItem = Math.min(currentPageNum * (typeof limit !== 'undefined' ? limit : 50), totalCount || 0);
-
+    breadcrumbs = [
+        { label: 'Home', href: '/' },
+        { label: 'Customers', href: '/user' },
+        { label: 'Transactions' }
+    ];
 %>
 <!DOCTYPE html>
 <html lang="id">
@@ -19,33 +23,30 @@
             color: var(--color-muted);
         }
         .transaksi-stats strong { color: var(--color-text); }
-        .filter-card .card-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
         .filter-toggle {
             display: none;
             background: none;
-            border: 1px solid #e0e0e0;
+            border: 1px solid var(--color-border);
             padding: 8px 14px;
-            border-radius: 8px;
+            border-radius: var(--radius-sm);
             font-size: 14px;
-            color: #666;
+            color: var(--color-muted);
             cursor: pointer;
         }
-        .filter-toggle:hover { background: #f5f5f5; color: #333; }
+        .filter-toggle:hover { background: var(--color-surface-muted); color: var(--color-text); }
+        @media (min-width: 769px) {
+            #filterCard .filter-body { display: contents; }
+        }
         @media (max-width: 768px) {
             .filter-toggle { display: inline-flex; align-items: center; gap: 6px; }
-            .filter-card .filter-body { display: none; }
-            .filter-card.filter-open .filter-body { display: block; }
-        }
-        .filter-container {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-            gap: 16px;
+            #filterCard .filter-body {
+                display: none;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 10px;
+                width: 100%;
+            }
+            #filterCard.filter-open .filter-body { display: flex; }
         }
         .filter-group { min-width: 0; }
         .filter-group .form-select,
@@ -69,8 +70,26 @@
             flex-wrap: wrap;
             gap: 12px;
             padding: 16px 0 0;
-            border-top: 1px solid #eee;
+            border-top: 1px solid var(--color-border);
             margin-top: 16px;
+        }
+        .transaksi-toolbar-form {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+        }
+        .transaksi-toolbar-form .filter-group {
+            min-width: 140px;
+        }
+        .transaksi-toolbar-form .search-container {
+            flex: 1;
+            min-width: 200px;
+            margin: 0;
+        }
+        .transaksi-toolbar-form .search-input {
+            width: 100%;
         }
     </style>
 </head>
@@ -83,60 +102,55 @@
         <%- include('partials/topbar') %>
 
         <div class="container">
-            <!-- Filter Card -->
-            <div class="card filter-card" style="margin-bottom: 20px;" id="filterCard">
-                <div class="card-header">
-                    <h2 class="card-title">Filter Transaksi</h2>
+            <%- include('partials/page-header', { breadcrumbs: breadcrumbs, pageHeaderActions: '' }) %>
+
+            <div class="toolbar" id="filterCard">
+                <form method="GET" action="/transaksi" id="filterForm" class="transaksi-toolbar-form">
+                    <div class="search-container">
+                        <span class="search-icon"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg></span>
+                        <input type="text" name="search" class="search-input" placeholder="Cari (Trx ID, nama produk, atau User ID)..." value="<%= filters.search || '' %>">
+                    </div>
                     <button type="button" class="filter-toggle" id="filterToggle" aria-expanded="false" aria-controls="filterBody">
-                        <span aria-hidden="true">🔍</span> Filter
+                        <svg class="icon" aria-hidden="true"><use href="#i-filter"></use></svg> Filter
                     </button>
-                </div>
-                <div class="card-body filter-body" id="filterBody">
-                    <form method="GET" action="/transaksi" id="filterForm">
-                        <div class="search-container" style="margin-bottom: 16px;">
-                            <span class="search-icon">🔍</span>
-                            <input type="text" name="search" class="search-input" placeholder="Cari (Trx ID, nama produk, atau User ID)..." value="<%= filters.search || '' %>">
+                    <div class="filter-body" id="filterBody">
+                        <div class="filter-group">
+                            <label class="form-label">Tanggal Mulai</label>
+                            <input type="date" name="startDate" class="form-input" value="<%= filters.startDate || '' %>">
                         </div>
-                        <div class="filter-container">
-                            <div class="filter-group">
-                                <label class="form-label">Tanggal Mulai</label>
-                                <input type="date" name="startDate" class="form-input" value="<%= filters.startDate || '' %>">
-                            </div>
-                            <div class="filter-group">
-                                <label class="form-label">Tanggal Akhir</label>
-                                <input type="date" name="endDate" class="form-input" value="<%= filters.endDate || '' %>">
-                            </div>
-                            <div class="filter-group">
-                                <label class="form-label">Produk</label>
-                                <select name="produk" class="form-select">
-                                    <option value="">Semua Produk</option>
-                                    <% products.forEach(p => { %>
-                                        <option value="<%= p.kode %>" <%= filters.produk === p.kode ? 'selected' : '' %>><%= p.nama %></option>
-                                    <% }) %>
-                                </select>
-                            </div>
-                            <div class="filter-group">
-                                <label class="form-label">User ID</label>
-                                <input type="number" name="user" class="form-input" placeholder="User ID" value="<%= filters.user || '' %>">
-                            </div>
-                            <div class="filter-group">
-                                <label class="form-label">Harga Min (Rp)</label>
-                                <input type="number" name="minHarga" class="form-input" placeholder="Min" value="<%= filters.minHarga || '' %>">
-                            </div>
-                            <div class="filter-group">
-                                <label class="form-label">Harga Max (Rp)</label>
-                                <input type="number" name="maxHarga" class="form-input" placeholder="Max" value="<%= filters.maxHarga || '' %>">
-                            </div>
+                        <div class="filter-group">
+                            <label class="form-label">Tanggal Akhir</label>
+                            <input type="date" name="endDate" class="form-input" value="<%= filters.endDate || '' %>">
                         </div>
-                        <div class="form-actions" style="margin-top: 16px;">
-                            <button type="submit" class="btn btn-primary">🔍 Terapkan Filter</button>
-                            <a href="/transaksi" class="btn btn-secondary">🔄 Reset</a>
-                            <% if (hasFilters) { %>
-                                <span class="transaksi-stats" style="margin-left: 8px;">Filter aktif</span>
-                            <% } %>
+                        <div class="filter-group">
+                            <label class="form-label">Produk</label>
+                            <select name="produk" class="form-select">
+                                <option value="">Semua Produk</option>
+                                <% products.forEach(p => { %>
+                                    <option value="<%= p.kode %>" <%= filters.produk === p.kode ? 'selected' : '' %>><%= p.nama %></option>
+                                <% }) %>
+                            </select>
                         </div>
-                    </form>
-                </div>
+                        <div class="filter-group">
+                            <label class="form-label">User ID</label>
+                            <input type="number" name="user" class="form-input" placeholder="User ID" value="<%= filters.user || '' %>">
+                        </div>
+                        <div class="filter-group">
+                            <label class="form-label">Harga Min (Rp)</label>
+                            <input type="number" name="minHarga" class="form-input" placeholder="Min" value="<%= filters.minHarga || '' %>">
+                        </div>
+                        <div class="filter-group">
+                            <label class="form-label">Harga Max (Rp)</label>
+                            <input type="number" name="maxHarga" class="form-input" placeholder="Max" value="<%= filters.maxHarga || '' %>">
+                        </div>
+                        <div class="toolbar-spacer"></div>
+                        <button type="submit" class="btn btn-primary">Terapkan Filter</button>
+                        <a href="/transaksi" class="btn btn-secondary">Reset</a>
+                        <% if (hasFilters) { %>
+                            <span class="transaksi-stats">Filter aktif</span>
+                        <% } %>
+                    </div>
+                </form>
             </div>
 
             <!-- Table Card -->
@@ -197,7 +211,7 @@
                                             <td><code><%= t.trxid || '-' %></code></td>
                                             <td>
                                                 <div class="table-actions">
-                                                    <a href="/transaksi/<%= t.trx_uuid %>" class="btn-icon" title="Detail">👁️</a>
+                                                    <a href="/transaksi/<%= t.trx_uuid %>" class="btn-icon" title="Detail"><svg class="icon" aria-hidden="true"><use href="#i-eye"></use></svg></a>
                                                 </div>
                                             </td>
                                         </tr>
@@ -247,7 +261,7 @@
         var filterCard = document.getElementById('filterCard');
         var filterToggle = document.getElementById('filterToggle');
         var filterBody = document.getElementById('filterBody');
-        if (filterToggle && filterBody) {
+        if (filterToggle && filterBody && filterCard) {
             filterToggle.addEventListener('click', function() {
                 filterCard.classList.toggle('filter-open');
                 var open = filterCard.classList.contains('filter-open');

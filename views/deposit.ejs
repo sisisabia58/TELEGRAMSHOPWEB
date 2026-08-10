@@ -1,13 +1,34 @@
+<%
+    breadcrumbs = [
+        { label: 'Home', href: '/' },
+        { label: 'Customers', href: '/user' },
+        { label: 'Deposits' }
+    ];
+%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <%- include('partials/head') %>
     <style>
-        .deposit-stats .stat-value.pending { color: var(--color-warning); }
-        .deposit-stats .stat-value.success { color: var(--color-success); }
-        .deposit-stats .stat-value.failed { color: var(--color-danger); }
-        .deposit-stats .stat-value.expired { color: var(--color-muted); }
-        .deposit-stats small { color: var(--color-muted); }
+        .metric-tile .value.pending { color: var(--color-warning); }
+        .metric-tile .value.success { color: var(--color-success); }
+        .metric-tile .value.failed { color: var(--color-danger); }
+        .metric-tile .value.expired { color: var(--color-muted); }
+        .metric-tile .sub { font-size: 12px; color: var(--color-muted); margin-top: 4px; }
+        .deposit-toolbar-form {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+        }
+        .deposit-toolbar-form .filter-group {
+            min-width: 120px;
+        }
+        .deposit-toolbar-form .form-label {
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
         .deposit-row-actions {
             display: flex;
             align-items: center;
@@ -39,7 +60,7 @@
         }
         .deposit-action-btn:hover {
             transform: scale(1.1);
-            background: #f0f0f0;
+            background: var(--color-surface-muted);
         }
         .deposit-action-approve { color: var(--color-success); }
         .deposit-action-reject { color: var(--color-danger); }
@@ -90,96 +111,73 @@
         <%- include('partials/topbar') %>
         
         <div class="container">
-            <!-- Stats -->
-            <div class="stats-grid deposit-stats" style="margin-bottom: 20px;">
-                <div class="stat-card">
-                    <div class="stat-icon">💰</div>
-                    <div class="stat-info">
-                        <h3>Total Deposit</h3>
-                        <p class="stat-value"><%= stats.total %></p>
-                    </div>
+            <%- include('partials/page-header', { breadcrumbs: breadcrumbs, pageHeaderActions: '' }) %>
+
+            <div class="metric-strip">
+                <div class="metric-tile">
+                    <div class="label">Total Deposit</div>
+                    <div class="value"><%= stats.total %></div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">⏳</div>
-                    <div class="stat-info">
-                        <h3>Pending</h3>
-                        <p class="stat-value pending"><%= stats.pending %></p>
-                        <small><%= formatrupiah(stats.totalPending) %></small>
-                    </div>
+                <div class="metric-tile">
+                    <div class="label">Pending</div>
+                    <div class="value pending"><%= stats.pending %></div>
+                    <div class="sub"><%= formatrupiah(stats.totalPending) %></div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">✅</div>
-                    <div class="stat-info">
-                        <h3>Success</h3>
-                        <p class="stat-value success"><%= stats.success %></p>
-                        <small><%= formatrupiah(stats.totalSuccess) %></small>
-                    </div>
+                <div class="metric-tile">
+                    <div class="label">Success</div>
+                    <div class="value success"><%= stats.success %></div>
+                    <div class="sub"><%= formatrupiah(stats.totalSuccess) %></div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">❌</div>
-                    <div class="stat-info">
-                        <h3>Failed</h3>
-                        <p class="stat-value failed"><%= stats.failed %></p>
-                    </div>
+                <div class="metric-tile">
+                    <div class="label">Failed</div>
+                    <div class="value failed"><%= stats.failed %></div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">⏰</div>
-                    <div class="stat-info">
-                        <h3>Expired</h3>
-                        <p class="stat-value expired"><%= stats.expired %></p>
-                    </div>
+                <div class="metric-tile">
+                    <div class="label">Expired</div>
+                    <div class="value expired"><%= stats.expired %></div>
                 </div>
             </div>
 
-            <!-- Filter Card -->
-            <div class="card" style="margin-bottom: 20px;">
-                <div class="card-header">
-                    <h2 class="card-title">Filter Deposit</h2>
-                </div>
-                <div class="card-body">
-                    <form method="GET" action="/deposit">
-                        <div class="filter-container">
-                            <div class="filter-group">
-                                <label class="form-label">Status</label>
-                                <select name="status" class="form-select">
-                                    <option value="all" <%= filters.status === 'all' ? 'selected' : '' %>>Semua</option>
-                                    <option value="pending" <%= filters.status === 'pending' ? 'selected' : '' %>>Pending</option>
-                                    <option value="success" <%= filters.status === 'success' ? 'selected' : '' %>>Success</option>
-                                    <option value="failed" <%= filters.status === 'failed' ? 'selected' : '' %>>Failed</option>
-                                    <option value="expired" <%= filters.status === 'expired' ? 'selected' : '' %>>Expired</option>
-                                </select>
-                            </div>
-                            <div class="filter-group">
-                                <label class="form-label">Metode</label>
-                                <select name="metode" class="form-select">
-                                    <option value="all" <%= filters.metode === 'all' ? 'selected' : '' %>>Semua</option>
-                                    <option value="qris" <%= filters.metode === 'qris' ? 'selected' : '' %>>QRIS</option>
-                                    <option value="manual" <%= filters.metode === 'manual' ? 'selected' : '' %>>Manual</option>
-                                </select>
-                            </div>
-                            <div class="filter-group">
-                                <label class="form-label">Tanggal Mulai</label>
-                                <input type="date" name="startDate" class="form-input" value="<%= filters.startDate || '' %>">
-                            </div>
-                            <div class="filter-group">
-                                <label class="form-label">Tanggal Akhir</label>
-                                <input type="date" name="endDate" class="form-input" value="<%= filters.endDate || '' %>">
-                            </div>
-                            <div class="filter-group">
-                                <label class="form-label">User ID</label>
-                                <input type="number" name="user" class="form-input" placeholder="User ID" value="<%= filters.user || '' %>">
-                            </div>
-                            <div class="filter-group">
-                                <label class="form-label">Search</label>
-                                <input type="text" name="search" class="form-input" placeholder="Kode Deposit atau User ID" value="<%= filters.search || '' %>">
-                            </div>
-                        </div>
-                        <div class="form-actions">
-                            <button type="submit" class="btn btn-primary">🔍 Filter</button>
-                            <a href="/deposit" class="btn btn-secondary">🔄 Reset</a>
-                        </div>
-                    </form>
-                </div>
+            <div class="toolbar">
+                <form method="GET" action="/deposit" class="deposit-toolbar-form">
+                    <div class="filter-group">
+                        <label class="form-label">Status</label>
+                        <select name="status" class="form-select">
+                            <option value="all" <%= filters.status === 'all' ? 'selected' : '' %>>Semua</option>
+                            <option value="pending" <%= filters.status === 'pending' ? 'selected' : '' %>>Pending</option>
+                            <option value="success" <%= filters.status === 'success' ? 'selected' : '' %>>Success</option>
+                            <option value="failed" <%= filters.status === 'failed' ? 'selected' : '' %>>Failed</option>
+                            <option value="expired" <%= filters.status === 'expired' ? 'selected' : '' %>>Expired</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="form-label">Metode</label>
+                        <select name="metode" class="form-select">
+                            <option value="all" <%= filters.metode === 'all' ? 'selected' : '' %>>Semua</option>
+                            <option value="qris" <%= filters.metode === 'qris' ? 'selected' : '' %>>QRIS</option>
+                            <option value="manual" <%= filters.metode === 'manual' ? 'selected' : '' %>>Manual</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="form-label">Tanggal Mulai</label>
+                        <input type="date" name="startDate" class="form-input" value="<%= filters.startDate || '' %>">
+                    </div>
+                    <div class="filter-group">
+                        <label class="form-label">Tanggal Akhir</label>
+                        <input type="date" name="endDate" class="form-input" value="<%= filters.endDate || '' %>">
+                    </div>
+                    <div class="filter-group">
+                        <label class="form-label">User ID</label>
+                        <input type="number" name="user" class="form-input" placeholder="User ID" value="<%= filters.user || '' %>">
+                    </div>
+                    <div class="filter-group">
+                        <label class="form-label">Search</label>
+                        <input type="text" name="search" class="form-input" placeholder="Kode Deposit atau User ID" value="<%= filters.search || '' %>">
+                    </div>
+                    <div class="toolbar-spacer"></div>
+                    <button type="submit" class="btn btn-primary">Filter</button>
+                    <a href="/deposit" class="btn btn-secondary">Reset</a>
+                </form>
             </div>
 
             <!-- Pagination -->
@@ -274,14 +272,14 @@
                                             <td><%= d.metode === 'qris' ? '💳 QRIS' : '👤 Manual' %></td>
                                             <td>
                                                 <div class="table-actions deposit-row-actions">
-                                                    <a href="/deposit/<%= d.id %>" class="btn-icon" title="Detail">👁️</a>
+                                                    <a href="/deposit/<%= d.id %>" class="btn-icon" title="Detail"><svg class="icon" aria-hidden="true"><use href="#i-eye"></use></svg></a>
                                                     <% if (d.status === 'pending') { %>
                                                         <div class="deposit-approve-reject">
                                                             <form method="POST" action="/deposit/<%= d.id %>/approve" onsubmit="return confirm('Yakin approve deposit ini?')">
-                                                                <button type="submit" class="deposit-action-btn deposit-action-approve" title="Approve"><span aria-hidden="true">✅</span><span class="deposit-action-label"> Approve</span></button>
+                                                                <button type="submit" class="deposit-action-btn deposit-action-approve" title="Approve"><svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg><span class="deposit-action-label"> Approve</span></button>
                                                             </form>
                                                             <form method="POST" action="/deposit/<%= d.id %>/reject" onsubmit="return confirm('Yakin reject deposit ini?')">
-                                                                <button type="submit" class="deposit-action-btn deposit-action-reject" title="Reject"><span aria-hidden="true">❌</span><span class="deposit-action-label"> Reject</span></button>
+                                                                <button type="submit" class="deposit-action-btn deposit-action-reject" title="Reject"><svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg><span class="deposit-action-label"> Reject</span></button>
                                                             </form>
                                                         </div>
                                                     <% } %>

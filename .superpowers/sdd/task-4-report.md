@@ -1,116 +1,87 @@
-# Task 4 Report: Overview triage helpers + dashboard route rewrite
+# Task 4 Report: Purple purge (views + login)
 
 ## Status
 
-Complete.
-
-## Commits
-
-- `72e377a` - `feat(phase8): overview triage with batched stock summary`
+**DONE**
 
 ## Summary
 
-- Added `lib/dashboard-overview.js` with `summarizeStock`, `pickRecent`, and `buildOverviewModel`.
-- Added the exact `test/dashboard-overview.test.js` cases from the brief and verified RED before implementation.
-- Rewrote `GET /` in `dashboard.js` to load overview triage data instead of the old vanity stat grid data.
-- Dashboard stock summary uses one `stock.getStokCountsByKode(...)` call for all active variants; no per-variant stock count loop was added to `GET /`.
-- Dashboard route now loads pending deposits, active variants, product stock thresholds, today's WIB transactions, recent transactions, and active Bot Flow draft metadata.
-- Rewrote `views/dashboard.ejs` as a triage UI linking to `/deposit`, `/stok`, `/pricing`, `/transaksi`, and `/settings/bot-flow`.
+Removed all remaining purple hardcodes (`#667eea`, `#764ba2`) from `public/css/login.css` and 18 EJS view files, replacing them with teal accent tokens (`var(--color-accent)`, `#0F766E`, `#CCFBF1`, `#F1F5F9`).
+
+## Changes
+
+### `public/css/login.css`
+
+- Added local CSS custom properties (no `@import` of dashboard.css):
+  - `--color-bg: #F1F5F9`
+  - `--color-accent: #0F766E`
+  - `--color-accent-hover: #0D9488`
+  - `--color-accent-soft: #CCFBF1`
+- Replaced purple gradient body background with flat `--color-bg` plus soft teal radial wash
+- Updated heading color, input focus border, and login button to teal accent
+- Replaced purple `rgba(102, 126, 234, …)` focus/hover shadows with teal `rgba(15, 118, 110, …)`
+
+### Views (18 files)
+
+| File | Replacements |
+|------|-------------|
+| `voucher-form.ejs` | border-color, accent-color, text color (6 hits) |
+| `voucher-detail.ejs` | border-left, background buttons (4 hits) |
+| `communication-broadcast.ejs` | border-color, `.btn-primary` gradient → solid accent, outline button colors |
+| `communication-history.ejs` | stat-icon gradient → solid, border-color, pagination colors |
+| `communication-history-detail.ejs` | border-left accent |
+| `admin-audit-log.ejs` | link color, border-left |
+| `admin-users.ejs` | `.you-badge` color |
+| `admin-user-form.ejs` | accent-color on checkbox |
+| `settings-general.ejs` | toggle slider checked background |
+| `settings-payment-gateway.ejs` | toggle + info border-left |
+| `settings-supabase.ejs` | toggle + info border-left |
+| `settings-notifications.ejs` | toggle slider checked background |
+| `settings-channel-contact.ejs` | input focus border |
+| `deposit-detail.ejs` | info card border-left |
+| `transaksi-detail.ejs` | info card border-left |
+| `user-detail.ejs` | info card border-left |
+| `produk-stok-tambah.ejs` | inline border-left |
+| `produk-stok-edit.ejs` | inline border-left |
+
+All `#667eea` → `var(--color-accent)`. All purple gradients → solid `var(--color-accent)`. Purple rgba focus rings → teal rgba where present.
+
+Layout structure unchanged.
 
 ## Verification
 
-- `node --test test/dashboard-overview.test.js` failed RED before implementation with `MODULE_NOT_FOUND` for `../lib/dashboard-overview`.
-- `node --test test/dashboard-overview.test.js` passed after implementation: 3/3 subtests.
-- `node --test` passed: 69/69 subtests.
-- Render smoke check passed for `views/dashboard.ejs` with representative overview locals.
-- `rg` confirmed `views/dashboard.ejs` no longer references the old `stats`, `recentTransactions`, Chart.js, or `revenueChart` dashboard locals.
-- `rg` confirmed `views/dashboard.ejs` includes required links for `/deposit`, `/stok`, `/pricing`, `/transaksi`, and `/settings/bot-flow`.
-
-## Concerns
-
-- `/stok` and `/pricing` links intentionally remain present even though those routes may 404 until Task 5.
-- The full test run prints existing mocked cart database error logs, but exits 0 with all subtests passing.
-
-## Review Fix (design tokens + low-stock CTA)
-
-### What was fixed
-
-- Replaced hardcoded overview inline colors in `views/dashboard.ejs` with design tokens from `public/css/dashboard.css`:
-  - `#333` → `var(--color-text)`
-  - `#666` → `var(--color-muted)`
-  - `#777` → `var(--color-muted)`
-  - `#f0f0f0` → `var(--color-border)`
-  - `#ffc107` → `var(--color-warning)`
-- Updated Stok Rendah card CTA href from `/pricing` to `/stok`.
-
-### Commands run and output
+### Grep gate
 
 ```bash
-node --test test/dashboard-overview.test.js
+rg -n "667eea|764ba2" views public/css || echo OK
+# → OK (zero matches)
 ```
 
-```
-# tests 3
-# pass 3
-# fail 0
-```
+### Tests
 
 ```bash
 node --test
+# 71 tests, 71 pass, 0 fail
 ```
 
-```
-# tests 69
-# pass 69
-# fail 0
-```
+## Commit
 
-### Commit
+- **SHA:** `b098d65`
+- **Message:** `style(phase10): purge purple accents from login and page bodies`
+- **Branch:** `cursor/phase10-dashboard-style-5789` (pushed)
 
-- `1ff9f1f` - `fix(phase8): use design tokens on overview triage styles`
+## Self-review
 
-## Review Fix (Stok Rendah CTA label + todayTxnCount nullish coalesce)
+- Login page uses duplicated token vars per brief — no dashboard.css import
+- Authenticated views rely on `--color-accent` already defined in `dashboard.css` `:root`
+- `communication-broadcast.ejs` `.btn-primary:hover` still uses `rgba(102, 126, 234, 0.4)` — pre-existing purple-tinted shadow not caught by hex grep gate; cosmetic only, could be cleaned in a follow-up
+- No changes to `bot/index.js` or layout structure
+- Semantic greens/reds/yellows in stat cards left untouched
 
-### What was fixed
+## Concerns
 
-- Changed Stok Rendah card CTA button text from `Review Pricing` to `Buka Stok` (href remains `/stok`).
-- Out-of-stock card already used `Buka Stok`; no change needed there.
-- Changed `todayTrxResult.count || ...` to `todayTrxResult.count ?? ...` in `dashboard.js` GET `/` handler so a legitimate `0` count is preserved.
+None blocking. Minor follow-up: replace remaining purple-tinted `rgba(102, 126, 234, …)` in a few view hover shadows (e.g. `communication-broadcast.ejs`) if full rgba purge is desired beyond the hex gate.
 
-### Commands run and output
-
-```bash
-node --test test/dashboard-overview.test.js
-```
-
-```
-TAP version 13
-# Subtest: summarizeStock counts out-of-stock and low-stock
-ok 1 - summarizeStock counts out-of-stock and low-stock
-  ---
-  duration_ms: 0.59025
-  ...
-# Subtest: pickRecent limits and preserves order
-ok 2 - pickRecent limits and preserves order
-  ---
-  duration_ms: 0.525314
-  ...
-# Subtest: buildOverviewModel wires draft notice
-ok 3 - buildOverviewModel wires draft notice
-  ---
-  duration_ms: 0.263714
-  ...
-1..3
-# tests 3
-# suites 0
-# pass 3
-# fail 0
-# cancelled 0
-# skipped 0
-# todo 0
-# duration_ms 39.803435
-```
-
-### Commit
-
-- `04b1306` - `fix(phase8): correct stok triage CTA label`
+## Follow-up: purple rgba shadow
+Replaced `rgba(102, 126, 234, 0.4)` hover shadow in `communication-broadcast.ejs` with teal `rgba(15, 118, 110, 0.35)`.
+`node --test`: 71/71.

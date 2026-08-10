@@ -1,7 +1,9 @@
 <div class="top-bar">
   <% const safeTopbarExtra = typeof topbarExtra !== 'undefined' ? topbarExtra : '' %>
   <div class="top-bar-left">
-    <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+    <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">
+      <svg class="icon" aria-hidden="true"><use href="#i-menu"></use></svg>
+    </button>
     <h1 class="page-title"><%= typeof pageTitle !== 'undefined' ? pageTitle : title %></h1>
   </div>
   <div class="top-bar-right">

@@ -22,10 +22,18 @@
     </td>
     <td data-label="Aksi">
         <div class="table-actions variant-actions">
-            <a href="/produk/<%= produk.id %>/varian/<%= variant.id %>/stok" class="btn-icon" title="Kelola stok">📦</a>
-            <button type="button" class="btn-icon variant-move-up" title="Naik">▲</button>
-            <button type="button" class="btn-icon variant-move-down" title="Turun">▼</button>
-            <button type="button" class="btn-icon variant-delete" title="Hapus varian" style="color:#dc3545;">🗑️</button>
+            <a href="/produk/<%= produk.id %>/varian/<%= variant.id %>/stok" class="btn-icon" title="Kelola stok">
+                <svg class="icon" aria-hidden="true"><use href="#i-package"></use></svg>
+            </a>
+            <button type="button" class="btn-icon variant-move-up" title="Naik">
+                <svg class="icon" aria-hidden="true"><use href="#i-chevron-up"></use></svg>
+            </button>
+            <button type="button" class="btn-icon variant-move-down" title="Turun">
+                <svg class="icon" aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+            </button>
+            <button type="button" class="btn-icon variant-delete" title="Hapus varian" style="color:#dc3545;">
+                <svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg>
+            </button>
         </div>
     </td>
 </tr>

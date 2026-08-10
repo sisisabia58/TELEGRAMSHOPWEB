@@ -4,33 +4,24 @@
     const outOfStock = model.outOfStock || [];
     const lowStock = model.lowStock || [];
     const recentTxns = model.recentTxns || [];
+    breadcrumbs = [
+        { label: 'Home', href: '/' },
+        { label: 'Overview' }
+    ];
+    const dashboardHeaderActions = `
+        <a href="/deposit" class="btn btn-primary">Cek Deposit</a>
+        <a href="/stok" class="btn btn-warning">Cek Stok</a>
+        <a href="/settings/bot-flow" class="btn btn-secondary">Bot Flow</a>
+    `;
 %>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <%- include('partials/head') %>
     <style>
-        .overview-hero {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 16px;
-            flex-wrap: wrap;
-            margin-bottom: 20px;
-        }
-        .overview-title h1 {
-            margin: 0 0 6px;
-            font-size: 28px;
-            color: var(--color-text);
-        }
-        .overview-title p {
-            margin: 0;
+        .overview-subtitle {
+            margin: 0 0 20px;
             color: var(--color-muted);
-        }
-        .overview-actions {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
         }
         .triage-grid {
             display: grid;
@@ -42,19 +33,13 @@
             display: flex;
             flex-direction: column;
             gap: 14px;
-            min-height: 180px;
+            min-height: 160px;
         }
         .triage-card .card-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             gap: 12px;
-        }
-        .triage-count {
-            font-size: 32px;
-            font-weight: 700;
-            line-height: 1;
-            color: var(--color-text);
         }
         .triage-copy {
             color: var(--color-muted);
@@ -108,9 +93,23 @@
             gap: 12px;
             flex-wrap: wrap;
         }
+        .overview-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .metric-tile .value.warning { color: var(--color-warning); }
+        .metric-tile .value.danger { color: var(--color-danger); }
+        .metric-tile .value.success { color: var(--color-success); }
+        .metric-tile .sub {
+            font-size: 12px;
+            color: var(--color-muted);
+            margin-top: 4px;
+        }
         @media (max-width: 768px) {
-            .overview-actions .btn,
-            .triage-card .btn {
+            .page-header-actions .btn,
+            .triage-card .btn,
+            .overview-actions .btn {
                 width: 100%;
                 text-align: center;
             }
@@ -126,17 +125,8 @@
         <%- include('partials/topbar') %>
 
         <div class="container">
-            <div class="overview-hero">
-                <div class="overview-title">
-                    <h1>Overview Triage</h1>
-                    <p>Prioritas operasional hari ini untuk deposit, stok, harga, transaksi, dan alur bot.</p>
-                </div>
-                <div class="overview-actions">
-                    <a href="/deposit" class="btn btn-primary">Cek Deposit</a>
-                    <a href="/stok" class="btn btn-warning">Cek Stok</a>
-                    <a href="/settings/bot-flow" class="btn btn-secondary">Bot Flow</a>
-                </div>
-            </div>
+            <%- include('partials/page-header', { breadcrumbs: breadcrumbs, pageHeaderActions: dashboardHeaderActions }) %>
+            <p class="overview-subtitle">Prioritas operasional hari ini untuk deposit, stok, harga, transaksi, dan alur bot.</p>
 
             <% if (model.draftNotice) { %>
                 <div class="card notice-card">
@@ -148,6 +138,29 @@
                 </div>
             <% } %>
 
+            <div class="metric-strip">
+                <div class="metric-tile">
+                    <div class="label">Deposit Pending</div>
+                    <div class="value <%= pendingDeposits.length ? 'warning' : 'success' %>"><%= pendingDeposits.length %></div>
+                    <div class="sub"><%= pendingDeposits.length ? 'Butuh cek' : 'Aman' %></div>
+                </div>
+                <div class="metric-tile">
+                    <div class="label">Stok Habis</div>
+                    <div class="value <%= outOfStock.length ? 'danger' : 'success' %>"><%= outOfStock.length %></div>
+                    <div class="sub"><%= outOfStock.length ? 'Varian tanpa stok' : 'Aman' %></div>
+                </div>
+                <div class="metric-tile">
+                    <div class="label">Stok Rendah</div>
+                    <div class="value <%= lowStock.length ? 'warning' : 'success' %>"><%= lowStock.length %></div>
+                    <div class="sub"><%= lowStock.length ? 'Perlu isi' : 'Aman' %></div>
+                </div>
+                <div class="metric-tile">
+                    <div class="label">Transaksi Hari Ini</div>
+                    <div class="value"><%= model.todayTxnCount || 0 %></div>
+                    <div class="sub">Revenue: <%= formatrupiah(model.todayRevenue || 0) %></div>
+                </div>
+            </div>
+
             <div class="triage-grid">
                 <div class="card triage-card">
                     <div class="card-header">
@@ -157,7 +170,6 @@
                         </span>
                     </div>
                     <div class="card-body">
-                        <div class="triage-count"><%= pendingDeposits.length %></div>
                         <p class="triage-copy">Deposit menunggu approval atau rekonsiliasi.</p>
                         <% if (pendingDeposits.length) { %>
                             <ul class="triage-list">
@@ -184,7 +196,6 @@
                         </span>
                     </div>
                     <div class="card-body">
-                        <div class="triage-count"><%= outOfStock.length %></div>
                         <p class="triage-copy">Varian aktif yang tidak punya stok tersedia.</p>
                         <% if (outOfStock.length) { %>
                             <ul class="triage-list">
@@ -211,7 +222,6 @@
                         </span>
                     </div>
                     <div class="card-body">
-                        <div class="triage-count"><%= lowStock.length %></div>
                         <p class="triage-copy">Varian aktif di bawah atau sama dengan threshold.</p>
                         <% if (lowStock.length) { %>
                             <ul class="triage-list">
@@ -236,7 +246,6 @@
                         <span class="badge badge-info">WIB</span>
                     </div>
                     <div class="card-body">
-                        <div class="triage-count"><%= model.todayTxnCount || 0 %></div>
                         <p class="triage-copy">Revenue hari ini: <strong><%= formatrupiah(model.todayRevenue || 0) %></strong></p>
                         <a href="/transaksi" class="btn btn-primary" style="margin-top: 14px;">Buka Transaksi</a>
                     </div>
