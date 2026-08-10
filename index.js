@@ -4277,7 +4277,6 @@ Belum ada transaksi untuk produk ini.
 }
 
 // Handler untuk menu edit stok (owner only)
-// Handler untuk callback "addstok" dari tombol
 if (cmd === "batalvoucher") {
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
