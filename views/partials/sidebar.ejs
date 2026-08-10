@@ -2,62 +2,124 @@
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-header">
     <h2><%= typeof namaBot !== 'undefined' ? namaBot : 'Dashboard' %></h2>
-    <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+    <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">
+      <svg class="icon" aria-hidden="true"><use href="#i-menu"></use></svg>
+    </button>
   </div>
 
   <div class="nav-group open" data-section="overview">
     <button type="button" class="nav-group-toggle">Overview</button>
     <div class="nav-group-items">
-      <a href="/" class="nav-item <%= activePage === 'dashboard' ? 'active' : '' %>">Home</a>
+      <a href="/" class="nav-item <%= activePage === 'dashboard' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg>
+        <span>Home</span>
+      </a>
     </div>
   </div>
 
   <div class="nav-group open" data-section="catalog">
     <button type="button" class="nav-group-toggle">Catalog</button>
     <div class="nav-group-items">
-      <a href="/produk" class="nav-item <%= activePage === 'produk' ? 'active' : '' %>">Products</a>
-      <a href="/stok" class="nav-item <%= activePage === 'stok' ? 'active' : '' %>">Stock</a>
-      <a href="/pricing" class="nav-item <%= activePage === 'pricing' ? 'active' : '' %>">Pricing</a>
-      <a href="/bulk" class="nav-item <%= activePage === 'bulk' ? 'active' : '' %>">Bulk Import</a>
+      <a href="/produk" class="nav-item <%= activePage === 'produk' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-box"></use></svg>
+        <span>Products</span>
+      </a>
+      <a href="/stok" class="nav-item <%= activePage === 'stok' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-layers"></use></svg>
+        <span>Stock</span>
+      </a>
+      <a href="/pricing" class="nav-item <%= activePage === 'pricing' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-tag"></use></svg>
+        <span>Pricing</span>
+      </a>
+      <a href="/bulk" class="nav-item <%= activePage === 'bulk' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-upload"></use></svg>
+        <span>Bulk Import</span>
+      </a>
     </div>
   </div>
 
   <div class="nav-group open" data-section="bot">
     <button type="button" class="nav-group-toggle">Bot</button>
     <div class="nav-group-items">
-      <a href="/settings/bot-flow" class="nav-item <%= activePage === 'settings-bot-flow' ? 'active' : '' %>">Flow Builder</a>
-      <a href="/settings/bot-copy" class="nav-item <%= activePage === 'settings-bot-copy' ? 'active' : '' %>">Copy &amp; Text</a>
-      <a href="/communication/broadcast" class="nav-item <%= activePage === 'communication' ? 'active' : '' %>">Broadcast</a>
-      <a href="/communication/templates" class="nav-item <%= activePage === 'communication' ? 'active' : '' %>">Templates</a>
+      <a href="/settings/bot-flow" class="nav-item <%= activePage === 'settings-bot-flow' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-git-branch"></use></svg>
+        <span>Flow Builder</span>
+      </a>
+      <a href="/settings/bot-copy" class="nav-item <%= activePage === 'settings-bot-copy' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-file-text"></use></svg>
+        <span>Copy &amp; Text</span>
+      </a>
+      <a href="/communication/broadcast" class="nav-item <%= activePage === 'communication' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-megaphone"></use></svg>
+        <span>Broadcast</span>
+      </a>
+      <a href="/communication/templates" class="nav-item <%= activePage === 'communication' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-file-text"></use></svg>
+        <span>Templates</span>
+      </a>
     </div>
   </div>
 
   <div class="nav-group open" data-section="customers">
     <button type="button" class="nav-group-toggle">Customers</button>
     <div class="nav-group-items">
-      <a href="/user" class="nav-item <%= activePage === 'user' ? 'active' : '' %>">Users</a>
-      <a href="/deposit" class="nav-item <%= activePage === 'deposit' ? 'active' : '' %>">Deposits</a>
-      <a href="/transaksi" class="nav-item <%= activePage === 'transaksi' ? 'active' : '' %>">Transactions</a>
-      <a href="/voucher" class="nav-item <%= activePage === 'voucher' ? 'active' : '' %>">Vouchers</a>
+      <a href="/user" class="nav-item <%= activePage === 'user' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-users"></use></svg>
+        <span>Users</span>
+      </a>
+      <a href="/deposit" class="nav-item <%= activePage === 'deposit' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-wallet"></use></svg>
+        <span>Deposits</span>
+      </a>
+      <a href="/transaksi" class="nav-item <%= activePage === 'transaksi' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-receipt"></use></svg>
+        <span>Transactions</span>
+      </a>
+      <a href="/voucher" class="nav-item <%= activePage === 'voucher' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-ticket"></use></svg>
+        <span>Vouchers</span>
+      </a>
     </div>
   </div>
 
   <div class="nav-group open" data-section="insights">
     <button type="button" class="nav-group-toggle">Insights</button>
     <div class="nav-group-items">
-      <a href="/analitik" class="nav-item <%= activePage === 'analitik' ? 'active' : '' %>">Analytics</a>
-      <a href="/laporan" class="nav-item <%= activePage === 'laporan' ? 'active' : '' %>">Reports</a>
+      <a href="/analitik" class="nav-item <%= activePage === 'analitik' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-chart"></use></svg>
+        <span>Analytics</span>
+      </a>
+      <a href="/laporan" class="nav-item <%= activePage === 'laporan' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-clipboard"></use></svg>
+        <span>Reports</span>
+      </a>
     </div>
   </div>
 
   <div class="nav-group open" data-section="system">
     <button type="button" class="nav-group-toggle">System</button>
     <div class="nav-group-items">
-      <a href="/settings/general" class="nav-item <%= activePage === 'settings-general' ? 'active' : '' %>">General</a>
-      <a href="/settings/channel-contact" class="nav-item <%= activePage === 'settings-channel-contact' ? 'active' : '' %>">Channel &amp; Contact</a>
-      <a href="/settings/payment-gateway" class="nav-item <%= activePage === 'settings-payment-gateway' ? 'active' : '' %>">Payment Gateway</a>
-      <a href="/settings/supabase" class="nav-item <%= activePage === 'settings-supabase' ? 'active' : '' %>">Supabase</a>
-      <a href="/settings/notifications" class="nav-item <%= activePage === 'settings-notifications' ? 'active' : '' %>">Notifications</a>
+      <a href="/settings/general" class="nav-item <%= activePage === 'settings-general' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg>
+        <span>General</span>
+      </a>
+      <a href="/settings/channel-contact" class="nav-item <%= activePage === 'settings-channel-contact' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg>
+        <span>Channel &amp; Contact</span>
+      </a>
+      <a href="/settings/payment-gateway" class="nav-item <%= activePage === 'settings-payment-gateway' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg>
+        <span>Payment Gateway</span>
+      </a>
+      <a href="/settings/supabase" class="nav-item <%= activePage === 'settings-supabase' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg>
+        <span>Supabase</span>
+      </a>
+      <a href="/settings/notifications" class="nav-item <%= activePage === 'settings-notifications' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg>
+        <span>Notifications</span>
+      </a>
     </div>
   </div>
 
@@ -65,9 +127,18 @@
   <div class="nav-group open" data-section="admin">
     <button type="button" class="nav-group-toggle">Admin</button>
     <div class="nav-group-items">
-      <a href="/admin/users" class="nav-item <%= activePage === 'admin-users' ? 'active' : '' %>">Admin Users</a>
-      <a href="/admin/login-history" class="nav-item <%= activePage === 'admin-login' ? 'active' : '' %>">Login History</a>
-      <a href="/admin/audit-log" class="nav-item <%= activePage === 'admin-audit' ? 'active' : '' %>">Audit Log</a>
+      <a href="/admin/users" class="nav-item <%= activePage === 'admin-users' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-shield"></use></svg>
+        <span>Admin Users</span>
+      </a>
+      <a href="/admin/login-history" class="nav-item <%= activePage === 'admin-login' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-shield"></use></svg>
+        <span>Login History</span>
+      </a>
+      <a href="/admin/audit-log" class="nav-item <%= activePage === 'admin-audit' ? 'active' : '' %>">
+        <svg class="icon" aria-hidden="true"><use href="#i-clipboard"></use></svg>
+        <span>Audit Log</span>
+      </a>
     </div>
   </div>
   <% } %>
