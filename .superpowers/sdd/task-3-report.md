@@ -59,3 +59,30 @@ node --test
 node --test
 # 71/71 pass
 ```
+
+## Review4 fix: pageHeaderActions leak + list chrome emoji
+
+**Commit:** `bcb6624` — `fix(phase10): scope page-header actions and strip list chrome emoji`
+
+**Changes:**
+- All six Task 3 pages pass `pageHeaderActions` explicitly via `include('partials/page-header', { breadcrumbs, pageHeaderActions })`; non-dashboard pages pass `''`.
+- Dashboard passes actions only in the include data object (`dashboardHeaderActions` const), not as a parent local assignment.
+- Added `i-eye`, `i-check`, `i-x` to `views/partials/icons.ejs`.
+- Replaced interactive chrome emoji: produk search (`#i-search`), stok Kelola stok (`#i-package`), deposit detail/approve/reject (`#i-eye`, `#i-check`, `#i-x`), transaksi detail (`#i-eye`).
+
+**Verification:**
+
+```bash
+node --test
+# 71/71 pass
+```
+
+**EJS leak smoke (same locals object, dashboard actions then produk empty):**
+
+```
+Dashboard render has actions: true
+Produk render has page-header-actions: false
+LEAK TEST: PASS
+```
+
+**Concerns:** Deposit status badges and metode column still use decorative emoji in badge/label text (e.g. `✅ Success`, `💳 QRIS`); out of scope per review.
