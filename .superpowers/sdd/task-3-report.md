@@ -37,7 +37,21 @@ node --test
 - Search field remains visible on ≤768px when filters are collapsed
 - Advanced filters + Terapkan/Reset collapse behind toggle button
 - CSS targets `#filterCard` / `.filter-body` (removed orphaned `.filter-card` rules)
-- Desktop uses `display: contents` on `.filter-body` so inline toolbar layout unchanged
+**Verification:**
+
+```bash
+node --test
+# 71/71 pass
+```
+
+## Transaksi filter emoji fix (review3 follow-up)
+
+**Commit:** `ba8db9e` — `fix(phase10): replace transaksi filter emoji with SVG icons`
+
+**Change:**
+- Added `i-search` and `i-filter` symbols to `views/partials/icons.ejs` (24×24 line icons, `stroke="currentColor"`).
+- Replaced search field emoji (`<span class="search-icon">🔍</span>`) with `<svg class="icon"><use href="#i-search"></use></svg>`.
+- Replaced mobile filter-toggle emoji with `<svg class="icon"><use href="#i-filter"></use></svg>` (funnel icon, semantically correct for filter).
 
 **Verification:**
 
