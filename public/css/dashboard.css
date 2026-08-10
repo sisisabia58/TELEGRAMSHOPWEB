@@ -4,8 +4,6 @@
     box-sizing: border-box;
 }
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-
 :root {
   --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
   --color-bg: #F1F5F9;
@@ -1023,6 +1021,11 @@ input:checked + .slider:before {
 .badge-primary {
     background: #cfe2ff;
     color: #084298;
+}
+
+.badge-secondary {
+    background: var(--color-muted);
+    color: #fff;
 }
 
 /* Status Badges (for audit log and similar) */
