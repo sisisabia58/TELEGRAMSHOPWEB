@@ -24,7 +24,7 @@
 | 7 — Bot command retirement | [2026-08-09-bot-command-retirement.md](./2026-08-09-bot-command-retirement.md) | **Done** |
 | 8 — Dashboard IA + mobile + UI modernization | [2026-08-09-dashboard-ia-mobile.md](./2026-08-09-dashboard-ia-mobile.md) | **Done** |
 | 9 — Copy err/btn | [2026-08-09-copy-err-btn.md](./2026-08-09-copy-err-btn.md) | **Done** |
-| 10 — Dashboard style polish (Semrush-inspired) | [2026-08-10-dashboard-style-polish.md](./2026-08-10-dashboard-style-polish.md) | Not started (plan ready) |
+| 10 — Dashboard style polish (Semrush-inspired) | [2026-08-10-dashboard-style-polish.md](./2026-08-10-dashboard-style-polish.md) | **Done** |
 
 ## Why separate plans
 
