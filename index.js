@@ -401,7 +401,7 @@ async function showVariantQtyScreen(userId, msgId, varian) {
     reply_markup: {
       inline_keyboard: [
         [{ text: `${item.namaLabel} (${stokCount})`, callback_data: 'lanjut' }],
-        [{ text: '🔙 Kembali', callback_data: 'daftarproduk' }],
+        [{ text: copy.get('btn.kembali'), callback_data: 'daftarproduk' }],
       ],
     },
   })
@@ -549,17 +549,17 @@ ${filterOptions.periodLabel ? `📅 *Periode:* ${filterOptions.periodLabel}` : '
   
   // Navigation buttons
   const navButtons = []
-  if (page > 0) navButtons.push({ text: '⏪ Prev', callback_data: `prev:${page}_${filterOptions.filterKey || 'all'}` });
-  if (page < totalPages - 1) navButtons.push({ text: 'Next ⏩', callback_data: `next:${page}_${filterOptions.filterKey || 'all'}` })
+  if (page > 0) navButtons.push({ text: copy.get('btn.prev'), callback_data: `prev:${page}_${filterOptions.filterKey || 'all'}` });
+  if (page < totalPages - 1) navButtons.push({ text: copy.get('btn.next'), callback_data: `next:${page}_${filterOptions.filterKey || 'all'}` })
   if (navButtons.length > 0) buttons.push(navButtons)
   
   // Filter & Statistik buttons
   buttons.push([
-    { text: "🔍 Filter", callback_data: "riwayat_filter" },
-    { text: "📊 Statistik", callback_data: "riwayat_statistik" }
+    { text: copy.get('btn.filter'), callback_data: "riwayat_filter" },
+    { text: copy.get('btn.statistik'), callback_data: "riwayat_statistik" }
   ])
   
-  buttons.push([{text: "🔙 Kembali", callback_data: "kembaliawal"}])
+  buttons.push([{text: copy.get('btn.kembali'), callback_data: "kembaliawal"}])
 
   const reply_markup = { inline_keyboard: buttons };
 
@@ -1163,7 +1163,7 @@ Scan QRIS diatas untuk melakukan pembayaran.`
         contentType: 'image/png',
         reply_markup: {
           inline_keyboard: [
-            [{text: "❌ Batal", callback_data: `bataldeposit_${uniq}`}]
+            [{text: copy.get('btn.batal'), callback_data: `bataldeposit_${uniq}`}]
           ]
         }
       });
@@ -1371,16 +1371,16 @@ ${filterOptions.statusLabel ? `📌 Filter: *${filterOptions.statusLabel}*` : ''
   
   // Navigation buttons
   const navButtons = []
-  if (page > 0) navButtons.push({ text: '⏪ Prev', callback_data: `user_prev:${page}_${filterOptions.filterKey || 'all'}` })
-  if (page < totalPages - 1) navButtons.push({ text: 'Next ⏩', callback_data: `user_next:${page}_${filterOptions.filterKey || 'all'}` })
+  if (page > 0) navButtons.push({ text: copy.get('btn.prev'), callback_data: `user_prev:${page}_${filterOptions.filterKey || 'all'}` })
+  if (page < totalPages - 1) navButtons.push({ text: copy.get('btn.next'), callback_data: `user_next:${page}_${filterOptions.filterKey || 'all'}` })
   if (navButtons.length > 0) buttons.push(navButtons)
   
   // Filter & Sort buttons
   buttons.push([
-    { text: "🔍 Filter", callback_data: "user_filter" }
+    { text: copy.get('btn.filter'), callback_data: "user_filter" }
   ])
   
-  buttons.push([{ text: "🔙 Kembali", callback_data: "kembaliawal" }])
+  buttons.push([{ text: copy.get('btn.kembali'), callback_data: "kembaliawal" }])
 
   const reply_markup = { inline_keyboard: buttons }
 
@@ -1515,7 +1515,7 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
   if (items.length === 0) {
     buttons.push([
       { text: '🔄 Reset Filter', callback_data: 'daftarproduk' },
-      { text: '🔙 Kembali', callback_data: 'kembaliawal' },
+      { text: copy.get('btn.kembali'), callback_data: 'kembaliawal' },
     ])
   } else {
     let entryRow = []
@@ -1545,11 +1545,11 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
     if (navButtons.length > 0) buttons.push(navButtons)
 
     if (filterOptions.filterKey === 'bestseller') {
-      buttons.push([{ text: '📦 Semua Produk', callback_data: 'daftarproduk' }])
+      buttons.push([{ text: copy.get('btn.semua_produk'), callback_data: 'daftarproduk' }])
     } else {
-      buttons.push([{ text: '🔥 PRODUK POPULER', callback_data: 'produk_filter_bestseller' }])
+      buttons.push([{ text: copy.get('btn.populer'), callback_data: 'produk_filter_bestseller' }])
     }
-    buttons.push([{ text: '🔙 Kembali', callback_data: 'kembaliawal' }])
+    buttons.push([{ text: copy.get('btn.kembali'), callback_data: 'kembaliawal' }])
   }
 
   const reply_markup = { inline_keyboard: buttons }
@@ -1728,9 +1728,9 @@ bot.onText(/\/saldo/, async (msg) => {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
-        [{text: "💳 Top Up Saldo", callback_data: "deposit_menu"}],
-        [{text: "📋 Riwayat Deposit", callback_data: "riwayatdeposit"}],
-        [{text: "🔙 Menu Utama", callback_data: "kembaliawal"}]
+        [{text: copy.get('btn.top_up'), callback_data: "deposit_menu"}],
+        [{text: copy.get('btn.riwayat_deposit'), callback_data: "riwayatdeposit"}],
+        [{text: copy.get('btn.kembali_menu'), callback_data: "kembaliawal"}]
       ]
     }
   })
@@ -1766,7 +1766,7 @@ bot.onText(/\/deposit/, async (msg) => {
             { text: "Rp 100.000", callback_data: "deposit_preset:100000" }
           ],
           [
-            { text: "⌨️ Custom Nominal", callback_data: "deposit_custom" }
+            { text: copy.get('btn.deposit_custom'), callback_data: "deposit_custom" }
           ]
         ]
       }
@@ -1820,7 +1820,7 @@ Status: *${dep.status.toUpperCase()}*
     reply_markup: {
       inline_keyboard: [
         [{text: "💳 Top Up Lagi", callback_data: "deposit_menu"}],
-        [{text: "🔙 Menu Utama", callback_data: "kembaliawal"}]
+        [{text: copy.get('btn.kembali_menu'), callback_data: "kembaliawal"}]
       ]
     }
   })
@@ -1991,8 +1991,8 @@ bot.onText(/\/stok/, async (msg) => {
     
     // Filter buttons
     buttons.push([
-      { text: "🔍 Filter", callback_data: "stok_filter" },
-      { text: "📊 Statistik", callback_data: "stok_statistik" }
+      { text: copy.get('btn.filter'), callback_data: "stok_filter" },
+      { text: copy.get('btn.statistik'), callback_data: "stok_statistik" }
     ])
     
     // Product buttons (first 6 products, 2 per row)
@@ -2013,14 +2013,7 @@ bot.onText(/\/stok/, async (msg) => {
     }
     buttons.push(...productRows)
     
-    // Action buttons (only for owner)
-    if (msg.from.id === OwnerID) {
-      buttons.push([
-        { text: "➕ Tambah Stok", callback_data: "addstok" },
-      ])
-    }
-    
-    buttons.push([{ text: "🔙 Kembali", callback_data: "kembaliawal" }])
+    buttons.push([{ text: copy.get('btn.kembali'), callback_data: "kembaliawal" }])
     
     await bot.sendMessage(msg.from.id, tx, {
       parse_mode: "Markdown",
@@ -2072,7 +2065,7 @@ async function openProductList(query) {
       parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: [
-          [{ text: '🔙 Kembali', callback_data: 'kembaliawal' }],
+          [{ text: copy.get('btn.kembali'), callback_data: 'kembaliawal' }],
         ],
       },
     })
@@ -2146,8 +2139,8 @@ Pilih kategori produk yang ingin dilihat:
   })
 
   buttons.push(...kategoriButtons)
-  buttons.push([{ text: '📦 Semua Produk', callback_data: 'daftarproduk' }])
-  buttons.push([{ text: '🔙 Kembali', callback_data: 'kembaliawal' }])
+  buttons.push([{ text: copy.get('btn.semua_produk'), callback_data: 'daftarproduk' }])
+  buttons.push([{ text: copy.get('btn.kembali'), callback_data: 'kembaliawal' }])
 
   await bot.answerCallbackQuery(query.id)
   await editOrSendBannerMessage(query.from.id, query.message.message_id, text, {
@@ -2218,8 +2211,8 @@ async function openStokBuyer(query) {
 
   const buttons = []
   buttons.push([
-    { text: '🔍 Filter', callback_data: 'stok_filter' },
-    { text: '📊 Statistik', callback_data: 'stok_statistik' },
+    { text: copy.get('btn.filter'), callback_data: 'stok_filter' },
+    { text: copy.get('btn.statistik'), callback_data: 'stok_statistik' },
   ])
 
   const productRows = []
@@ -2239,13 +2232,7 @@ async function openStokBuyer(query) {
   }
   buttons.push(...productRows)
 
-  if (query.from.id === OwnerID) {
-    buttons.push([
-      { text: '➕ Tambah Stok', callback_data: 'addstok' },
-    ])
-  }
-
-  buttons.push([{ text: '🔙 Kembali', callback_data: 'kembaliawal' }])
+  buttons.push([{ text: copy.get('btn.kembali'), callback_data: 'kembaliawal' }])
 
   await bot.answerCallbackQuery(query.id)
   await bot.sendMessage(query.from.id, tx, {
@@ -2411,7 +2398,7 @@ Silakan ketik \`/deposit <jumlah>\` untuk melakukan top up saldo dengan nominal 
       parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: [
-          [{ text: '🔙 Kembali ke Tahun', callback_data: `tahun_${tahun}` }]
+          [{ text: copy.get('btn.kembali'), callback_data: `tahun_${tahun}` }]
         ]
       }
     })
@@ -2485,7 +2472,7 @@ Silakan ketik \`/deposit <jumlah>\` untuk melakukan top up saldo dengan nominal 
         reply_markup: {
           inline_keyboard: [
             [{ text: "💰 Deposit Saldo", callback_data: "saldomenu" }],
-            [{ text: "🔙 Kembali", callback_data: "kembaliawal" }]
+            [{ text: copy.get('btn.kembali'), callback_data: "kembaliawal" }]
           ]
         }
       })
@@ -2567,7 +2554,7 @@ Anda sekarang terdaftar dalam whitelist produk *${kode.toUpperCase()}*.
       reply_markup: {
         inline_keyboard: [
           [{ text: "📦 Beli Produk", callback_data: `item:${kode}` }],
-          [{ text: "🔙 Kembali", callback_data: "kembaliawal" }]
+          [{ text: copy.get('btn.kembali'), callback_data: "kembaliawal" }]
         ]
       }
     })
@@ -2592,7 +2579,7 @@ if (cmd.startsWith('item:')) {
       } else {
         buttons.push([{text: "💰 Deposit Saldo", callback_data: "saldomenu"}])
       }
-      buttons.push([{text: "🔙 Kembali", callback_data: "kembaliawal"}])
+      buttons.push([{text: copy.get('btn.kembali'), callback_data: "kembaliawal"}])
       
       await bot.sendMessage(query.from.id, `🔒 Produk Eksklusif
 
@@ -2659,7 +2646,7 @@ Current Date: ${formattedTime}`, {
         reply_markup: {
           inline_keyboard: [
             [{text: `${item.namaLabel} (${stokCount})`, callback_data: "lanjut"}],
-            [{text: "🔙 Kembali", callback_data: "daftarproduk"}]
+            [{text: copy.get('btn.kembali'), callback_data: "daftarproduk"}]
           ]
         }
       })
@@ -2684,7 +2671,7 @@ if (cmd === "lanjut") {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{text: "🔙 Kembali", callback_data: "kembaliawal"}]
+            [{text: copy.get('btn.kembali'), callback_data: "kembaliawal"}]
           ]
         }
       })
@@ -3121,8 +3108,8 @@ Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
       {text: "+25", callback_data: "plus:25"},
       {text: "+50", callback_data: "plus:50"},
       ],
-      [{text: "🔄 Reset", callback_data: "reset"}],
-          [{text: "🔙 Kembali", callback_data: "kembaliawal"}, {text: "✅ Konfirmasi", callback_data: "konfirmasi"}]
+      [{text: copy.get('btn.reset'), callback_data: "reset"}],
+          [{text: copy.get('btn.kembali'), callback_data: "kembaliawal"}, {text: copy.get('btn.konfirmasi'), callback_data: "konfirmasi"}]
       ]
   },
   chat_id: query.message.chat.id,
@@ -3165,7 +3152,7 @@ if (cmd === "konfirmasi") {
           return await sendMessage(query.from.id, copy.get('err.stock_selection_unavailable'), {
             reply_markup: {
               inline_keyboard: [
-                [{text: "🔙 Kembali Pilih Stok", callback_data: "lanjut"}]
+                [{text: copy.get('btn.kembali_pilih_stok'), callback_data: "lanjut"}]
               ]
             }
           })
@@ -3306,16 +3293,16 @@ ${item.snk.length > 100 ? item.snk.substring(0, 100) + '...' : item.snk}
       
       // Edit options
       keyboard.push([
-        { text: "✏️ Edit Pilihan Stok", callback_data: "lanjut" }
+        { text: copy.get('btn.edit_stok'), callback_data: "lanjut" }
       ])
       
       // Payment method selection
-      keyboard.push([{ text: "💳 Lanjut ke Pembayaran", callback_data: "pilih_payment_method" }])
+      keyboard.push([{ text: copy.get('btn.lanjut_bayar'), callback_data: "pilih_payment_method" }])
       
       // Secondary actions
       keyboard.push([
-        { text: "❌ Batal Pesanan", callback_data: "batal_pesanan" },
-        { text: "💬 Hubungi CS", url: channelContact.cs }
+        { text: copy.get('btn.batal_pesanan'), callback_data: "batal_pesanan" },
+        { text: copy.get('btn.hubungi_cs'), url: channelContact.cs }
       ])
       
       // Enforce photo caption limit (1024 chars)
@@ -3382,14 +3369,14 @@ ${userSaldo >= totalBayar ? `✅ *Saldo Setelah:* ${formatrupiah(saldoSetelah)}`
 ✅ Saldo mencukupi
 💵 Sisa saldo: ${formatrupiah(saldoSetelah)}
 ⚡ Instant, tanpa fee`
-        keyboard.push([{ text: "💰 Bayar Pakai Saldo", callback_data: "bayarsaldo" }])
+        keyboard.push([{ text: copy.get('btn.bayar_saldo'), callback_data: "bayarsaldo" }])
       } else {
         paymentText += `\n1️⃣ *💰 BAYAR PAKAI SALDO*
 ⚠️ Saldo tidak mencukupi
 💸 Kurang: ${formatrupiah(totalBayar - userSaldo)}
 💡 Top up saldo terlebih dahulu`
         keyboard.push([
-          { text: "💰 Top Up Saldo", callback_data: "deposit_menu" },
+          { text: copy.get('btn.top_up'), callback_data: "deposit_menu" },
           { text: "💵 Saldo: " + formatrupiah(userSaldo), callback_data: "cek_saldo" }
         ])
       }
@@ -3399,7 +3386,7 @@ ${userSaldo >= totalBayar ? `✅ *Saldo Setelah:* ${formatrupiah(saldoSetelah)}`
 💸 Fee: Tergantung provider (~Rp 2.500-5.000)
 ⏰ Expired: 10 menit
 📱 Scan QR untuk bayar`
-      keyboard.push([{ text: "💳 Bayar QRIS", callback_data: "bayar" }])
+      keyboard.push([{ text: copy.get('btn.bayar_qris'), callback_data: "bayar" }])
       
       // Voucher options (if available)
       if (availableVouchers.length > 0) {
@@ -3409,14 +3396,14 @@ Tersedia ${availableVouchers.length} voucher:`
           paymentText += `\n• ${v.kode} - Potongan ${formatrupiah(v.potongan)}`
         })
         keyboard.push([
-          { text: "🎟️ Lihat Voucher", callback_data: "lihat_voucher" },
-          { text: "🎟️ Input Voucher", callback_data: "punya" }
+          { text: copy.get('btn.voucher_lihat'), callback_data: "lihat_voucher" },
+          { text: copy.get('btn.voucher_input'), callback_data: "punya" }
         ])
       } else if (!vcr) {
-        keyboard.push([{ text: "🎟️ Input Voucher", callback_data: "punya" }])
+        keyboard.push([{ text: copy.get('btn.voucher_input'), callback_data: "punya" }])
       }
       
-      keyboard.push([{ text: "🔙 Kembali", callback_data: "konfirmasi_kembali" }])
+      keyboard.push([{ text: copy.get('btn.kembali'), callback_data: "konfirmasi_kembali" }])
       
       // Enforce caption limit
       if (paymentText.length > 1000) {
@@ -3486,7 +3473,7 @@ ${v.minimal_pembelian ? `💵 Min. pembelian: ${formatrupiah(v.minimal_pembelian
         }
       })
       
-      keyboard.push([{ text: "🔙 Kembali", callback_data: "pilih_payment_method" }])
+      keyboard.push([{ text: copy.get('btn.kembali'), callback_data: "pilih_payment_method" }])
       
       // Enforce caption limit
       if (voucherText.length > 1000) {
@@ -3592,14 +3579,14 @@ ${potongan > 0 ? `🎟️ *Voucher Aktif:* ${voucherKode} (${formatrupiah(potong
 ✅ Saldo mencukupi
 💵 Sisa saldo: ${formatrupiah(saldoSetelah)}
 ⚡ Instant, tanpa fee`
-        keyboard.push([{ text: "💰 Bayar Pakai Saldo", callback_data: "bayarsaldo" }])
+        keyboard.push([{ text: copy.get('btn.bayar_saldo'), callback_data: "bayarsaldo" }])
       } else {
         paymentText += `\n1️⃣ *💰 BAYAR PAKAI SALDO*
 ⚠️ Saldo tidak mencukupi
 💸 Kurang: ${formatrupiah(totalBayar - userSaldo)}
 💡 Top up saldo terlebih dahulu`
         keyboard.push([
-          { text: "💰 Top Up Saldo", callback_data: "deposit_menu" },
+          { text: copy.get('btn.top_up'), callback_data: "deposit_menu" },
           { text: "💵 Saldo: " + formatrupiah(userSaldo), callback_data: "cek_saldo" }
         ])
       }
@@ -3609,7 +3596,7 @@ ${potongan > 0 ? `🎟️ *Voucher Aktif:* ${voucherKode} (${formatrupiah(potong
 💸 Fee: Tergantung provider (~Rp 2.500-5.000)
 ⏰ Expired: 10 menit
 📱 Scan QR untuk bayar`
-      keyboard.push([{ text: "💳 Bayar QRIS", callback_data: "bayar" }])
+      keyboard.push([{ text: copy.get('btn.bayar_qris'), callback_data: "bayar" }])
       
       // Voucher options (if available)
       if (availableVouchers.length > 0) {
@@ -3619,12 +3606,12 @@ Tersedia ${availableVouchers.length} voucher:`
           paymentText += `\n• ${v.kode} - Potongan ${formatrupiah(v.potongan)}`
         })
         keyboard.push([
-          { text: "🎟️ Lihat Voucher", callback_data: "lihat_voucher" },
-          { text: "🎟️ Input Voucher", callback_data: "punya" }
+          { text: copy.get('btn.voucher_lihat'), callback_data: "lihat_voucher" },
+          { text: copy.get('btn.voucher_input'), callback_data: "punya" }
         ])
       }
       
-      keyboard.push([{ text: "🔙 Kembali", callback_data: "konfirmasi_kembali" }])
+      keyboard.push([{ text: copy.get('btn.kembali'), callback_data: "konfirmasi_kembali" }])
       
       await bot.sendMessage(query.from.id, paymentText, {
         parse_mode: "Markdown",
@@ -3649,7 +3636,7 @@ if (cmd === "punya") {
     let df = await bot.sendMessage(query.from.id, `Input kode voucher yang kamu punya!`, {
       reply_markup: {
         inline_keyboard: [
-          [{text: "❌ Batal", callback_data: "batalvoucher"}]
+          [{text: copy.get('btn.batal'), callback_data: "batalvoucher"}]
         ]
       }
     })
@@ -3671,8 +3658,8 @@ Apakah Anda yakin ingin membatalkan pesanan ini?
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "✅ Ya, Batalkan", callback_data: "batal_pesanan_confirm" },
-            { text: "❌ Tidak, Kembali", callback_data: "konfirmasi_kembali" }
+            { text: copy.get('btn.batal_confirm_ya'), callback_data: "batal_pesanan_confirm" },
+            { text: copy.get('btn.batal_confirm_tidak'), callback_data: "konfirmasi_kembali" }
           ]
         ]
       }
@@ -3706,8 +3693,8 @@ if (cmd === "batal_pesanan_confirm") {
  💡 Klik tombol di bawah untuk melanjutkan.`, {
       reply_markup: {
         inline_keyboard: [
-          [{ text: "🛍️ Belanja Lagi", callback_data: "daftarproduk" }],
-          [{ text: "🔙 Menu Utama", callback_data: "kembaliawal" }]
+          [{ text: copy.get('btn.belanja_lagi'), callback_data: "daftarproduk" }],
+          [{ text: copy.get('btn.kembali_menu'), callback_data: "kembaliawal" }]
         ]
       }
     })
@@ -3801,16 +3788,16 @@ ${item.snk.length > 150 ? item.snk.substring(0, 150) + '...' : item.snk}
       
       // Edit options
       keyboard.push([
-        { text: "✏️ Edit Jumlah", callback_data: `item:${item.kode}` }
+        { text: copy.get('btn.edit_qty'), callback_data: `item:${item.kode}` }
       ])
       
       // Payment method selection
-      keyboard.push([{ text: "💳 Lanjut ke Pembayaran", callback_data: "pilih_payment_method" }])
+      keyboard.push([{ text: copy.get('btn.lanjut_bayar'), callback_data: "pilih_payment_method" }])
       
       // Secondary actions
       keyboard.push([
-        { text: "❌ Batal Pesanan", callback_data: "batal_pesanan" },
-        { text: "💬 Hubungi CS", url: channelContact.cs }
+        { text: copy.get('btn.batal_pesanan'), callback_data: "batal_pesanan" },
+        { text: copy.get('btn.hubungi_cs'), url: channelContact.cs }
       ])
       
       // Enforce caption limit
@@ -3889,20 +3876,13 @@ ${Produk.deskripsi}
   
   const buttons = []
   
-  // Quick actions (only for owner)
-  if (query.from.id === OwnerID) {
-    buttons.push([
-      { text: "➕ Tambah Stok", callback_data: `addstok_select_${Produk.kode}` },
-    ])
-  }
-  
   buttons.push([
     { text: "📋 Lihat Semua Stok", callback_data: `stok_viewall_${Produk.kode}` },
     { text: "📊 Riwayat Penjualan", callback_data: `stok_history_${Produk.kode}` }
   ])
   
   buttons.push([
-    { text: "🔙 Kembali ke Stok", callback_data: "stok" }
+    { text: copy.get('btn.kembali'), callback_data: "stok" }
   ])
   
   await bot.answerCallbackQuery(query.id)
@@ -3937,7 +3917,7 @@ Pilih filter yang ingin diterapkan:
           { text: "📊 Semua", callback_data: "stok" }
         ],
         [
-          { text: "🔙 Kembali", callback_data: "stok" }
+          { text: copy.get('btn.kembali'), callback_data: "stok" }
         ]
       ]
     }
@@ -4064,10 +4044,10 @@ if (cmd.startsWith("stok_filter_")) {
   
   buttons.push([
     { text: "🔍 Filter Lain", callback_data: "stok_filter" },
-    { text: "📊 Statistik", callback_data: "stok_statistik" }
+    { text: copy.get('btn.statistik'), callback_data: "stok_statistik" }
   ])
   
-  buttons.push([{ text: "🔙 Kembali ke Stok", callback_data: "stok" }])
+  buttons.push([{ text: copy.get('btn.kembali'), callback_data: "stok" }])
   
   await bot.answerCallbackQuery(query.id)
   await bot.sendMessage(query.from.id, tx, {
@@ -4154,7 +4134,7 @@ ${produkTerlaris.slice(0, 5).map((p, idx) =>
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
-        [{ text: "🔙 Kembali ke Stok", callback_data: "stok" }]
+        [{ text: copy.get('btn.kembali'), callback_data: "stok" }]
       ]
     }
   })
@@ -4219,7 +4199,7 @@ File berisi semua data stok produk.`,
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "🔙 Kembali ke Detail", callback_data: `stok_detail_${Produk.kode}` }]
+          [{ text: copy.get('btn.kembali'), callback_data: `stok_detail_${Produk.kode}` }]
         ]
       }
     })
@@ -4261,7 +4241,7 @@ Belum ada transaksi untuk produk ini.
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "🔙 Kembali ke Detail", callback_data: `stok_detail_${Produk.kode}` }]
+          [{ text: copy.get('btn.kembali'), callback_data: `stok_detail_${Produk.kode}` }]
         ]
       }
     })
@@ -4290,7 +4270,7 @@ Belum ada transaksi untuk produk ini.
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
-        [{ text: "🔙 Kembali ke Detail", callback_data: `stok_detail_${Produk.kode}` }]
+        [{ text: copy.get('btn.kembali'), callback_data: `stok_detail_${Produk.kode}` }]
       ]
     }
   })
@@ -4313,11 +4293,11 @@ if (cmd === "batalvoucher") {
     
     let keyboard = []
     if (userSaldo >= harga) {
-      keyboard.push([{text: "💰 Bayar Pakai Saldo", callback_data: "bayarsaldo"}])
+      keyboard.push([{text: copy.get('btn.bayar_saldo'), callback_data: "bayarsaldo"}])
     }
     keyboard.push([
-      {text: "Tidak", callback_data: "bayar"},
-      {text: "Punya", callback_data: "punya"}
+      {text: copy.get('btn.voucher_tidak'), callback_data: "bayar"},
+      {text: copy.get('btn.voucher_punya'), callback_data: "punya"}
     ])
     
     await bot.sendMessage(query.from.id, `💳 *PILIH METODE PEMBAYARAN*
@@ -4371,8 +4351,8 @@ Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
       {text: "+25", callback_data: "plus:25"},
       {text: "+50", callback_data: "plus:50"},
       ],
-      [{text: "🔄 Reset", callback_data: "reset"}],
-          [{text: "🔙 Kembali", callback_data: "kembaliawal"}, {text: "✅ Konfirmasi", callback_data: "konfirmasi"}]
+      [{text: copy.get('btn.reset'), callback_data: "reset"}],
+          [{text: copy.get('btn.kembali'), callback_data: "kembaliawal"}, {text: copy.get('btn.konfirmasi'), callback_data: "konfirmasi"}]
       ]
   },
   chat_id: query.message.chat.id,
@@ -4420,8 +4400,8 @@ Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
       {text: "+25", callback_data: "plus:25"},
       {text: "+50", callback_data: "plus:50"},
       ],
-      [{text: "🔄 Reset", callback_data: "reset"}],
-          [{text: "🔙 Kembali", callback_data: "kembaliawal"}, {text: "✅ Konfirmasi", callback_data: "konfirmasi"}]
+      [{text: copy.get('btn.reset'), callback_data: "reset"}],
+          [{text: copy.get('btn.kembali'), callback_data: "kembaliawal"}, {text: copy.get('btn.konfirmasi'), callback_data: "konfirmasi"}]
       ]
   },
   chat_id: query.message.chat.id,
@@ -4467,8 +4447,8 @@ if (cmd === "bayarsaldo") {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{text: "💳 Top Up Saldo", callback_data: "deposit_menu"}],
-            [{text: "💸 Bayar QRIS", callback_data: "bayar"}]
+            [{text: copy.get('btn.top_up'), callback_data: "deposit_menu"}],
+            [{text: copy.get('btn.bayar_qris'), callback_data: "bayar"}]
           ]
         }
       })
@@ -4490,7 +4470,7 @@ if (cmd === "bayarsaldo") {
           return await sendMessage(query.from.id, copy.get('err.stock_reservation_timeout'), {
             reply_markup: {
               inline_keyboard: [
-                [{text: "🔙 Kembali Pilih Stok", callback_data: "lanjut"}]
+                [{text: copy.get('btn.kembali_pilih_stok'), callback_data: "lanjut"}]
               ]
             }
           })
@@ -4504,7 +4484,7 @@ if (cmd === "bayarsaldo") {
         return await sendMessage(query.from.id, copy.get('err.stock_selection_unavailable'), {
           reply_markup: {
             inline_keyboard: [
-              [{text: "🔙 Kembali Pilih Stok", callback_data: "lanjut"}]
+              [{text: copy.get('btn.kembali_pilih_stok'), callback_data: "lanjut"}]
             ]
           }
         })
@@ -4635,11 +4615,11 @@ Terima kasih! 🙏`
         ],
         [
           { text: "⭐ Beri Rating", callback_data: `rate_${Data.trxid}` },
-          { text: "💬 Hubungi CS", url: channelContact.cs }
+          { text: copy.get('btn.hubungi_cs'), url: channelContact.cs }
         ],
         [
           { text: "📊 Lihat Riwayat", callback_data: "riwayattransaksi" },
-          { text: "🛍️ Belanja Lagi", callback_data: "daftarproduk" }
+          { text: copy.get('btn.belanja_lagi'), callback_data: "daftarproduk" }
         ]
       ]
     }
@@ -4861,7 +4841,7 @@ if (cmd === "bayar") {
         return await sendMessage(query.from.id, copy.get('err.stock_selection_unavailable'), {
           reply_markup: {
             inline_keyboard: [
-              [{text: "🔙 Kembali Pilih Stok", callback_data: "lanjut"}]
+              [{text: copy.get('btn.kembali_pilih_stok'), callback_data: "lanjut"}]
             ]
           }
         })
@@ -4930,7 +4910,7 @@ Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik s
           contentType: 'image/png',
           reply_markup: {
             inline_keyboard: [
-              [{text: "❌ Batal", callback_data: "batalbeli"}]
+              [{text: copy.get('btn.batal'), callback_data: "batalbeli"}]
             ]
           }
         });
@@ -5201,11 +5181,11 @@ Terima kasih! 🙏`
           ],
           [
             { text: "⭐ Beri Rating", callback_data: `rate_${Data.trxid}` },
-            { text: "💬 Hubungi CS", url: channelContact.cs }
+            { text: copy.get('btn.hubungi_cs'), url: channelContact.cs }
           ],
           [
             { text: "📊 Lihat Riwayat", callback_data: "riwayattransaksi" },
-            { text: "🛍️ Belanja Lagi", callback_data: "daftarproduk" }
+            { text: copy.get('btn.belanja_lagi'), callback_data: "daftarproduk" }
           ]
         ]
       }
@@ -5549,7 +5529,7 @@ if (cmd.startsWith("detail_trx_")) {
             { text: "📥 Unduh Ulang", callback_data: `redownload_${trxId}` }
           ],
           [
-            { text: "🔙 Kembali", callback_data: "riwayattransaksi" }
+            { text: copy.get('btn.kembali'), callback_data: "riwayattransaksi" }
           ]
         ]
       }
@@ -5681,7 +5661,7 @@ Silakan pilih jumlah pembelian:`, {
             { text: "5", callback_data: `min:5_${Produk.kode}` }
           ],
           [
-            { text: "🔙 Kembali", callback_data: "daftarproduk" }
+            { text: copy.get('btn.kembali'), callback_data: "daftarproduk" }
           ]
         ]
       }
@@ -5724,7 +5704,7 @@ Silakan pilih rating:`, {
           { text: "⭐ 5", callback_data: `rate_submit_5_${trxId}` }
         ],
         [
-          { text: "❌ Batal", callback_data: "rate_cancel" }
+          { text: copy.get('btn.batal'), callback_data: "rate_cancel" }
         ]
       ]
     }
@@ -5814,7 +5794,7 @@ Pilih filter yang ingin diterapkan:
           { text: "📊 Semua", callback_data: "listuser" }
         ],
         [
-          { text: "🔙 Kembali", callback_data: "listuser" }
+          { text: copy.get('btn.kembali'), callback_data: "listuser" }
         ]
       ]
     }
@@ -5954,7 +5934,7 @@ Pilih filter yang ingin diterapkan:
           { text: "📊 Semua", callback_data: "daftarproduk" }
         ],
         [
-          { text: "🔙 Kembali", callback_data: "daftarproduk" }
+          { text: copy.get('btn.kembali'), callback_data: "daftarproduk" }
         ]
       ]
     }
@@ -6144,9 +6124,9 @@ if (cmd === "saldomenu") {
 
   const reply_markup = {
     inline_keyboard: [
-      [{text: "💳 Top Up Saldo", callback_data: "deposit_menu"}],
-      [{text: "📋 Riwayat Deposit", callback_data: "riwayatdeposit"}],
-      [{text: "🔙 Menu Utama", callback_data: "kembaliawal"}]
+      [{text: copy.get('btn.top_up'), callback_data: "deposit_menu"}],
+      [{text: copy.get('btn.riwayat_deposit'), callback_data: "riwayatdeposit"}],
+      [{text: copy.get('btn.kembali_menu'), callback_data: "kembaliawal"}]
     ]
   }
 
@@ -6194,10 +6174,10 @@ if (cmd === "deposit_menu") {
         { text: "Rp 100.000", callback_data: "deposit_preset:100000" }
       ],
       [
-        { text: "⌨️ Custom Nominal", callback_data: "deposit_custom" }
+        { text: copy.get('btn.deposit_custom'), callback_data: "deposit_custom" }
       ],
-      [{text: "📋 Riwayat Deposit", callback_data: "riwayatdeposit"}],
-      [{text: "🔙 Kembali", callback_data: "saldomenu"}]
+      [{text: copy.get('btn.riwayat_deposit'), callback_data: "riwayatdeposit"}],
+      [{text: copy.get('btn.kembali'), callback_data: "saldomenu"}]
     ]
   }
 
@@ -6233,8 +6213,8 @@ Belum ada riwayat deposit.
 
     const reply_markup = {
       inline_keyboard: [
-        [{text: "💳 Top Up Saldo", callback_data: "deposit_menu"}],
-        [{text: "🔙 Kembali", callback_data: "saldomenu"}]
+        [{text: copy.get('btn.top_up'), callback_data: "deposit_menu"}],
+        [{text: copy.get('btn.kembali'), callback_data: "saldomenu"}]
       ]
     }
 
@@ -6273,7 +6253,7 @@ Status: *${dep.status.toUpperCase()}*
   const reply_markup = {
     inline_keyboard: [
       [{text: "💳 Top Up Lagi", callback_data: "deposit_menu"}],
-      [{text: "🔙 Kembali", callback_data: "saldomenu"}]
+      [{text: copy.get('btn.kembali'), callback_data: "saldomenu"}]
     ]
   }
 
@@ -6464,7 +6444,7 @@ Pilih periode yang ingin Anda lihat:
             { text: "📅 Semua", callback_data: "filter_all" }
           ],
           [
-            { text: "🔙 Kembali", callback_data: "riwayattransaksi" }
+            { text: copy.get('btn.kembali'), callback_data: "riwayattransaksi" }
           ]
         ]
       }
@@ -6536,7 +6516,7 @@ Belum ada transaksi untuk ditampilkan statistiknya.
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [[
-            { text: "🔙 Kembali", callback_data: "riwayattransaksi" }
+            { text: copy.get('btn.kembali'), callback_data: "riwayattransaksi" }
           ]]
         }
       })
@@ -6606,10 +6586,10 @@ ${mostExpensive ? `💰 *${formatrupiah(mostExpensive.harga)}*\n📦 ${mostExpen
         inline_keyboard: [
           [
             { text: "📋 Lihat Riwayat", callback_data: "riwayattransaksi" },
-            { text: "🔍 Filter", callback_data: "riwayat_filter" }
+            { text: copy.get('btn.filter'), callback_data: "riwayat_filter" }
           ],
           [
-            { text: "🔙 Menu Utama", callback_data: "kembaliawal" }
+            { text: copy.get('btn.kembali_menu'), callback_data: "kembaliawal" }
           ]
         ]
       }
@@ -6625,19 +6605,19 @@ ${mostExpensive ? `💰 *${formatrupiah(mostExpensive.harga)}*\n📦 ${mostExpen
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "📦 Mulai Order", callback_data: "daftarproduk" },
-            { text: "💰 Top Up Saldo", callback_data: "saldomenu" }
+            { text: copy.get('btn.mulai_order'), callback_data: "daftarproduk" },
+            { text: copy.get('btn.top_up'), callback_data: "saldomenu" }
           ],
           [
-            { text: "❓ FAQ", callback_data: "caraorder_faq" },
-            { text: "💳 Metode Bayar", callback_data: "caraorder_payment" }
+            { text: copy.get('btn.faq'), callback_data: "caraorder_faq" },
+            { text: copy.get('btn.metode_bayar'), callback_data: "caraorder_payment" }
           ],
           [
-            { text: "📞 Hubungi CS", url: channelContact.cs },
+            { text: copy.get('btn.hubungi_cs'), url: channelContact.cs },
             { text: "📢 Channel", url: channelContact.channelStore }
           ],
           [
-            { text: "🔙 Kembali", callback_data: "kembaliawal" }
+            { text: copy.get('btn.kembali'), callback_data: "kembaliawal" }
           ]
         ]
       }
@@ -6702,14 +6682,14 @@ A: Untuk saat ini maksimal 5 item per transaksi. Jika ingin lebih, buat pesanan 
         inline_keyboard: [
           [
             { text: "📖 Panduan Order", callback_data: "caraorder" },
-            { text: "💳 Metode Bayar", callback_data: "caraorder_payment" }
+            { text: copy.get('btn.metode_bayar'), callback_data: "caraorder_payment" }
           ],
           [
-            { text: "📞 Hubungi CS", url: channelContact.cs },
-            { text: "📦 Mulai Order", callback_data: "daftarproduk" }
+            { text: copy.get('btn.hubungi_cs'), url: channelContact.cs },
+            { text: copy.get('btn.mulai_order'), callback_data: "daftarproduk" }
           ],
           [
-            { text: "🔙 Kembali", callback_data: "kembaliawal" }
+            { text: copy.get('btn.kembali'), callback_data: "kembaliawal" }
           ]
         ]
       }
@@ -6752,7 +6732,7 @@ A: Untuk saat ini maksimal 5 item per transaksi. Jika ingin lebih, buat pesanan 
 📋 *Cara Menggunakan:*
 1. Pastikan saldo Anda mencukupi
 2. Pilih produk dan jumlah
-3. Klik "Bayar Pakai Saldo"
+3. Klik "${copy.get('btn.bayar_saldo')}"
 4. Produk langsung terkirim tanpa menunggu
 
 💰 *Cara Top Up Saldo:*
@@ -6792,15 +6772,15 @@ A: Untuk saat ini maksimal 5 item per transaksi. Jika ingin lebih, buat pesanan 
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "💰 Top Up Saldo", callback_data: "saldomenu" },
-            { text: "📦 Mulai Order", callback_data: "daftarproduk" }
+            { text: copy.get('btn.top_up'), callback_data: "saldomenu" },
+            { text: copy.get('btn.mulai_order'), callback_data: "daftarproduk" }
           ],
           [
             { text: "📖 Panduan Lengkap", callback_data: "caraorder" },
-            { text: "❓ FAQ", callback_data: "caraorder_faq" }
+            { text: copy.get('btn.faq'), callback_data: "caraorder_faq" }
           ],
           [
-            { text: "🔙 Kembali", callback_data: "kembaliawal" }
+            { text: copy.get('btn.kembali'), callback_data: "kembaliawal" }
           ]
         ]
       }
@@ -6865,8 +6845,8 @@ Ketik \`/batal\` untuk membatalkan.`, {
           reply_markup: {
             inline_keyboard: [
               [
-                {text: "Tidak", callback_data: "bayar"},
-                {text: "Punya", callback_data: "punya"}
+                {text: copy.get('btn.voucher_tidak'), callback_data: "bayar"},
+                {text: copy.get('btn.voucher_punya'), callback_data: "punya"}
               ]
             ]
           }
@@ -6901,8 +6881,8 @@ Ketik \`/batal\` untuk membatalkan.`, {
           reply_markup: {
             inline_keyboard: [
               [
-                {text: "Tidak", callback_data: "bayar"},
-                {text: "Punya", callback_data: "punya"}
+                {text: copy.get('btn.voucher_tidak'), callback_data: "bayar"},
+                {text: copy.get('btn.voucher_punya'), callback_data: "punya"}
               ]
             ]
           }
@@ -6917,8 +6897,8 @@ Ketik \`/batal\` untuk membatalkan.`, {
           reply_markup: {
             inline_keyboard: [
               [
-                {text: "Tidak", callback_data: "bayar"},
-                {text: "Punya", callback_data: "punya"}
+                {text: copy.get('btn.voucher_tidak'), callback_data: "bayar"},
+                {text: copy.get('btn.voucher_punya'), callback_data: "punya"}
               ]
             ]
           }
@@ -6932,8 +6912,8 @@ Ketik \`/batal\` untuk membatalkan.`, {
           reply_markup: {
             inline_keyboard: [
               [
-                {text: "Tidak", callback_data: "bayar"},
-                {text: "Punya", callback_data: "punya"}
+                {text: copy.get('btn.voucher_tidak'), callback_data: "bayar"},
+                {text: copy.get('btn.voucher_punya'), callback_data: "punya"}
               ]
             ]
           }
@@ -6956,8 +6936,8 @@ Ketik \`/batal\` untuk membatalkan.`, {
           reply_markup: {
             inline_keyboard: [
               [
-                {text: "Tidak", callback_data: "bayar"},
-                {text: "Punya", callback_data: "punya"}
+                {text: copy.get('btn.voucher_tidak'), callback_data: "bayar"},
+                {text: copy.get('btn.voucher_punya'), callback_data: "punya"}
               ]
             ]
           }
@@ -6979,12 +6959,12 @@ Ketik \`/batal\` untuk membatalkan.`, {
       let infoText = `Silahkan klik tombol di bawah untuk melakukan pembayaran.`
       
       if (userSaldo >= totalBayar) {
-        keyboard.push([{ text: "💰 Bayar Pakai Saldo", callback_data: "bayarsaldo" }])
-        keyboard.push([{ text: "💳 Bayar QRIS", callback_data: "bayar" }])
+        keyboard.push([{ text: copy.get('btn.bayar_saldo'), callback_data: "bayarsaldo" }])
+        keyboard.push([{ text: copy.get('btn.bayar_qris'), callback_data: "bayar" }])
       } else {
         infoText = `Saldo Anda tidak mencukupi untuk membayar dengan saldo. Silakan top up atau bayar langsung via QRIS.`
-        keyboard.push([{ text: "💳 Bayar QRIS", callback_data: "bayar" }])
-        keyboard.push([{ text: "💰 Top Up Saldo", callback_data: "deposit_menu" }])
+        keyboard.push([{ text: copy.get('btn.bayar_qris'), callback_data: "bayar" }])
+        keyboard.push([{ text: copy.get('btn.top_up'), callback_data: "deposit_menu" }])
       }
       
       await bot.sendMessage(msg.from.id, `✅ *Kode Voucher Valid!*
@@ -7059,9 +7039,9 @@ ${infoText}`, {
 
       const reply_markup = {
         inline_keyboard: [
-          [{text: "💳 Top Up Saldo", callback_data: "deposit_menu"}],
-          [{text: "📋 Riwayat Deposit", callback_data: "riwayatdeposit"}],
-          [{text: "🔙 Menu Utama", callback_data: "kembaliawal"}]
+          [{text: copy.get('btn.top_up'), callback_data: "deposit_menu"}],
+          [{text: copy.get('btn.riwayat_deposit'), callback_data: "riwayatdeposit"}],
+          [{text: copy.get('btn.kembali_menu'), callback_data: "kembaliawal"}]
         ]
       }
 
