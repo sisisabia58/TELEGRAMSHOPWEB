@@ -4659,6 +4659,7 @@ app.get('/communication/history/:id', isAuthenticated, async (req, res) => {
 
 // Store untuk SSE connections
 const sseClients = new Map()
+const inbox = require('./lib/notification-inbox')
 
 // Helper: Get notification settings
 async function getNotificationSettings() {
@@ -4966,6 +4967,82 @@ async function isQuietHours() {
   }
 }
 
+async function buildNotificationInbox() {
+  const settings = await getNotificationSettings()
+  const items = []
+  let pendingCount = 0
+
+  if (settings.depositNotificationEnabled) {
+    const { data: deposits, count } = await supabase
+      .from('Deposit')
+      .select('tanggal', { count: 'exact' })
+      .eq('status', 'pending')
+      .order('tanggal', { ascending: false })
+      .limit(1)
+
+    pendingCount = count || 0
+    const summary = inbox.buildDepositSummaryItem({
+      count: pendingCount,
+      latestAt: deposits?.[0]?.tanggal || new Date().toISOString(),
+    })
+    if (summary) items.push(summary)
+  }
+
+  if (settings.stockNotificationEnabled) {
+    const { data: variants } = await supabase
+      .from('Varian')
+      .select('id, label, kode, produk_id, produk:Produk(id, nama)')
+      .eq('is_active', true)
+
+    for (const variant of variants || []) {
+      const threshold = await getProductStockThreshold(variant.id)
+      const stokCount = await stock.getStokCountByVarianId(variant.id)
+      if (stokCount !== null && stokCount <= threshold) {
+        items.push(inbox.buildLowStockItem({
+          variant,
+          produkId: variant.produk_id || variant.produk?.id,
+          stokCount,
+          threshold,
+        }))
+      }
+    }
+  }
+
+  if (settings.transactionNotificationEnabled) {
+    const { data: logs } = await supabase
+      .from('NotificationLog')
+      .select('*')
+      .eq('notification_type', 'large_transaction')
+      .eq('is_read', false)
+      .order('created_at', { ascending: false })
+      .limit(5)
+
+    for (const log of logs || []) {
+      items.push({
+        id: log.id,
+        type: 'large_transaction',
+        title: (log.title || 'Transaksi besar').replace(/^[^\w]+/, '').trim() || 'Transaksi besar',
+        message: log.message,
+        href: inbox.getNotificationHref('large_transaction', log.data || {}),
+        priority: 'medium',
+        created_at: log.created_at,
+        is_read: false,
+        data: log.data,
+      })
+    }
+  }
+
+  const sorted = inbox.sortInboxItems(items)
+  return {
+    counts: {
+      deposit_pending: pendingCount,
+      low_stock: sorted.filter((i) => i.type === 'low_stock').length,
+      total: inbox.countActionable(sorted),
+    },
+    items: sorted,
+  }
+}
+
 // Helper: Broadcast notification ke semua connected clients
 async function broadcastNotification(notification) {
   // Check quiet hours before sending
@@ -5004,77 +5081,21 @@ async function createNotificationLog(type, title, message, data = null, adminId 
   }
 }
 
-// Helper: Check and send low stock alerts
+// Helper: Check low stock state (inbox API serves UI; no broadcast on periodic checks)
 async function checkLowStockAlerts() {
   try {
     const settings = await getNotificationSettings()
     if (!settings.stockNotificationEnabled) return
-    
-    const { data: variants } = await supabase
-      .from('Varian')
-      .select('id, label, kode, produk:Produk(nama)')
-      .eq('is_active', true)
-    
-    if (!variants) return
-    
-    for (const variant of variants) {
-      const threshold = await getProductStockThreshold(variant.id)
-      const stokCount = await stock.getStokCountByVarianId(variant.id)
-      
-      if (stokCount !== null && stokCount <= threshold) {
-        const produkNama = variant.produk?.nama || 'Produk'
-        const notification = {
-          type: 'low_stock',
-          title: '⚠️ Stok Menipis',
-          message: `Varian "${produkNama} — ${variant.label}" (${variant.kode}) stok tersisa ${stokCount} item`,
-          data: {
-            varian_id: variant.id,
-            varian_kode: variant.kode,
-            varian_label: variant.label,
-            produk_nama: produkNama,
-            stok_count: stokCount,
-            threshold: threshold
-          },
-          timestamp: new Date().toISOString(),
-          priority: 'high'
-        }
-        
-        await broadcastNotification(notification)
-        await createNotificationLog('low_stock', notification.title, notification.message, notification.data)
-      }
-    }
   } catch (error) {
     console.error('Error checking low stock alerts:', error)
   }
 }
 
-// Helper: Check deposit pending
+// Helper: Check deposit pending state (inbox API serves UI; no broadcast on periodic checks)
 async function checkDepositPending() {
   try {
     const settings = await getNotificationSettings()
     if (!settings.depositNotificationEnabled) return
-    
-    const { data: deposits, count } = await supabase
-      .from('Deposit')
-      .select('*', { count: 'exact' })
-      .eq('status', 'pending')
-      .order('tanggal', { ascending: false })
-    
-    if (count > 0) {
-      const notification = {
-        type: 'deposit_pending',
-        title: '💰 Deposit Pending',
-        message: `Ada ${count} deposit pending yang perlu ditinjau`,
-        data: {
-          count: count,
-          deposits: deposits?.slice(0, 5) || [] // Top 5
-        },
-        timestamp: new Date().toISOString(),
-        priority: 'medium'
-      }
-      
-      await broadcastNotification(notification)
-    }
   } catch (error) {
     console.error('Error checking deposit pending:', error)
   }
@@ -5089,7 +5110,7 @@ async function checkLargeTransaction(transaction) {
     if (transaction.harga >= settings.largeTransactionThreshold) {
       const notification = {
         type: 'large_transaction',
-        title: '💸 Transaksi Besar',
+        title: 'Transaksi besar',
         message: `Transaksi besar: ${formatrupiah(transaction.harga)} untuk produk "${transaction.nama}"`,
         data: {
           trx_uuid: transaction.trx_uuid,
@@ -5119,7 +5140,7 @@ async function checkNewDeposit(deposit) {
     if (deposit.status === 'pending') {
       const notification = {
         type: 'deposit_pending',
-        title: '💰 Deposit Baru',
+        title: 'Deposit Baru',
         message: `Deposit baru: ${formatrupiah(deposit.jumlah)} dari User ID ${deposit.user_id}`,
         data: {
           deposit_id: deposit.id,
@@ -5154,18 +5175,24 @@ app.get('/api/notifications/stream', isAuthenticated, (req, res) => {
   
   // Store connection
   sseClients.set(adminId, res)
-  
-  // Send initial notifications
-  Promise.all([
-    checkDepositPending(),
-    checkLowStockAlerts()
-  ]).catch(err => console.error('Error sending initial notifications:', err))
-  
+
+  // Inbox state is fetched via REST on client load; SSE is for live events only.
+
   // Handle client disconnect
   req.on('close', () => {
     sseClients.delete(adminId)
     res.end()
   })
+})
+
+app.get('/api/notifications/inbox', isAuthenticated, async (req, res) => {
+  try {
+    const { counts, items } = await buildNotificationInbox()
+    res.json({ success: true, counts, items })
+  } catch (error) {
+    console.error('Error building notification inbox:', error)
+    res.status(500).json({ success: false, error: error.message })
+  }
 })
 
 // Route: Get notification counts (untuk badge)
