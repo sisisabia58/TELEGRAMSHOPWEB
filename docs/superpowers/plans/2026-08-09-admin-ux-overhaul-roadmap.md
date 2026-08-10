@@ -23,7 +23,7 @@
 | 6d — SendPulse-like editor UI | [../runbooks/phase6d-sendpulse-ui.md](../runbooks/phase6d-sendpulse-ui.md) | **Done** |
 | 7 — Bot command retirement | [2026-08-09-bot-command-retirement.md](./2026-08-09-bot-command-retirement.md) | **Done** |
 | 8 — Dashboard IA + mobile + UI modernization | [2026-08-09-dashboard-ia-mobile.md](./2026-08-09-dashboard-ia-mobile.md) | **Done** |
-| 9 — Copy err/btn | _depends on 5 + 7_ | Not started |
+| 9 — Copy err/btn | [2026-08-09-copy-err-btn.md](./2026-08-09-copy-err-btn.md) | Not started (plan ready) |
 
 ## Why separate plans
 
