@@ -183,30 +183,30 @@ INSERT INTO "BotCopy" (key, kind, body, description, variables) VALUES
 (
   'err.voucher_not_found',
   'err',
-  E'❌ *Kode Voucher Tidak Ditemukan!*\n\nKode: `{{kode}}`',
+  E'❌ *Kode Voucher Tidak Ditemukan!*\n=======================\nKode voucher `{{kode}}` tidak terdaftar di database.\n\n=======================\n💡 Pastikan kode voucher sudah benar atau hubungi admin.',
   'Voucher code not found',
   '["kode"]'::jsonb
 ),
 (
   'err.voucher_already_used',
   'err',
-  '❌ *Voucher Sudah Digunakan!*',
+  E'❌ *Voucher Sudah Digunakan!*\n=======================\nKode voucher `{{kode}}` sudah pernah Anda gunakan sebelumnya.\n\n=======================\n💡 Setiap voucher hanya bisa digunakan sekali per user.',
   'Voucher already redeemed',
-  '[]'::jsonb
+  '["kode"]'::jsonb
 ),
 (
   'err.voucher_exhausted',
   'err',
-  '❌ *Voucher Habis!*',
+  E'❌ *Voucher Habis!*\n=======================\nKode voucher `{{kode}}` sudah mencapai batas penggunaan.\n\n=======================\n💡 Limit voucher: {{limit}}',
   'Voucher quota exhausted',
-  '[]'::jsonb
+  '["kode","limit"]'::jsonb
 ),
 (
   'err.voucher_wrong_product',
   'err',
-  E'❌ *Voucher Tidak Berlaku!*\n\nVoucher ini tidak berlaku untuk produk yang dipilih.',
+  E'❌ *Voucher Tidak Berlaku!*\n=======================\nKode voucher `{{kode}}` tidak berlaku untuk produk ini.\n\n*Produk yang berlaku:*\n{{produk_berlaku}}\n\n*Produk Anda:*\n{{produk_anda}}\n\n=======================\n💡 Gunakan voucher yang sesuai dengan produk.',
   'Voucher not valid for product',
-  '[]'::jsonb
+  '["kode","produk_berlaku","produk_anda"]'::jsonb
 ),
 (
   'err.voucher_none_available',
@@ -239,8 +239,15 @@ INSERT INTO "BotCopy" (key, kind, body, description, variables) VALUES
 (
   'err.no_users',
   'err',
-  '⚠️ Tidak ada user!',
+  E'📭 *TIDAK ADA USER*\n━━━━━━━━━━━━━━━━━━━━\nBelum ada user yang terdaftar di database.\n\n━━━━━━━━━━━━━━━━━━━━\n💡 User akan otomatis terdaftar saat menggunakan /start.',
   'Empty user list',
+  '[]'::jsonb
+),
+(
+  'err.no_users_toast',
+  'err',
+  '⚠️ Tidak ada user!',
+  'Empty user list toast for callback alerts',
   '[]'::jsonb
 ),
 (

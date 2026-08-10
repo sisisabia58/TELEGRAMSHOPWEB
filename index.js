@@ -372,7 +372,7 @@ function applyVoucherPotongan(subtotal, userId, voucherKode, voucherList) {
 async function showVariantQtyScreen(userId, msgId, varian) {
   const stokCount = await getStokCount(varian.kode)
   if (stokCount === 0) {
-    return bot.sendMessage(userId, `⚠️ Stok ${varian.label} habis!`)
+    return bot.sendMessage(userId, copy.get('err.stock_empty', { nama: varian.label }))
   }
   const data = {
     kode: varian.kode,
@@ -2331,7 +2331,7 @@ try {
     if (!varian) return bot.sendMessage(query.from.id, copy.get('err.product_not_found'))
     const stokCount = await getStokCount(varian.kode)
     if (stokCount === 0) {
-      return bot.answerCallbackQuery(query.id, { text: `⚠️ Stok ${varian.label} habis!`, show_alert: true })
+      return bot.answerCallbackQuery(query.id, { text: copy.get('err.stock_empty', { nama: varian.label }), show_alert: true })
     }
     await showVariantQtyScreen(query.from.id, query.message.message_id, varian)
     return
@@ -3525,7 +3525,7 @@ if (cmd.startsWith("apply_voucher_")) {
       
       if (vcr.user.some(a => a === query.from.id)) {
         await bot.answerCallbackQuery(query.id, { 
-          text: copy.get('err.voucher_already_used'), 
+          text: copy.get('err.voucher_already_used', { kode: voucherKode }), 
           show_alert: true 
         })
         return
@@ -3533,7 +3533,7 @@ if (cmd.startsWith("apply_voucher_")) {
       
       if (vcr.limit <= 0) {
         await bot.answerCallbackQuery(query.id, { 
-          text: copy.get('err.voucher_exhausted'), 
+          text: copy.get('err.voucher_exhausted', { kode: voucherKode, limit: vcr.limit }), 
           show_alert: true 
         })
         return
@@ -4180,7 +4180,7 @@ if (cmd.startsWith("stok_viewall_")) {
   const tersediaItems = stokItems.filter(s => s.status === 'tersedia')
   
   if (tersediaItems.length === 0) {
-    await bot.answerCallbackQuery(query.id, { text: "Stok kosong!", show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.stock_empty', { nama: Produk.nama }), show_alert: true })
     return
   }
   
@@ -4390,7 +4390,7 @@ if (cmd.startsWith("plus:")) {
      if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
      const stokCount = item.stok_count ?? await getStokCount(item.kode)
      if (stokCount < (Data.jumlah+Number(jumlah))) {
-       await bot.answerCallbackQuery(query.id, { text: copy.get('err.stock_insufficient', { count: 0 }), show_alert: true })
+       await bot.answerCallbackQuery(query.id, { text: copy.get('err.stock_insufficient', { count: stokCount }), show_alert: true })
        return
      }
      Data.jumlah += Number(jumlah)
@@ -5828,7 +5828,7 @@ if (cmd === "user_filter_active") {
     .select("*")
   
   if (!User || User.length === 0) {
-    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users'), show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users_toast'), show_alert: true })
     return
   }
   
@@ -5846,7 +5846,7 @@ if (cmd === "user_filter_inactive") {
     .select("*")
   
   if (!User || User.length === 0) {
-    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users'), show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users_toast'), show_alert: true })
     return
   }
   
@@ -5864,7 +5864,7 @@ if (cmd === "user_filter_vip") {
     .select("*")
   
   if (!User || User.length === 0) {
-    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users'), show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users_toast'), show_alert: true })
     return
   }
   
@@ -5887,7 +5887,7 @@ if (cmd.startsWith("user_prev:") || cmd.startsWith("user_next:")) {
     .select("*")
   
   if (!User || User.length === 0) {
-    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users'), show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users_toast'), show_alert: true })
     return
   }
   
@@ -5919,7 +5919,7 @@ if (cmd === "listuser") {
     .select("*")
   
   if (!User || User.length === 0) {
-    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users'), show_alert: true })
+    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_users_toast'), show_alert: true })
     return
   }
   
@@ -6912,7 +6912,7 @@ Ketik \`/batal\` untuk membatalkan.`, {
       // Cek apakah user sudah menggunakan voucher ini
       const sudahPakai = vv.user && vv.user.some(us => us === msg.from.id)
       if (sudahPakai) {
-        return await bot.sendMessage(msg.from.id, copy.get('err.voucher_already_used'), {
+        return await bot.sendMessage(msg.from.id, copy.get('err.voucher_already_used', { kode: vv.kode }), {
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
@@ -6927,7 +6927,7 @@ Ketik \`/batal\` untuk membatalkan.`, {
       
       // Cek limit voucher
       if (vv.limit <= 0) {
-        return await bot.sendMessage(msg.from.id, copy.get('err.voucher_exhausted'), {
+        return await bot.sendMessage(msg.from.id, copy.get('err.voucher_exhausted', { kode: vv.kode, limit: vv.limit }), {
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
@@ -6947,7 +6947,11 @@ Ketik \`/batal\` untuk membatalkan.`, {
       )
       
       if (!produkValid) {
-        return await bot.sendMessage(msg.from.id, copy.get('err.voucher_wrong_product'), {
+        return await bot.sendMessage(msg.from.id, copy.get('err.voucher_wrong_product', {
+          kode: vv.kode,
+          produk_berlaku: vv.produk[0] === 'all' ? 'Semua Produk' : vv.produk.join(', '),
+          produk_anda: Data.kode,
+        }), {
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
