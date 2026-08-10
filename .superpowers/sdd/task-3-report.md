@@ -26,5 +26,22 @@ node --test
 
 ## Concerns
 
-- Transaksi mobile filter-toggle removed with card→toolbar conversion; dense toolbar may wrap heavily on small screens.
+- ~~Transaksi mobile filter-toggle removed with card→toolbar conversion; dense toolbar may wrap heavily on small screens.~~ **Fixed** — search stays visible on mobile; advanced filters collapse behind `#filterToggle`.
 - Deposit toolbar packs six filter fields inline; may need responsive stacking tweak in a follow-up.
+
+## Mobile filter collapse fix (review follow-up)
+
+**Commit:** `4f1c231` — `fix(phase10): restore transaksi mobile filter collapse`
+
+**Change:** Restored `#filterToggle`, `#filterBody`, `#filterCard` wiring on `views/transaksi.ejs`:
+- Search field remains visible on ≤768px when filters are collapsed
+- Advanced filters + Terapkan/Reset collapse behind toggle button
+- CSS targets `#filterCard` / `.filter-body` (removed orphaned `.filter-card` rules)
+- Desktop uses `display: contents` on `.filter-body` so inline toolbar layout unchanged
+
+**Verification:**
+
+```bash
+node --test
+# 71/71 pass
+```
