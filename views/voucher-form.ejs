@@ -33,7 +33,7 @@
         }
         .produk-search:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: var(--color-accent);
             background-color: #fff;
         }
         .produk-list-wrap {
@@ -44,7 +44,7 @@
             overflow-y: auto;
         }
         .produk-list-wrap:focus-within {
-            border-color: #667eea;
+            border-color: var(--color-accent);
             background: #fff;
         }
         .produk-item {
@@ -61,7 +61,7 @@
         .produk-item input[type="checkbox"] {
             width: 18px;
             height: 18px;
-            accent-color: #667eea;
+            accent-color: var(--color-accent);
             cursor: pointer;
         }
         .produk-item label {
@@ -90,7 +90,7 @@
         .produk-select-all input[type="checkbox"] {
             width: 18px;
             height: 18px;
-            accent-color: #667eea;
+            accent-color: var(--color-accent);
             cursor: pointer;
         }
         .produk-empty-filter {
@@ -101,7 +101,7 @@
         }
         .selected-count {
             font-size: 13px;
-            color: #667eea;
+            color: var(--color-accent);
             font-weight: 600;
         }
     </style>
@@ -182,7 +182,7 @@
                                         name="produk_all"
                                         <%= voucher && Array.isArray(voucher.produk) && voucher.produk.includes('all') ? 'checked' : '' %>
                                         onchange="toggleProductList()"
-                                        style="width: 18px; height: 18px; accent-color: #667eea; cursor: pointer;"
+                                        style="width: 18px; height: 18px; accent-color: var(--color-accent); cursor: pointer;"
                                     >
                                     <label for="produk_all" style="font-weight: 500; margin: 0; cursor: pointer;">Berlaku untuk Semua Produk</label>
                                 </div>

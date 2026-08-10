@@ -21,7 +21,7 @@
             background: #f8f9fa;
             padding: 20px;
             border-radius: 10px;
-            border-left: 4px solid #667eea;
+            border-left: 4px solid var(--color-accent);
         }
         .info-card h3 {
             font-size: 12px;
@@ -60,7 +60,7 @@
         }
         .product-tag {
             display: inline-block;
-            background: #667eea;
+            background: var(--color-accent);
             color: white;
             padding: 5px 12px;
             border-radius: 6px;
@@ -130,7 +130,7 @@
             <p>Total: <strong><%= voucher.user.length %></strong> user</p>
             <div style="margin-top: 10px;">
             <% voucher.user.slice(0, 20).forEach(userId => { %>
-            <a href="/user/<%= userId %>" style="display: inline-block; background: #667eea; color: white; padding: 5px 12px; border-radius: 6px; text-decoration: none; font-size: 12px; margin: 5px 5px 5px 0;">
+            <a href="/user/<%= userId %>" style="display: inline-block; background: var(--color-accent); color: white; padding: 5px 12px; border-radius: 6px; text-decoration: none; font-size: 12px; margin: 5px 5px 5px 0;">
             User <%= userId %>
             </a>
             <% }) %>
@@ -144,7 +144,7 @@
             </div>
 
             <div style="display: flex; gap: 10px; margin-top: 30px;">
-            <a href="/voucher/edit/<%= voucher.id %>" class="btn" style="background: #667eea; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: 600;">
+            <a href="/voucher/edit/<%= voucher.id %>" class="btn" style="background: var(--color-accent); color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: 600;">
             ✏️ Edit Voucher
             </a>
             <a href="/voucher/hapus/<%= voucher.id %>" class="btn" style="background: #dc3545; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: 600;">

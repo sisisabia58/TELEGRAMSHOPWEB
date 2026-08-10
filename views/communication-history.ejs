@@ -65,7 +65,7 @@
             <% if (messages.length > 0) { %>
                 <div class="stats-grid" style="margin-bottom: 24px;">
                     <div class="stat-card">
-                        <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">📜</div>
+                        <div class="stat-icon" style="background: var(--color-accent);">📜</div>
                         <div class="stat-content">
                             <div class="stat-value"><%= messages.length %></div>
                             <div class="stat-label">Total History</div>
@@ -319,8 +319,8 @@
 
         .form-select:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: var(--color-accent);
+            box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
         }
 
         .stats-grid {
@@ -592,8 +592,8 @@
         }
 
         .pagination-btn:hover {
-            border-color: #667eea;
-            color: #667eea;
+            border-color: var(--color-accent);
+            color: var(--color-accent);
             transform: translateY(-1px);
         }
 
@@ -609,7 +609,7 @@
 
         .pagination-current {
             font-weight: 600;
-            color: #667eea;
+            color: var(--color-accent);
         }
 
         .pagination-separator {
