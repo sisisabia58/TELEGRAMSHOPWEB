@@ -1,36 +1,143 @@
-// Real-time Notifications Handler
-class NotificationManager {
+// Notification center — bell panel + SSE (no toast stack)
+class NotificationCenter {
   constructor() {
+    this.items = []
+    this.panelOpen = false
     this.eventSource = null
-    this.notificationContainer = null
     this.badgeElements = {}
-    this.init()
-  }
-
-  init() {
-    this.createNotificationContainer()
+    this.els = {
+      bell: document.getElementById('notificationBell'),
+      panel: document.getElementById('notificationPanel'),
+      list: document.getElementById('notificationList'),
+      badge: document.getElementById('notificationBadge'),
+      empty: document.getElementById('notificationEmpty'),
+      markAll: document.getElementById('notificationMarkAll'),
+    }
+    if (!this.els.bell) return // pages without topbar
+    this.setupBadgeUpdates()
+    this.bindUi()
+    this.loadInbox()
     this.connectSSE()
     this.loadNotificationCounts()
-    this.setupBadgeUpdates()
-    
-    // Update counts setiap 30 detik
     setInterval(() => this.loadNotificationCounts(), 30000)
   }
 
-  createNotificationContainer() {
-    // Create notification container di body
-    const notificationDiv = document.createElement('div')
-    notificationDiv.id = 'notification-container'
-    notificationDiv.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      z-index: 9999;
-      max-width: 400px;
-      pointer-events: none;
-    `
-    document.body.appendChild(notificationDiv)
-    this.notificationContainer = notificationDiv
+  bindUi() {
+    this.els.bell.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.togglePanel()
+    })
+
+    this.els.panel.addEventListener('click', (e) => e.stopPropagation())
+
+    document.addEventListener('click', () => {
+      if (this.panelOpen) this.togglePanel(false)
+    })
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.panelOpen) this.togglePanel(false)
+    })
+
+    if (this.els.markAll) {
+      this.els.markAll.addEventListener('click', () => this.markAllRead())
+    }
+  }
+
+  async markAllRead() {
+    try {
+      await fetch('/api/notifications/read-all', { method: 'POST' })
+      await this.loadInbox()
+    } catch (error) {
+      console.error('Error marking notifications read:', error)
+    }
+  }
+
+  async loadInbox() {
+    try {
+      const res = await fetch('/api/notifications/inbox')
+      const data = await res.json()
+      if (!data.success) return
+      this.items = data.items || []
+      this.render()
+      this.updateHeaderBadge(data.counts?.total || 0)
+    } catch (error) {
+      console.error('Error loading notification inbox:', error)
+    }
+  }
+
+  render() {
+    const { list, empty } = this.els
+    list.innerHTML = ''
+    if (!this.items.length) {
+      empty.hidden = false
+      return
+    }
+    empty.hidden = true
+    for (const item of this.items) {
+      const li = document.createElement('li')
+      li.className = `notification-item notification-item--${item.type}`
+      li.innerHTML = `<a href="${item.href}"><div class="notification-item-title">${item.title}</div><div class="notification-item-message">${item.message}</div></a>`
+      list.appendChild(li)
+    }
+  }
+
+  hrefFor(notification) {
+    const type = notification.type
+    const data = notification.data || {}
+    if (type === 'deposit_pending') return '/deposit?status=pending'
+    if (type === 'low_stock' && data.produk_id && data.varian_id) {
+      return `/produk/${data.produk_id}/varian/${data.varian_id}/stok`
+    }
+    if (type === 'large_transaction' && data.trx_uuid) {
+      return `/transaksi/${data.trx_uuid}`
+    }
+    if (type === 'deposit_pending' && data.deposit_id) {
+      return `/deposit/${data.deposit_id}`
+    }
+    return '/'
+  }
+
+  handleLiveNotification(notification) {
+    if (!notification || notification.type === 'connected') return
+
+    if (Notification.permission === 'granted') {
+      new Notification(notification.title, {
+        body: notification.message,
+        icon: '/logo.jpg',
+        tag: notification.type,
+      })
+    }
+
+    const href = this.hrefFor(notification)
+    const row = {
+      id: notification.data?.deposit_id || notification.data?.trx_uuid || notification.data?.varian_id || Date.now(),
+      type: notification.type,
+      title: notification.title,
+      message: notification.message,
+      href,
+      priority: notification.priority || 'medium',
+      created_at: notification.timestamp || new Date().toISOString(),
+    }
+    this.items = [row, ...this.items.filter((i) => i.id !== row.id)].slice(0, 50)
+    this.render()
+    this.updateHeaderBadge(this.items.length)
+  }
+
+  togglePanel(open) {
+    this.panelOpen = open ?? !this.panelOpen
+    this.els.panel.hidden = !this.panelOpen
+    this.els.bell.setAttribute('aria-expanded', String(this.panelOpen))
+  }
+
+  updateHeaderBadge(count) {
+    const { badge } = this.els
+    if (!badge) return
+    if (count > 0) {
+      badge.textContent = count > 99 ? '99+' : String(count)
+      badge.hidden = false
+    } else {
+      badge.hidden = true
+    }
   }
 
   connectSSE() {
@@ -44,117 +151,24 @@ class NotificationManager {
     this.eventSource.onmessage = (event) => {
       try {
         const notification = JSON.parse(event.data)
-        if (notification.type !== 'connected') {
-          this.handleNotification(notification)
-        }
+        this.handleLiveNotification(notification)
       } catch (error) {
         console.error('Error parsing notification:', error)
       }
     }
 
-    this.eventSource.onerror = (error) => {
-      console.error('SSE connection error:', error)
-      // Reconnect setelah 5 detik
+    this.eventSource.onerror = () => {
       setTimeout(() => {
-        if (this.eventSource) {
-          this.eventSource.close()
-        }
+        if (this.eventSource) this.eventSource.close()
         this.connectSSE()
       }, 5000)
     }
-  }
-
-  handleNotification(notification) {
-    // Update badge counts
-    this.updateBadge(notification.type)
-
-    // Show browser notification jika diizinkan
-    if (Notification.permission === 'granted') {
-      new Notification(notification.title, {
-        body: notification.message,
-        icon: '/logo.jpg',
-        tag: notification.type
-      })
-    }
-
-    // Show in-app notification
-    this.showInAppNotification(notification)
-  }
-
-  showInAppNotification(notification) {
-    const notifDiv = document.createElement('div')
-    notifDiv.className = 'notification-toast'
-    notifDiv.style.cssText = `
-      background: white;
-      padding: 15px 20px;
-      margin-bottom: 10px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      border-left: 4px solid ${this.getNotificationColor(notification.type)};
-      pointer-events: auto;
-      animation: slideIn 0.3s ease-out;
-      cursor: pointer;
-      max-width: 100%;
-    `
-
-    let actionButton = ''
-    if (notification.data?.deposit_id) {
-      actionButton = `
-        <a href="/deposit/${notification.data.deposit_id}" style="display: inline-block; margin-top: 8px; padding: 4px 12px; background: #17a2b8; color: white; text-decoration: none; border-radius: 4px; font-size: 12px;">
-          Lihat Detail →
-        </a>
-      `
-    } else if (notification.data?.produk_id) {
-      actionButton = `
-        <a href="/produk/${notification.data.produk_id}/stok" style="display: inline-block; margin-top: 8px; padding: 4px 12px; background: #ffc107; color: #000; text-decoration: none; border-radius: 4px; font-size: 12px;">
-          Cek Stok →
-        </a>
-      `
-    } else if (notification.data?.trx_uuid) {
-      actionButton = `
-        <a href="/transaksi/${notification.data.trx_uuid}" style="display: inline-block; margin-top: 8px; padding: 4px 12px; background: #28a745; color: white; text-decoration: none; border-radius: 4px; font-size: 12px;">
-          Lihat Transaksi →
-        </a>
-      `
-    }
-
-    notifDiv.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: start;">
-        <div style="flex: 1;">
-          <strong style="display: block; margin-bottom: 5px; color: #333;">${notification.title}</strong>
-          <span style="color: #666; font-size: 14px;">${notification.message}</span>
-          ${actionButton}
-        </div>
-        <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #999; margin-left: 10px; padding: 0; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">×</button>
-      </div>
-    `
-
-    this.notificationContainer.appendChild(notifDiv)
-
-    // Auto remove setelah 10 detik
-    setTimeout(() => {
-      if (notifDiv.parentElement) {
-        notifDiv.style.animation = 'slideOut 0.3s ease-out'
-        setTimeout(() => notifDiv.remove(), 300)
-      }
-    }, 10000)
-  }
-
-  getNotificationColor(type) {
-    const colors = {
-      'deposit_pending': '#17a2b8',
-      'low_stock': '#ffc107',
-      'large_transaction': '#28a745',
-      'system': '#6c757d'
-    }
-    return colors[type] || '#6c757d'
   }
 
   async loadNotificationCounts() {
     try {
       const response = await fetch('/api/notifications/counts')
       const data = await response.json()
-      
       if (data.success) {
         this.updateAllBadges(data.counts)
       }
@@ -163,24 +177,7 @@ class NotificationManager {
     }
   }
 
-  updateBadge(type) {
-    // Update badge berdasarkan type
-    const badgeMap = {
-      'deposit_pending': 'deposit-badge',
-      'low_stock': 'stock-badge',
-      'large_transaction': 'transaction-badge'
-    }
-
-    const badgeId = badgeMap[type]
-    if (badgeId && this.badgeElements[badgeId]) {
-      const current = parseInt(this.badgeElements[badgeId].textContent) || 0
-      this.badgeElements[badgeId].textContent = current + 1
-      this.badgeElements[badgeId].style.display = 'inline-block'
-    }
-  }
-
   updateAllBadges(counts) {
-    // Update deposit badge
     if (this.badgeElements['deposit-badge']) {
       if (counts.deposit_pending > 0) {
         this.badgeElements['deposit-badge'].textContent = counts.deposit_pending
@@ -190,7 +187,6 @@ class NotificationManager {
       }
     }
 
-    // Update stock badge
     if (this.badgeElements['stock-badge']) {
       if (counts.low_stock > 0) {
         this.badgeElements['stock-badge'].textContent = counts.low_stock
@@ -202,9 +198,8 @@ class NotificationManager {
   }
 
   setupBadgeUpdates() {
-    // Setup badge elements
     const depositLink = document.querySelector('a[href="/deposit"]')
-    if (depositLink) {
+    if (depositLink && !document.getElementById('deposit-badge')) {
       const badge = document.createElement('span')
       badge.id = 'deposit-badge'
       badge.className = 'notification-badge'
@@ -223,7 +218,7 @@ class NotificationManager {
     }
 
     const produkLink = document.querySelector('a[href="/produk"]')
-    if (produkLink) {
+    if (produkLink && !document.getElementById('stock-badge')) {
       const badge = document.createElement('span')
       badge.id = 'stock-badge'
       badge.className = 'notification-badge'
@@ -243,49 +238,19 @@ class NotificationManager {
   }
 }
 
-// Request browser notification permission
 if ('Notification' in window && Notification.permission === 'default') {
-  Notification.requestPermission().then(permission => {
+  Notification.requestPermission().then((permission) => {
     if (permission === 'granted') {
       console.log('Browser notifications enabled')
     }
   })
 }
 
-// CSS untuk animations
-const style = document.createElement('style')
-style.textContent = `
-  @keyframes slideIn {
-    from {
-      transform: translateX(400px);
-      opacity: 0;
-    }
-    to {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  
-  @keyframes slideOut {
-    from {
-      transform: translateX(0);
-      opacity: 1;
-    }
-    to {
-      transform: translateX(400px);
-      opacity: 0;
-    }
-  }
-`
-document.head.appendChild(style)
-
-// Initialize notification manager
-let notificationManager
+let notificationCenter
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
-    notificationManager = new NotificationManager()
+    notificationCenter = new NotificationCenter()
   })
 } else {
-  notificationManager = new NotificationManager()
+  notificationCenter = new NotificationCenter()
 }
-
