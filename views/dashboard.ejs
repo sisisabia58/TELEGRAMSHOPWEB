@@ -8,7 +8,7 @@
         { label: 'Home', href: '/' },
         { label: 'Overview' }
     ];
-    pageHeaderActions = `
+    const dashboardHeaderActions = `
         <a href="/deposit" class="btn btn-primary">Cek Deposit</a>
         <a href="/stok" class="btn btn-warning">Cek Stok</a>
         <a href="/settings/bot-flow" class="btn btn-secondary">Bot Flow</a>
@@ -125,7 +125,7 @@
         <%- include('partials/topbar') %>
 
         <div class="container">
-            <%- include('partials/page-header') %>
+            <%- include('partials/page-header', { breadcrumbs: breadcrumbs, pageHeaderActions: dashboardHeaderActions }) %>
             <p class="overview-subtitle">Prioritas operasional hari ini untuk deposit, stok, harga, transaksi, dan alur bot.</p>
 
             <% if (model.draftNotice) { %>

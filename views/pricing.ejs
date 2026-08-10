@@ -38,7 +38,7 @@
         <%- include('partials/topbar') %>
 
         <div class="container">
-            <%- include('partials/page-header') %>
+            <%- include('partials/page-header', { breadcrumbs: breadcrumbs, pageHeaderActions: '' }) %>
 
             <%
                 const totalVariants = rows.length;

@@ -102,7 +102,7 @@
         <%- include('partials/topbar') %>
 
         <div class="container">
-            <%- include('partials/page-header') %>
+            <%- include('partials/page-header', { breadcrumbs: breadcrumbs, pageHeaderActions: '' }) %>
 
             <div class="toolbar" id="filterCard">
                 <form method="GET" action="/transaksi" id="filterForm" class="transaksi-toolbar-form">
@@ -211,7 +211,7 @@
                                             <td><code><%= t.trxid || '-' %></code></td>
                                             <td>
                                                 <div class="table-actions">
-                                                    <a href="/transaksi/<%= t.trx_uuid %>" class="btn-icon" title="Detail">👁️</a>
+                                                    <a href="/transaksi/<%= t.trx_uuid %>" class="btn-icon" title="Detail"><svg class="icon" aria-hidden="true"><use href="#i-eye"></use></svg></a>
                                                 </div>
                                             </td>
                                         </tr>

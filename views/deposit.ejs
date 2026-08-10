@@ -111,7 +111,7 @@
         <%- include('partials/topbar') %>
         
         <div class="container">
-            <%- include('partials/page-header') %>
+            <%- include('partials/page-header', { breadcrumbs: breadcrumbs, pageHeaderActions: '' }) %>
 
             <div class="metric-strip">
                 <div class="metric-tile">
@@ -272,14 +272,14 @@
                                             <td><%= d.metode === 'qris' ? '💳 QRIS' : '👤 Manual' %></td>
                                             <td>
                                                 <div class="table-actions deposit-row-actions">
-                                                    <a href="/deposit/<%= d.id %>" class="btn-icon" title="Detail">👁️</a>
+                                                    <a href="/deposit/<%= d.id %>" class="btn-icon" title="Detail"><svg class="icon" aria-hidden="true"><use href="#i-eye"></use></svg></a>
                                                     <% if (d.status === 'pending') { %>
                                                         <div class="deposit-approve-reject">
                                                             <form method="POST" action="/deposit/<%= d.id %>/approve" onsubmit="return confirm('Yakin approve deposit ini?')">
-                                                                <button type="submit" class="deposit-action-btn deposit-action-approve" title="Approve"><span aria-hidden="true">✅</span><span class="deposit-action-label"> Approve</span></button>
+                                                                <button type="submit" class="deposit-action-btn deposit-action-approve" title="Approve"><svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg><span class="deposit-action-label"> Approve</span></button>
                                                             </form>
                                                             <form method="POST" action="/deposit/<%= d.id %>/reject" onsubmit="return confirm('Yakin reject deposit ini?')">
-                                                                <button type="submit" class="deposit-action-btn deposit-action-reject" title="Reject"><span aria-hidden="true">❌</span><span class="deposit-action-label"> Reject</span></button>
+                                                                <button type="submit" class="deposit-action-btn deposit-action-reject" title="Reject"><svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg><span class="deposit-action-label"> Reject</span></button>
                                                             </form>
                                                         </div>
                                                     <% } %>

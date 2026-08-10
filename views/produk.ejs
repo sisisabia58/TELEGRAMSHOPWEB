@@ -45,7 +45,7 @@
         <%- include('partials/topbar') %>
         
         <div class="container">
-            <%- include('partials/page-header') %>
+            <%- include('partials/page-header', { breadcrumbs: breadcrumbs, pageHeaderActions: '' }) %>
 
             <%
                 const totalProducts = products.length;
@@ -74,7 +74,7 @@
 
             <div class="toolbar">
                 <div class="search-container">
-                    <span class="search-icon">🔍</span>
+                    <span class="search-icon"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg></span>
                     <input type="text" id="searchInput" class="search-input" placeholder="Cari produk (nama, kategori)...">
                 </div>
                 <div class="toolbar-spacer"></div>

@@ -34,7 +34,7 @@
         <%- include('partials/topbar') %>
 
         <div class="container">
-            <%- include('partials/page-header') %>
+            <%- include('partials/page-header', { breadcrumbs: breadcrumbs, pageHeaderActions: '' }) %>
 
             <%
                 const totalVariants = rows.length;
@@ -108,7 +108,9 @@
                                             </td>
                                             <td>
                                                 <div class="table-actions">
-                                                    <a href="/produk/<%= row.produk_id %>/varian/<%= row.varian_id %>/stok" class="btn-icon" title="Kelola stok">📦</a>
+                                                    <a href="/produk/<%= row.produk_id %>/varian/<%= row.varian_id %>/stok" class="btn-icon" title="Kelola stok">
+                                                        <svg class="icon" aria-hidden="true"><use href="#i-package"></use></svg>
+                                                    </a>
                                                 </div>
                                             </td>
                                         </tr>
