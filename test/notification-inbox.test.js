@@ -52,6 +52,11 @@ test('getNotificationHref maps deposit_pending without deposit_id to pending lis
   assert.strictEqual(getNotificationHref('deposit_pending', {}), '/deposit?status=pending')
 })
 
+test('getNotificationHref tolerates null data', () => {
+  assert.strictEqual(getNotificationHref('deposit_pending', null), '/deposit?status=pending')
+  assert.strictEqual(getNotificationHref('large_transaction', null), '/')
+})
+
 test('computeInboxTotal sums entity counts not panel rows', () => {
   assert.strictEqual(computeInboxTotal({ pendingCount: 2, lowStockCount: 7, largeTransactionCount: 0 }), 9)
 })
