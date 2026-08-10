@@ -6,13 +6,35 @@
 
 ## Automated gates (Task 6 — 2026-08-10)
 
-| Gate | Command | Result |
-|------|---------|--------|
-| Unit tests | `node --test` | **PASS** — 71/71 |
-| Syntax | `node --check dashboard.js` | **PASS** |
-| Purple purge | `rg -n "667eea\|764ba2" views public/css \|\| echo OK` | **OK** (no matches) |
-| New classes / icons | `rg -n "metric-strip\|page-header\|#i-" views \| head` | **OK** — `page-header`, `metric-strip`, `#i-*` SVG refs in dashboard, produk, deposit, sidebar, mobile-tabs |
-| Hamburger glyph | `rg -n "☰" views/partials \|\| echo OK` | **OK** (no matches; menu uses `#i-menu` SVG) |
+**Unit tests** — PASS 71/71
+
+```bash
+node --test
+```
+
+**Syntax** — PASS
+
+```bash
+node --check dashboard.js
+```
+
+**Purple purge** — OK (no matches)
+
+```bash
+rg -n "667eea|764ba2" views public/css || echo OK
+```
+
+**New classes / icons** — OK — `page-header`, `metric-strip`, `#i-*` SVG refs in dashboard, produk, deposit, sidebar, mobile-tabs
+
+```bash
+rg -n "metric-strip|page-header|#i-" views | head
+```
+
+**Hamburger glyph** — OK (no matches; menu uses `#i-menu` SVG)
+
+```bash
+rg -n "☰" views/partials || echo OK
+```
 
 ## Manual checklist (code/path verification — no headless browser)
 
