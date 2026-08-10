@@ -13,10 +13,11 @@ Phase 8 shipped shared chrome, teal tokens, and triage Overview, but the shell s
 3. **Purple leftovers** — many page bodies + `login.css` still use `#667eea` / `#764ba2` gradients (Phase 8 shell is clean; bodies are not)  
 4. **Sidebar is functional but plain** — group toggles work; active state is a hard left bar rather than a soft selected pill  
 5. **Density** — whitespace exists but action rows (search + filters + primary CTA) are not standardized  
+6. **Emoji-heavy chrome** — page titles, topbar actions, variant row buttons, and mobile cues still use emoji (📦 💰 🗑️) instead of Semrush-like monochrome line icons  
 
 ## Goal
 
-Polish the **existing EJS admin shell** to a Semrush-like professional density: soft surfaces, consistent page headers, metric strips, refined tables/filters, and zero purple — without a SPA rewrite or dual icon-rail nav.
+Polish the **existing EJS admin shell** to a Semrush-like professional density: soft surfaces, consistent page headers, metric strips, refined tables/filters, **monochrome professional icons**, and zero purple — without a SPA rewrite or dual icon-rail nav.
 
 ## Non-goals
 
@@ -53,7 +54,7 @@ Polish the **existing EJS admin shell** to a Semrush-like professional density: 
 | Radius | Bump shell to `--radius: 12px`; pills `--radius-pill: 999px` |
 | Shadow | Single soft elevation (no multi-layer glow) |
 | Type | Plus Jakarta Sans (already loaded) |
-| Icons | Prefer small inline SVG / Unicode sparingly; no emoji as primary chrome |
+| Icons | **Monochrome line icons** (stroke, `currentColor`) — black/slate on light UI; inherit muted/accent when active. No emoji as primary chrome. No multicolor brand icons in nav. |
 
 Dashboard exception to marketing-landing rules still applies: multi-section admin UI + data tables are expected. Cards are allowed as **interaction/data containers** (metrics, filters, tables).
 
@@ -101,17 +102,38 @@ Replace `#667eea` / `#764ba2` in `views/**` and `public/css/login.css` with toke
 
 2–3 intentional motions only: sidebar active fade, card hover elevation, optional toolbar focus ring — no animated purple glow.
 
+### D7 — Professional monochrome icon set
+
+Replace emoji / hamburger text glyphs in **admin chrome** with Semrush-like B&W line icons:
+
+| Surface | Approach |
+|---------|----------|
+| Delivery | Inline SVG sprite in `views/partials/icons.ejs` (symbols) + `<svg class="icon"><use href="#i-home"/></svg>` — **no new npm build**; optional Lucide CDN only if sprite becomes unwieldy (prefer sprite for offline/Railway simplicity) |
+| Style | 24×24 viewBox, 1.75–2px stroke, round caps/joins, `fill="none" stroke="currentColor"` |
+| Color | Default `var(--color-text)` / muted `var(--color-muted)`; active nav uses `var(--color-accent)` via `currentColor` |
+| Sidebar | One icon per nav item (home, box, layers, tag, upload, git-branch, file-text, megaphone, users, wallet, receipt, ticket, chart, settings, shield) |
+| Mobile tabs | Same monochrome icons (Overview / Catalog / Customers / More) |
+| Topbar / actions | Strip leading emoji from `pageTitle` / `topbarExtra` in `chromeLocalsByView`; use `.icon` beside buttons where an icon is needed (add, download, trash, edit) |
+| Tables | `variant-row` and `.btn-icon` actions: package, chevron, trash SVGs — not 📦🗑️ |
+| Out of scope | Bot Telegram message emoji; product content; replacing every emoji inside long help copy |
+
+Hamburger `☰` → menu SVG; keep accessible `aria-label`.
+
 ## Success criteria
 
 1. Hard-refresh: no `#667eea` / `#764ba2` in authenticated views or login CSS  
 2. Overview + core list pages show Semrush-like header/toolbar/metric density while teal brand remains  
 3. Sidebar active state reads as a soft selected pill  
 4. Mobile tabs ≤768px still work; touch targets ≥44px  
-5. `node --test` green; no bot/`index.js` behavior changes  
-6. Screenshots (desktop + mobile width) of `/`, `/produk`, `/deposit` for PR  
+5. Sidebar, mobile tabs, topbar toggles, and core list action buttons use monochrome SVG icons — **no emoji as primary chrome icons**  
+6. `chromeLocalsByView` page titles have no leading emoji  
+7. `node --test` green; no bot/`index.js` behavior changes  
+8. Screenshots (desktop + mobile width) of `/`, `/produk`, `/deposit` for PR  
 
 ## Out of scope reminders
 
 - Dual icon rail  
 - Rewriting communication broadcast into a campaign builder  
 - Changing Overview triage data queries  
+- Multicolor / filled brand icons; emoji in Telegram bot messages  
+- npm Lucide package / frontend build step (inline sprite only)  
