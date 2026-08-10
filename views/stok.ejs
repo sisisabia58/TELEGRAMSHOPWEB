@@ -1,18 +1,15 @@
+<%
+    breadcrumbs = [
+        { label: 'Home', href: '/' },
+        { label: 'Catalog', href: '/produk' },
+        { label: 'Stock' }
+    ];
+%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <%- include('partials/head') %>
     <style>
-        .catalog-summary {
-            display: flex;
-            gap: 16px;
-            flex-wrap: wrap;
-            margin-bottom: 20px;
-        }
-        .catalog-summary .stat-card {
-            flex: 1;
-            min-width: 140px;
-        }
         .table-card .card-header {
             display: flex;
             justify-content: space-between;
@@ -24,6 +21,8 @@
             color: var(--color-muted);
             font-size: 14px;
         }
+        .metric-tile .value.danger { color: var(--color-danger); }
+        .metric-tile .value.warning { color: var(--color-warning); }
     </style>
 </head>
 <body>
@@ -35,32 +34,25 @@
         <%- include('partials/topbar') %>
 
         <div class="container">
+            <%- include('partials/page-header') %>
+
             <%
                 const totalVariants = rows.length;
                 const outCount = (stockSummary && stockSummary.outOfStock) ? stockSummary.outOfStock.length : 0;
                 const lowCount = (stockSummary && stockSummary.lowStock) ? stockSummary.lowStock.length : 0;
             %>
-            <div class="catalog-summary">
-                <div class="stat-card">
-                    <div class="stat-icon">📦</div>
-                    <div class="stat-info">
-                        <h3>Total Varian</h3>
-                        <p class="stat-value"><%= totalVariants %></p>
-                    </div>
+            <div class="metric-strip">
+                <div class="metric-tile">
+                    <div class="label">Total Varian</div>
+                    <div class="value"><%= totalVariants %></div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">⚠️</div>
-                    <div class="stat-info">
-                        <h3>Habis</h3>
-                        <p class="stat-value" style="color: var(--color-danger);"><%= outCount %></p>
-                    </div>
+                <div class="metric-tile">
+                    <div class="label">Habis</div>
+                    <div class="value danger"><%= outCount %></div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">📉</div>
-                    <div class="stat-info">
-                        <h3>Stok Rendah</h3>
-                        <p class="stat-value" style="color: var(--color-warning);"><%= lowCount %></p>
-                    </div>
+                <div class="metric-tile">
+                    <div class="label">Stok Rendah</div>
+                    <div class="value warning"><%= lowCount %></div>
                 </div>
             </div>
 

@@ -1,0 +1,21 @@
+<%# views/partials/page-header.ejs %>
+<% const crumbs = typeof breadcrumbs !== 'undefined' && Array.isArray(breadcrumbs) ? breadcrumbs : [] %>
+<div class="page-header">
+  <div>
+    <% if (crumbs.length) { %>
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <% crumbs.forEach((c, i) => { %>
+          <% if (i > 0) { %><span aria-hidden="true">›</span><% } %>
+          <% if (c.href) { %>
+            <a href="<%= c.href %>"><%= c.label %></a>
+          <% } else { %>
+            <span><%= c.label %></span>
+          <% } %>
+        <% }) %>
+      </nav>
+    <% } %>
+  </div>
+  <% if (typeof pageHeaderActions !== 'undefined' && pageHeaderActions) { %>
+    <div class="page-header-actions"><%- pageHeaderActions %></div>
+  <% } %>
+</div>

@@ -1,18 +1,15 @@
+<%
+    breadcrumbs = [
+        { label: 'Home', href: '/' },
+        { label: 'Catalog', href: '/produk' },
+        { label: 'Products' }
+    ];
+%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <%- include('partials/head') %>
     <style>
-        .catalog-summary {
-            display: flex;
-            gap: 16px;
-            flex-wrap: wrap;
-            margin-bottom: 20px;
-        }
-        .catalog-summary .stat-card {
-            flex: 1;
-            min-width: 140px;
-        }
         .table-card .card-header {
             display: flex;
             justify-content: space-between;
@@ -24,11 +21,18 @@
             color: var(--color-muted);
             font-size: 14px;
         }
-        .search-card {
-            margin-bottom: 20px;
-        }
         .table-card {
             margin-bottom: 20px;
+        }
+        .metric-tile .value.accent { color: var(--color-accent); }
+        .metric-tile .value.success { color: var(--color-success); }
+        .toolbar .search-container {
+            flex: 1;
+            min-width: 200px;
+            margin: 0;
+        }
+        .toolbar .search-input {
+            width: 100%;
         }
     </style>
 </head>
@@ -41,50 +45,39 @@
         <%- include('partials/topbar') %>
         
         <div class="container">
+            <%- include('partials/page-header') %>
+
             <%
                 const totalProducts = products.length;
                 const totalVariants = products.reduce((sum, p) => sum + (p.variant_count || 0), 0);
                 const totalStock = products.reduce((sum, p) => sum + (p.total_stock || 0), 0);
                 const activeProducts = products.filter(p => p.is_active !== false).length;
             %>
-            <div class="catalog-summary">
-                <div class="stat-card">
-                    <div class="stat-icon">📦</div>
-                    <div class="stat-info">
-                        <h3>Total Produk</h3>
-                        <p class="stat-value"><%= totalProducts %></p>
-                    </div>
+            <div class="metric-strip">
+                <div class="metric-tile">
+                    <div class="label">Total Produk</div>
+                    <div class="value"><%= totalProducts %></div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">🏷️</div>
-                    <div class="stat-info">
-                        <h3>Total Varian</h3>
-                        <p class="stat-value"><%= totalVariants %></p>
-                    </div>
+                <div class="metric-tile">
+                    <div class="label">Total Varian</div>
+                    <div class="value"><%= totalVariants %></div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">📊</div>
-                    <div class="stat-info">
-                        <h3>Total Stok</h3>
-                        <p class="stat-value" style="color: var(--color-accent);"><%= totalStock %></p>
-                    </div>
+                <div class="metric-tile">
+                    <div class="label">Total Stok</div>
+                    <div class="value accent"><%= totalStock %></div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">✅</div>
-                    <div class="stat-info">
-                        <h3>Aktif</h3>
-                        <p class="stat-value" style="color: var(--color-success);"><%= activeProducts %></p>
-                    </div>
+                <div class="metric-tile">
+                    <div class="label">Aktif</div>
+                    <div class="value success"><%= activeProducts %></div>
                 </div>
             </div>
 
-            <div class="card search-card">
-                <div class="card-body">
-                    <div class="search-container">
-                        <span class="search-icon">🔍</span>
-                        <input type="text" id="searchInput" class="search-input" placeholder="Cari produk (nama, kategori)...">
-                    </div>
+            <div class="toolbar">
+                <div class="search-container">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="searchInput" class="search-input" placeholder="Cari produk (nama, kategori)...">
                 </div>
+                <div class="toolbar-spacer"></div>
             </div>
             
             <div class="card table-card">

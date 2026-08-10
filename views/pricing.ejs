@@ -1,18 +1,15 @@
+<%
+    breadcrumbs = [
+        { label: 'Home', href: '/' },
+        { label: 'Catalog', href: '/produk' },
+        { label: 'Pricing' }
+    ];
+%>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <%- include('partials/head') %>
     <style>
-        .catalog-summary {
-            display: flex;
-            gap: 16px;
-            flex-wrap: wrap;
-            margin-bottom: 20px;
-        }
-        .catalog-summary .stat-card {
-            flex: 1;
-            min-width: 140px;
-        }
         .table-card .card-header {
             display: flex;
             justify-content: space-between;
@@ -28,6 +25,8 @@
             font-weight: 600;
             color: var(--color-text);
         }
+        .metric-tile .value.accent { color: var(--color-accent); }
+        .metric-tile .value.muted { color: var(--color-muted); }
     </style>
 </head>
 <body>
@@ -39,32 +38,25 @@
         <%- include('partials/topbar') %>
 
         <div class="container">
+            <%- include('partials/page-header') %>
+
             <%
                 const totalVariants = rows.length;
                 const withTiers = rows.filter(r => r.tier_count > 0).length;
                 const noTiers = totalVariants - withTiers;
             %>
-            <div class="catalog-summary">
-                <div class="stat-card">
-                    <div class="stat-icon">💰</div>
-                    <div class="stat-info">
-                        <h3>Total Varian</h3>
-                        <p class="stat-value"><%= totalVariants %></p>
-                    </div>
+            <div class="metric-strip">
+                <div class="metric-tile">
+                    <div class="label">Total Varian</div>
+                    <div class="value"><%= totalVariants %></div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">📊</div>
-                    <div class="stat-info">
-                        <h3>Dengan Tier</h3>
-                        <p class="stat-value" style="color: var(--color-accent);"><%= withTiers %></p>
-                    </div>
+                <div class="metric-tile">
+                    <div class="label">Dengan Tier</div>
+                    <div class="value accent"><%= withTiers %></div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon">—</div>
-                    <div class="stat-info">
-                        <h3>Harga Dasar Saja</h3>
-                        <p class="stat-value" style="color: var(--color-muted);"><%= noTiers %></p>
-                    </div>
+                <div class="metric-tile">
+                    <div class="label">Harga Dasar Saja</div>
+                    <div class="value muted"><%= noTiers %></div>
                 </div>
             </div>
 
