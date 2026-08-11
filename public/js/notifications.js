@@ -26,15 +26,20 @@ class NotificationCenter {
   }
 
   bindUi() {
+    this.els.center = document.getElementById('notificationCenter')
+
     this.els.bell.addEventListener('click', (e) => {
+      e.preventDefault()
       e.stopPropagation()
       this.togglePanel()
     })
 
     this.els.panel.addEventListener('click', (e) => e.stopPropagation())
 
-    document.addEventListener('click', () => {
-      if (this.panelOpen) this.togglePanel(false)
+    document.addEventListener('click', (e) => {
+      if (!this.panelOpen) return
+      if (this.els.center?.contains(e.target)) return
+      this.togglePanel(false)
     })
 
     document.addEventListener('keydown', (e) => {

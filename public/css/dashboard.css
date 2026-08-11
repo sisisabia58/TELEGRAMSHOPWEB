@@ -1989,6 +1989,7 @@ textarea:focus {
 .notification-center { position: relative; }
 .notification-bell {
   position: relative;
+  z-index: 1201;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2035,6 +2036,9 @@ textarea:focus {
   box-shadow: var(--shadow);
   z-index: 1200;
 }
+.notification-panel[hidden] {
+  display: none !important;
+}
 .notification-panel-header,
 .notification-panel-footer {
   display: flex;
@@ -2070,10 +2074,7 @@ textarea:focus {
 }
 @media (max-width: 768px) {
   .notification-panel {
-    position: fixed;
-    top: calc(var(--topbar-height, 64px) + 8px);
-    right: 12px;
-    left: 12px;
-    width: auto;
+    width: min(360px, calc(100vw - 24px));
+    max-height: min(420px, calc(100vh - 160px));
   }
 }
