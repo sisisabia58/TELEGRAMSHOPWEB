@@ -1,0 +1,208 @@
+<%
+    breadcrumbs = [
+        { label: 'Home', href: '/' },
+        { label: 'Catalog', href: '/produk' },
+        { label: 'Supplier', href: '/supplier' },
+        { label: 'Pengaturan' }
+    ];
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <%- include('partials/head') %>
+    <style>
+        .form-hint { color: var(--color-muted); font-size: 13px; margin-top: 4px; line-height: 1.5; }
+        .form-actions { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
+        .rumus {
+            background: var(--color-surface-alt, rgba(0,0,0,.03));
+            border-radius: 6px;
+            padding: 16px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 13px;
+            line-height: 1.8;
+            margin-bottom: 16px;
+        }
+        .contoh-table { width: 100%; }
+        .contoh-table td { padding: 6px 0; }
+        .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <%- include('partials/sidebar') %>
+
+    <main class="main-content" id="main-content">
+        <%- include('partials/topbar') %>
+
+        <div class="container">
+            <%- include('partials/page-header', { breadcrumbs: breadcrumbs, pageHeaderActions: '' }) %>
+
+            <div class="card">
+                <div class="card-header"><h2 class="card-title">Cara Harga Dihitung</h2></div>
+                <div class="card-body">
+                    <div class="rumus">
+harga_jual = harga_supplier &times; kurs &times; (1 + buffer%) &times; (1 + margin%)
+             lalu dibulatkan <strong>ke atas</strong> ke kelipatan pembulatan
+                    </div>
+                    <p class="form-hint">
+                        Harga rupiah tidak pernah disimpan di database — selalu dihitung ulang saat dibaca.
+                        Karena itu mengubah margin atau kurs di halaman ini langsung berlaku untuk seluruh katalog,
+                        dan tidak mungkin ada baris yang tertinggal dengan harga lama.
+                    </p>
+                    <table class="contoh-table">
+                        <tbody>
+                            <% contoh.forEach(c => { %>
+                                <tr>
+                                    <td>Supplier USD <%= c.usd %></td>
+                                    <td><strong><%= c.idr === null ? '(gagal hitung)' : formatrupiah(c.idr) %></strong></td>
+                                </tr>
+                            <% }) %>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <form id="formReseller">
+                <div class="card">
+                    <div class="card-header"><h2 class="card-title">Margin &amp; Pembulatan</h2></div>
+                    <div class="card-body">
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label for="margin_persen">Margin Keuntungan (%)</label>
+                                <input type="number" id="margin_persen" name="margin_persen" class="form-control"
+                                       step="0.1" min="0" value="<%= settings.marginPersen %>" required>
+                                <div class="form-hint">Berlaku untuk semua produk supplier. Harga stok sendiri tidak terpengaruh.</div>
+                            </div>
+                            <div class="form-group">
+                                <label for="rounding">Pembulatan (Rp)</label>
+                                <input type="number" id="rounding" name="rounding" class="form-control"
+                                       step="100" min="0" value="<%= settings.rounding %>">
+                                <div class="form-hint">Contoh 500 membuat Rp 47.312 jadi Rp 47.500. Isi 0 untuk tanpa pembulatan.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header"><h2 class="card-title">Kurs USD → IDR</h2></div>
+                    <div class="card-body">
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label for="fx_mode">Sumber Kurs</label>
+                                <select id="fx_mode" name="fx_mode" class="form-control">
+                                    <option value="auto" <%= settings.fxMode === 'auto' ? 'selected' : '' %>>Otomatis (ambil harian)</option>
+                                    <option value="manual" <%= settings.fxMode === 'manual' ? 'selected' : '' %>>Manual (kunci angka di bawah)</option>
+                                </select>
+                                <div class="form-hint">
+                                    Mode otomatis mengambil kurs tiap hari pukul 05:00 WIB. Kalau pengambilan gagal,
+                                    kurs terakhir yang diketahui baik tetap dipakai — harga tidak pernah melonjak karena API pihak ketiga bermasalah.
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="fx_usd_idr">Kurs 1 USD (Rp)</label>
+                                <input type="number" id="fx_usd_idr" name="fx_usd_idr" class="form-control"
+                                       step="1" min="1" value="<%= settings.fxRate %>" required>
+                                <div class="form-hint">
+                                    <% if (settings.fxUpdatedAt) { %>
+                                        Terakhir diperbarui: <%= formatTanggal(settings.fxUpdatedAt) %>
+                                    <% } else { %>
+                                        Belum pernah diperbarui otomatis.
+                                    <% } %>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="fx_buffer_persen">Buffer Pengaman (%)</label>
+                                <input type="number" id="fx_buffer_persen" name="fx_buffer_persen" class="form-control"
+                                       step="0.1" min="0" value="<%= settings.fxBufferPersen %>">
+                                <div class="form-hint">Bantalan di atas kurs pasar supaya pergerakan rupiah antar-sinkronisasi tidak memakan margin.</div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-secondary" onclick="ambilKurs()">Ambil kurs sekarang</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header"><h2 class="card-title">Sinkronisasi &amp; Dompet</h2></div>
+                    <div class="card-body">
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label for="sync_interval_menit">Interval Sync (menit)</label>
+                                <input type="number" id="sync_interval_menit" name="sync_interval_menit" class="form-control"
+                                       step="1" min="1" value="<%= settings.syncIntervalMenit %>">
+                                <div class="form-hint">Seberapa sering katalog dan stok supplier ditarik ulang.</div>
+                            </div>
+                            <div class="form-group">
+                                <label for="kategori_default">Kategori Produk Baru</label>
+                                <input type="text" id="kategori_default" name="kategori_default" class="form-control"
+                                       value="<%= settings.kategoriDefault %>">
+                                <div class="form-hint">Kategori yang dipakai saat sync membuat produk baru karena tidak menemukan padanan.</div>
+                            </div>
+                            <div class="form-group">
+                                <label for="wallet_min_usd">Ambang Peringatan Dompet (USD)</label>
+                                <input type="number" id="wallet_min_usd" name="wallet_min_usd" class="form-control"
+                                       step="0.5" min="0" value="<%= settings.walletMinUsd %>">
+                                <div class="form-hint">
+                                    Dompet reseller dibayar di muka. Kalau saldonya habis, setiap pesanan yang seharusnya
+                                    dipenuhi supplier akan gagal lalu direfund — jadi peringatan ini dikirim ke channel log tiap 6 jam.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-success">Simpan Pengaturan</button>
+                    <a href="/supplier" class="btn btn-secondary">Kembali</a>
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <%- include('partials/mobile-tabs') %>
+
+    <script>
+        document.getElementById('formReseller').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const body = Object.fromEntries(new FormData(e.target).entries());
+            try {
+                const r = await fetch('/api/settings/reseller', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const d = await r.json();
+                if (d.success) {
+                    if (window.toast) toast.success(d.message, 'Berhasil');
+                    setTimeout(() => window.location.reload(), 900);
+                } else if (window.toast) {
+                    toast.error(d.message || 'Gagal menyimpan', 'Error');
+                }
+            } catch (err) {
+                if (window.toast) toast.error(err.message, 'Error');
+            }
+        });
+
+        async function ambilKurs() {
+            try {
+                const r = await fetch('/api/settings/reseller/kurs', { method: 'POST' });
+                const d = await r.json();
+                if (d.success) {
+                    document.getElementById('fx_usd_idr').value = d.rate;
+                    if (window.toast) toast.success('Kurs terbaru: ' + d.rate, 'Berhasil');
+                } else if (window.toast) {
+                    toast.error('Gagal ambil kurs: ' + (d.message || '') + ' — tetap memakai ' + d.rate, 'Error');
+                }
+            } catch (e) {
+                if (window.toast) toast.error(e.message, 'Error');
+            }
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+    </script>
+</body>
+</html>

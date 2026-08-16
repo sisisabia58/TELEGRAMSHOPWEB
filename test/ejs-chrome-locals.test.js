@@ -16,6 +16,18 @@ const baseLocals = {
   formatTanggal: (value) => new Date(value).toISOString(),
 }
 
+const SETTINGS_RESELLER = {
+  marginPersen: 10,
+  rounding: 500,
+  fxMode: 'auto',
+  fxRate: 16500,
+  fxBufferPersen: 2,
+  fxUpdatedAt: null,
+  syncIntervalMenit: 5,
+  kategoriDefault: 'reseller',
+  walletMinUsd: 5,
+}
+
 const cases = [
   {
     view: 'voucher.ejs',
@@ -52,6 +64,55 @@ const cases = [
       deposits: [],
       totalDeposit: 0,
       totalPengeluaran: 0,
+    },
+  },
+  // Fase 13 — halaman sumber stok ketiga, di grup nav Catalog.
+  {
+    view: 'supplier.ejs',
+    locals: {
+      currentPage: 'supplier',
+      pageTitle: 'Supplier Test',
+      suppliers: [],
+      statistik: {},
+      settings: SETTINGS_RESELLER,
+      adapters: [{ key: 'bitestore', label: 'Bite Store', defaultBaseUrl: 'https://contoh.test' }],
+      success: null,
+      error: null,
+    },
+  },
+  {
+    view: 'supplier-form.ejs',
+    locals: {
+      currentPage: 'supplier',
+      pageTitle: 'Tambah Supplier',
+      supplier: null,
+      adapters: [{ key: 'bitestore', label: 'Bite Store', defaultBaseUrl: 'https://contoh.test' }],
+      error: null,
+    },
+  },
+  {
+    view: 'supplier-produk.ejs',
+    locals: {
+      currentPage: 'supplier',
+      pageTitle: 'Katalog Supplier',
+      supplier: { id: 's1', nama: 'Seller A' },
+      produk: [],
+      varianList: [],
+      filter: 'all',
+      settings: SETTINGS_RESELLER,
+      success: null,
+      error: null,
+    },
+  },
+  {
+    view: 'supplier-pengaturan.ejs',
+    locals: {
+      currentPage: 'supplier',
+      pageTitle: 'Pengaturan Reseller',
+      settings: SETTINGS_RESELLER,
+      contoh: [{ usd: 1, idr: 18150 }],
+      success: null,
+      error: null,
     },
   },
 ]

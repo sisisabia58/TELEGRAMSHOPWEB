@@ -36,6 +36,20 @@ const cart = require('./lib/cart')
 const catalog = require('./lib/catalog')
 const pricing = require('./lib/pricing')
 
+// Sumber stok ketiga: katalog supplier (fase 13). Stok sendiri tetap jadi
+// sumber utama dan menang setiap kali harganya lebih murah — modul-modul ini
+// hanya menambah pilihan, tidak menggantikan apa pun.
+const sourcing = require('./lib/sourcing')
+const fulfillment = require('./lib/fulfillment')
+const supplierSync = require('./lib/supplier-sync')
+const fx = require('./lib/fx')
+const { getAdapter } = require('./lib/suppliers')
+
+// Harga yang ditampilkan DAN ditagih untuk satu varian. Selalu pakai ini, jangan
+// baca v.harga langsung: untuk varian yang dipasok supplier, v.harga cuma angka
+// cadangan sementara harga sebenarnya dihitung dari kurs + margin yang berlaku.
+const hargaVarian = catalog.hargaVarian
+
 const stock = require('./lib/stock')
 const getStokCount = stock.getStokCountByKode
 const getStokForTransaction = stock.getStokForTransaction
@@ -65,6 +79,16 @@ runtimeSettings.refresh(true)
       copy.refresh().catch(() => {})
       flow.refresh().catch(() => {})
     })
+    // Segarkan kurs sekali saat boot supaya harga produk supplier tidak
+    // memakai angka basi sampai cron harian pertama berjalan. Kalau gagal,
+    // kurs terakhir yang tersimpan tetap dipakai.
+    fx.refreshRate()
+      .then((r) => {
+        if (r.skipped) return
+        if (r.ok) console.log(`[FX] Kurs USD-IDR saat boot: ${r.rate}`)
+        else console.warn(`[FX] Gagal ambil kurs saat boot (${r.error}); memakai ${r.rate}`)
+      })
+      .catch(() => {})
   })
   .catch((e) => console.error('[runtime-settings] gagal muat awal:', e.message))
 const TelegramBot = require("node-telegram-bot-api")
@@ -343,9 +367,11 @@ async function generateReplyKeyboard(userId) {
 async function getVarianForCart(kode) {
   const v = await catalog.getVariantByKode(kode)
   if (!v) return null
-  const stokCount = await getStokCount(v.kode)
+  // attachStock menghitung stok gabungan (stok sendiri + semua supplier yang
+  // memetakan ke varian ini) sekaligus harga_efektif = penawaran termurah.
+  const [denganStok] = await catalog.attachStock([v])
   return {
-    ...v,
+    ...denganStok,
     nama: `${v.produk?.nama || 'Produk'} — ${v.label}`,
     namaProduk: v.produk?.nama || 'Produk',
     namaLabel: v.label,
@@ -353,24 +379,188 @@ async function getVarianForCart(kode) {
     snk: v.produk?.snk || '',
     slug: v.produk?.slug || '',
     produk_id: v.produk_id,
-    stok_count: stokCount,
   }
 }
 
 async function hargaUntukQty(item, qty) {
+  // Tier kuantitas HANYA berlaku untuk stok sendiri.
+  //
+  // Harga supplier sudah merupakan modal + margin; menerapkan diskon kuantitas
+  // di atasnya bisa menjual di bawah modal tanpa ada yang menyadarinya, karena
+  // kerugiannya cuma muncul sebagai margin yang menipis di laporan.
+  if (item?.sumber_terbaik === sourcing.SUPPLIER) {
+    const harga = hargaVarian(item)
+    const q = Math.max(1, Math.trunc(Number(qty) || 1))
+    return { harga_satuan: harga, subtotal: harga * q, matched_min_qty: null }
+  }
   return pricing.resolveForVarian(item, qty)
 }
 
-function applyVoucherPotongan(subtotal, userId, voucherKode, voucherList) {
-  const vcr = (voucherList || []).find((v) => v.kode === voucherKode)
-  if (vcr && !vcr.user.some((a) => a === userId) && vcr.limit > 0) {
-    return Math.max(0, subtotal - vcr.potongan)
+// Stok supplier tidak punya baris di tabel "Stok", jadi tidak ada yang bisa
+// dipilih satu per satu maupun direservasi. Untuk barang seperti itu layar yang
+// sama dipakai sebagai pemilih JUMLAH biasa.
+function pakaiPemilihStok(item) {
+  return Number(item?.stok_sendiri || 0) > 0
+}
+
+// Jumlah yang sedang dipilih di layar, apa pun sumbernya:
+// stok sendiri dihitung dari baris yang direservasi, stok supplier dari
+// Data.jumlah karena tidak ada baris untuk dihitung.
+function qtyDipilih(Data, item) {
+  if (pakaiPemilihStok(item)) return (Data.selectedStokIds || []).length
+  return Math.max(0, Math.trunc(Number(Data.jumlah) || 0))
+}
+
+// Penuhi satu pesanan dari sumber termurah yang tersedia.
+//
+// Dipanggil SETELAH saldo pembeli dipotong, jadi kegagalan di sini WAJIB
+// diikuti pengembalian saldo — lihat kembalikanSaldo() di bawah.
+//
+// Kalau pembeli memilih baris stok tertentu di layar pemilih, baris itulah yang
+// dipakai (bukan FIFO), supaya yang diterima persis yang ditunjukkan ke dia.
+async function penuhiPesanan({ item, Data, userId, hargaSatuan }) {
+  const deps = {}
+
+  if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
+    deps.getStokForTransaction = async (kode, jumlah) => {
+      const semua = await getStokItems(String(kode).toLowerCase())
+      return semua
+        .filter((s) => Data.selectedStokIds.includes(s.id) && s.status === 'tersedia')
+        .slice(0, jumlah)
+    }
   }
-  return subtotal
+
+  return fulfillment.fulfill({
+    varian: item,
+    qty: Data.jumlah,
+    trxid: Data.trxid,
+    userId,
+    hargaSatuan,
+    deps,
+  })
+}
+
+// Kembalikan uang pembeli setelah pemenuhan gagal, lalu beri tahu dia dan owner.
+// Tidak pernah melempar: kegagalan di jalur pemberitahuan tidak boleh membuat
+// pengembalian saldo ikut batal.
+async function kembalikanSaldo({ userId, harga, Data, item, alasan }) {
+  try {
+    await addSaldo(userId, harga)
+  } catch (e) {
+    console.error('[Refund] GAGAL mengembalikan saldo:', e)
+  }
+
+  try {
+    await fulfillment.markRefunded(Data.trxid)
+  } catch (e) {
+    console.error('[Refund] gagal menandai SupplierOrder:', e)
+  }
+
+  try {
+    await sendMessage(userId, `⚠️ *PESANAN GAGAL DIPROSES*
+━━━━━━━━━━━━━━━━━━━━
+Maaf, stok untuk *${item?.nama || 'produk ini'}* tidak bisa kami ambil saat ini.
+
+💰 Saldo kamu sudah *dikembalikan penuh* sebesar ${formatrupiah(harga)}.
+📋 Trx ID: \`${Data.trxid}\`
+
+Silakan coba lagi beberapa saat lagi atau hubungi CS.`, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: [[{ text: copy.get('btn.kembali'), callback_data: 'kembaliawal' }]] },
+    })
+  } catch (e) {
+    console.error('[Refund] gagal memberi tahu pembeli:', e)
+  }
+
+  try {
+    if (channelContact.channelLog) {
+      await bot.sendMessage(channelContact.channelLog, `⚠️ *PESANAN GAGAL — SALDO DIKEMBALIKAN*
+=======================
+User: ${userId}
+Trx ID: *${Data.trxid}*
+Produk: *${item?.nama || Data.kode}*
+Jumlah: *${Data.jumlah}*
+Dikembalikan: *${formatrupiah(harga)}*
+Alasan: ${alasan || 'tidak diketahui'}
+=======================`, { parse_mode: 'Markdown' })
+    }
+  } catch (e) {
+    console.error('[Refund] gagal mengirim log:', e)
+  }
+}
+
+// Layar pemilih jumlah/stok. Dulu ditulis dua kali (blok "lanjut" dan
+// refreshStokView) dengan isi identik; sekarang satu sumber supaya keduanya
+// tidak bisa lagi berbeda.
+async function buildStokPickerView(query, Data, item) {
+  const pakaiBaris = pakaiPemilihStok(item)
+
+  let tersedia
+  if (pakaiBaris) {
+    const semua = await getStokItems(item.kode)
+    tersedia = semua.filter((s) => s.status === 'tersedia' && isStokAvailable(s.id, query.from.id)).length
+  } else {
+    tersedia = item.stok_count || 0
+  }
+
+  const qty = qtyDipilih(Data, item)
+  const resolved = await hargaUntukQty(item, qty || 1)
+  const total = qty ? resolved.subtotal : resolved.harga_satuan
+
+  const judul = pakaiBaris ? 'PILIH STOK YANG INGIN DIBELI' : 'PILIH JUMLAH PEMBELIAN'
+  const petunjuk = pakaiBaris
+    ? '💡 *Cara:* Gunakan tombol increment di bawah untuk memilih jumlah stok'
+    : '💡 *Cara:* Gunakan tombol increment di bawah untuk mengatur jumlah'
+
+  const teks = `📦 *${judul}*
+━━━━━━━━━━━━━━━━━━━━
+🛍️ *Produk:* ${item.nama}
+💰 *Harga Satuan:* ${formatrupiah(resolved.harga_satuan)}
+📊 *Stok Tersedia:* ${tersedia} item
+✅ *Dipilih:* ${qty} item
+💵 *Total Pembayaran:* ${formatrupiah(total)}
+
+${petunjuk}`
+
+  const keyboard = [
+    [
+      { text: '-1', callback_data: 'select_stok:-1' },
+      { text: '+1', callback_data: 'select_stok:1' },
+      { text: '-5', callback_data: 'select_stok:-5' },
+      { text: '+5', callback_data: 'select_stok:5' },
+    ],
+    [{ text: 'Pembayaran Saldo', callback_data: 'checkout_payment:saldo' }],
+    [{ text: 'Pembayaran QRIS', callback_data: 'checkout_payment:qris' }],
+    [{ text: '🔄 Perbarui', callback_data: 'refresh_stok' }],
+    [{ text: '← Sebelumnya', callback_data: `item:${item.kode}` }],
+  ]
+
+  return { teks, keyboard, tersedia, qty }
+}
+
+// Nominal potongan voucher, atau 0 kalau voucher tidak berlaku untuk user ini.
+// Dipakai baik untuk menghitung total bayar maupun untuk menampilkan baris
+// "Diskon" di struk — sebelumnya struk memakai variabel `vcr` yang tidak pernah
+// dideklarasikan di blok pembayaran, sehingga setiap pembelian melempar
+// ReferenceError SETELAH saldo dipotong dan stok ditandai terjual.
+function getVoucherPotongan(userId, voucherKode, voucherList) {
+  const vcr = (voucherList || []).find((v) => v.kode === voucherKode)
+  if (vcr && !(vcr.user || []).some((a) => a === userId) && vcr.limit > 0) {
+    return Number(vcr.potongan) || 0
+  }
+  return 0
+}
+
+function applyVoucherPotongan(subtotal, userId, voucherKode, voucherList) {
+  return Math.max(0, subtotal - getVoucherPotongan(userId, voucherKode, voucherList))
 }
 
 async function showVariantQtyScreen(userId, msgId, varian) {
-  const stokCount = await getStokCount(varian.kode)
+  // item membawa stok gabungan (sendiri + supplier) dan harga efektif.
+  const item = await getVarianForCart(varian.kode)
+  if (!item) return bot.sendMessage(userId, copy.get('err.product_not_found'))
+
+  const stokCount = item.stok_count || 0
   if (stokCount === 0) {
     return bot.sendMessage(userId, copy.get('err.stock_empty', { nama: varian.label }))
   }
@@ -388,12 +578,11 @@ async function showVariantQtyScreen(userId, msgId, varian) {
   const formatDetected = detectProductFormat(sampleData, varian.format)
   const momentTz = require('moment-timezone')
   const formattedTime = momentTz().tz('Asia/Jakarta').format('hh:mm:ss A')
-  const item = await getVarianForCart(varian.kode)
   const caption = copy.get('screen.qty', {
     produk_label: `${item.namaProduk.toUpperCase()} — ${item.namaLabel.toUpperCase()}`,
     terjual: varian.terjual || 0,
     deskripsi: item.deskripsi,
-    harga: formatrupiah(varian.harga),
+    harga: formatrupiah(hargaVarian(item)),
     stok: stokCount,
     waktu: formattedTime,
   })
@@ -518,7 +707,7 @@ ${filterOptions.periodLabel ? `📅 *Periode:* ${filterOptions.periodLabel}` : '
 │ *${itemNum}. ${item.nama}*
 │─────────────
 │📊 Jumlah: *${item.jumlah}*
-│💰 Harga: *${formatrupiah(resolvedSaldo.harga_satuan)}*
+│💰 Harga: *${formatrupiah(item.harga_satuan ?? item.harga ?? 0)}*
 │🕒 ${formatWIB(item.tanggal)}
 │🆔 Trx ID: \`${item.trxid || 'N/A'}\`
 └─────────────`
@@ -1589,9 +1778,9 @@ async function sendProductCard(chatId, slug, msgId = null) {
     let variasiLines = ''
     active.forEach((v) => {
       if (v.stok_count > 0) {
-        variasiLines += `*${v.label}* - ${formatrupiah(v.harga)} (Stok ${v.stok_count})\n`
+        variasiLines += `*${v.label}* - ${formatrupiah(hargaVarian(v))} (Stok ${v.stok_count})\n`
       } else {
-        variasiLines += `~${v.label}~ - ${formatrupiah(v.harga)} _(Habis)_\n`
+        variasiLines += `~${v.label}~ - ${formatrupiah(hargaVarian(v))} _(Habis)_\n`
       }
     })
 
@@ -2641,7 +2830,7 @@ ${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 
 
 ┌──────────────────
 │ Variasi, Harga - (Stok):
-│ • ${item.namaLabel}: ${formatrupiah(item.harga)} - (${stokCount})
+│ • ${item.namaLabel}: ${formatrupiah(hargaVarian(item))} - (${stokCount})
 └──────────────────
 
 Current Date: ${formattedTime}`, {
@@ -2679,47 +2868,16 @@ if (cmd === "lanjut") {
       })
     }
     
-    // Ambil semua stok tersedia dengan timestamp
-    const allStokItems = await getStokItems(item.kode)
-    const tersediaItems = allStokItems.filter(s => s.status === 'tersedia')
-    
-    // Inisialisasi selectedStokIds jika belum ada
-    if (!Data.selectedStokIds) {
-      Data.selectedStokIds = []
-      await cart.save(query.from.id, Data)
-    }
-    
-    // Tampilkan stok dengan timestamp dan tombol pilih
-    const qtyPilih = Data.selectedStokIds.length
-    const resolvedPick = await hargaUntukQty(item, qtyPilih || 1)
-    const totalPembayaran = qtyPilih ? resolvedPick.subtotal : resolvedPick.harga_satuan
-    let stokText = `📦 *PILIH STOK YANG INGIN DIBELI*
-━━━━━━━━━━━━━━━━━━━━
-🛍️ *Produk:* ${item.nama}
-💰 *Harga Satuan:* ${formatrupiah(resolvedPick.harga_satuan)}
-📊 *Stok Tersedia:* ${tersediaItems.length} item
-✅ *Dipilih:* ${Data.selectedStokIds.length} item
-💵 *Total Pembayaran:* ${formatrupiah(totalPembayaran)}
+    // Inisialisasi pilihan jika belum ada. Untuk barang supplier tidak ada baris
+    // yang bisa dipilih, jadi jumlahnya dimulai dari 1.
+    if (!Data.selectedStokIds) Data.selectedStokIds = []
+    if (!pakaiPemilihStok(item) && !Data.jumlah) Data.jumlah = 1
+    await cart.save(query.from.id, Data)
 
-💡 *Cara:* Gunakan tombol increment di bawah untuk memilih jumlah stok`
-    
-    // Keyboard sesuai dengan screenshot
-    const keyboard = [
-      [
-        { text: "-1", callback_data: "select_stok:-1" },
-        { text: "+1", callback_data: "select_stok:1" },
-        { text: "-5", callback_data: "select_stok:-5" },
-        { text: "+5", callback_data: "select_stok:5" }
-      ],
-      [{ text: "Pembayaran Saldo", callback_data: "checkout_payment:saldo" }],
-      [{ text: "Pembayaran QRIS", callback_data: "checkout_payment:qris" }],
-      [{ text: "🔄 Perbarui", callback_data: "refresh_stok" }],
-      [{ text: "← Sebelumnya", callback_data: `item:${item.kode}` }]
-    ]
-    
-    await editOrSendBannerMessage(query.from.id, query.message.message_id, stokText, {
+    const view = await buildStokPickerView(query, Data, item)
+    await editOrSendBannerMessage(query.from.id, query.message.message_id, view.teks, {
       reply_markup: {
-        inline_keyboard: keyboard
+        inline_keyboard: view.keyboard
       }
     })
   } else {
@@ -2732,52 +2890,18 @@ async function refreshStokView(query, Data, msgId = null) {
   const item = await getVarianForCart(Data.kode)
   if (!item) return false
   
-  const stokCount = item.stok_count
-  const allStokItems = await getStokItems(item.kode)
-  // Filter stok yang tersedia DAN tidak direserve oleh user lain
-  const tersediaItems = allStokItems.filter(s => {
-    if (s.status !== 'tersedia') return false
-    // Cek apakah stok available untuk user ini
-    return isStokAvailable(s.id, query.from.id)
-  })
-  
   if (!Data.selectedStokIds) {
     Data.selectedStokIds = []
     await cart.save(query.from.id, Data)
   }
-  
-  const qtyPilih = Data.selectedStokIds.length
-  const resolvedPick = await hargaUntukQty(item, qtyPilih || 1)
-  const totalPembayaran = qtyPilih ? resolvedPick.subtotal : resolvedPick.harga_satuan
-  let stokText = `📦 *PILIH STOK YANG INGIN DIBELI*
-━━━━━━━━━━━━━━━━━━━━
-🛍️ *Produk:* ${item.nama}
-💰 *Harga Satuan:* ${formatrupiah(resolvedPick.harga_satuan)}
-📊 *Stok Tersedia:* ${tersediaItems.length} item
-✅ *Dipilih:* ${Data.selectedStokIds.length} item
-💵 *Total Pembayaran:* ${formatrupiah(totalPembayaran)}
 
-💡 *Cara:* Gunakan tombol increment di bawah untuk memilih jumlah stok`
-  
-  const keyboard = [
-    [
-      { text: "-1", callback_data: "select_stok:-1" },
-      { text: "+1", callback_data: "select_stok:1" },
-      { text: "-5", callback_data: "select_stok:-5" },
-      { text: "+5", callback_data: "select_stok:5" }
-    ],
-    [{ text: "Pembayaran Saldo", callback_data: "checkout_payment:saldo" }],
-    [{ text: "Pembayaran QRIS", callback_data: "checkout_payment:qris" }],
-    [{ text: "🔄 Perbarui", callback_data: "refresh_stok" }],
-    [{ text: "← Sebelumnya", callback_data: `item:${item.kode}` }]
-  ]
-  
-  await editOrSendBannerMessage(query.from.id, msgId || query.message?.message_id, stokText, {
+  const view = await buildStokPickerView(query, Data, item)
+  await editOrSendBannerMessage(query.from.id, msgId || query.message?.message_id, view.teks, {
     reply_markup: {
-      inline_keyboard: keyboard
+      inline_keyboard: view.keyboard
     }
   })
-  
+
   return true
 }
 
@@ -2885,7 +3009,33 @@ if (cmd.startsWith("select_stok:")) {
   
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
-    
+
+    // Barang yang dipasok supplier tidak punya baris "Stok" untuk dipilih atau
+    // direservasi, jadi tombol yang sama cuma menaik-turunkan jumlah. Batas
+    // atasnya stok gabungan yang dilaporkan supplier.
+    {
+      const itemQty = await getVarianForCart(Data.kode)
+      if (itemQty && !pakaiPemilihStok(itemQty)) {
+        const maks = itemQty.stok_count || 0
+        const sekarang = Math.max(1, Math.trunc(Number(Data.jumlah) || 1))
+        const diminta = sekarang + jumlah
+        const baru = Math.min(maks, Math.max(1, diminta))
+
+        if (baru === sekarang) {
+          return await bot.answerCallbackQuery(query.id, {
+            text: diminta > maks ? `❌ Stok hanya ${maks} item!` : '❌ Minimal 1 item!',
+            show_alert: true,
+          })
+        }
+
+        Data.jumlah = baru
+        await cart.save(query.from.id, Data)
+        await bot.answerCallbackQuery(query.id, { text: `✅ Jumlah: ${baru}`, show_alert: false })
+        await refreshStokView(query, Data)
+        return
+      }
+    }
+
     if (jumlah < 0) {
       if (!Data.selectedStokIds) Data.selectedStokIds = []
       const selectCount = Math.abs(jumlah)
@@ -2974,39 +3124,61 @@ if (cmd.startsWith("checkout_payment:")) {
   
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
-    
-    if (!Data.selectedStokIds || Data.selectedStokIds.length === 0) {
-      await bot.answerCallbackQuery(query.id, { 
-        text: '⚠️ Pilih minimal 1 stok!', 
-        show_alert: true 
-      })
-      return
+
+    const itemCek = await getVarianForCart(Data.kode)
+    if (!itemCek) {
+      return await sendMessage(query.from.id, copy.get('err.product_not_found'))
     }
-    
-    // Validasi stok yang dipilih masih tersedia
-    const selectedStok = await getStokItems(Data.kode.toLowerCase())
-    const tersediaIds = selectedStok
-      .filter(s => s.status === 'tersedia')
-      .map(s => s.id)
-    
-    const validIds = Data.selectedStokIds.filter(id => tersediaIds.includes(id))
-    
-    if (validIds.length !== Data.selectedStokIds.length) {
-      await bot.answerCallbackQuery(query.id, { 
-        text: copy.get('err.stock_selection_unavailable'), 
-        show_alert: true 
-      })
-      Data.selectedStokIds = validIds
-      Data.jumlah = validIds.length
-      await cart.save(query.from.id, Data)
-      await refreshStokView(query, Data)
-      return
+
+    if (pakaiPemilihStok(itemCek)) {
+      if (!Data.selectedStokIds || Data.selectedStokIds.length === 0) {
+        await bot.answerCallbackQuery(query.id, {
+          text: '⚠️ Pilih minimal 1 stok!',
+          show_alert: true
+        })
+        return
+      }
+
+      // Validasi stok yang dipilih masih tersedia
+      const selectedStok = await getStokItems(Data.kode.toLowerCase())
+      const tersediaIds = selectedStok
+        .filter(s => s.status === 'tersedia')
+        .map(s => s.id)
+
+      const validIds = Data.selectedStokIds.filter(id => tersediaIds.includes(id))
+
+      if (validIds.length !== Data.selectedStokIds.length) {
+        await bot.answerCallbackQuery(query.id, {
+          text: copy.get('err.stock_selection_unavailable'),
+          show_alert: true
+        })
+        Data.selectedStokIds = validIds
+        Data.jumlah = validIds.length
+        await cart.save(query.from.id, Data)
+        await refreshStokView(query, Data)
+        return
+      }
+
+      // Update jumlah sesuai dengan jumlah stok yang dipilih
+      Data.jumlah = Data.selectedStokIds.length
+    } else {
+      // Barang supplier: tidak ada baris untuk divalidasi, cuma jumlahnya.
+      // Ketersediaan sebenarnya diuji saat memesan ke penjual, dan kalau gagal
+      // lib/fulfillment.js pindah ke sumber berikutnya.
+      const jumlahMinta = Math.max(1, Math.trunc(Number(Data.jumlah) || 1))
+      if (jumlahMinta > (itemCek.stok_count || 0)) {
+        await bot.answerCallbackQuery(query.id, {
+          text: copy.get('err.stock_insufficient', { count: itemCek.stok_count || 0 }),
+          show_alert: true
+        })
+        return
+      }
+      Data.jumlah = jumlahMinta
+      Data.selectedStokIds = []
     }
-    
-    // Update jumlah sesuai dengan jumlah stok yang dipilih
-    Data.jumlah = Data.selectedStokIds.length
+
     await cart.save(query.from.id, Data)
-    
+
     await bot.answerCallbackQuery(query.id)
     
 
@@ -4455,19 +4627,12 @@ if (cmd === "bayarsaldo") {
       })
     }
     
-    // Ambil stok yang dipilih atau gunakan FIFO
-    let stokItems = []
+    // Pemeriksaan awal untuk stok sendiri: kalau reservasi pembeli sudah lewat
+    // waktu, lebih baik ketahuan SEBELUM saldonya dipotong.
     if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
-      // Ambil stok yang dipilih customer
-      const allStok = await getStokItems(Data.kode.toLowerCase())
-      stokItems = allStok.filter(s => Data.selectedStokIds.includes(s.id) && s.status === 'tersedia')
-      
-      // Validasi semua stok masih tersedia DAN masih reserved untuk user ini
       for (const stokId of Data.selectedStokIds) {
         if (!isStokAvailable(stokId, query.from.id)) {
-          // Release semua reservation
           releaseReservation(Data.selectedStokIds)
-          
           return await sendMessage(query.from.id, copy.get('err.stock_reservation_timeout'), {
             reply_markup: {
               inline_keyboard: [
@@ -4477,53 +4642,45 @@ if (cmd === "bayarsaldo") {
           })
         }
       }
-      
-      if (stokItems.length !== Data.selectedStokIds.length) {
-        // Release semua reservation
-        releaseReservation(Data.selectedStokIds)
-        
-        return await sendMessage(query.from.id, copy.get('err.stock_selection_unavailable'), {
-          reply_markup: {
-            inline_keyboard: [
-              [{text: copy.get('btn.kembali_pilih_stok'), callback_data: "lanjut"}]
-            ]
-          }
-        })
-      }
-    } else {
-      // Fallback ke FIFO jika tidak ada pilihan
-      const stokCount = await getStokCount(Data.kode.toLowerCase())
-      if (Data.jumlah > stokCount) {
-        return await sendMessage(query.from.id, copy.get('err.stock_insufficient', { count: stokCount }))
-      }
-      
-      stokItems = await getStokForTransaction(Data.kode.toLowerCase(), Data.jumlah)
-      
-      if (stokItems.length < Data.jumlah) {
-        return await sendMessage(query.from.id, copy.get('err.stock_insufficient', { count: stokItems.length }))
-      }
     }
-    
+
     // Kurangi saldo
     await minSaldo(query.from.id, harga)
-    
-    // Mark stok sebagai terjual
-    const stokIds = stokItems.map(s => s.id)
-    await markStokTerjual(stokIds, Data.trxid)
-    
-    // Release reservation setelah sukses bayar
+
+    // Penuhi dari sumber termurah yang benar-benar bisa: stok sendiri kalau
+    // lebih murah, kalau tidak beli ke supplier. Gagal di satu sumber berarti
+    // turun ke sumber berikutnya, bukan langsung gagal.
+    const hasilPenuhi = await penuhiPesanan({
+      item,
+      Data,
+      userId: query.from.id,
+      hargaSatuan: resolvedSaldo.harga_satuan,
+    })
+
     if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
-      releaseReservation(stokIds)
-      console.log(`✅ Release ${stokIds.length} reserved stocks after successful payment`)
+      releaseReservation(Data.selectedStokIds)
     }
-    
+
+    if (!hasilPenuhi.ok) {
+      // Saldo sudah dipotong di atas — WAJIB dikembalikan.
+      console.error(`[Fulfillment] ${Data.trxid} gagal:`, hasilPenuhi.error)
+      await kembalikanSaldo({
+        userId: query.from.id,
+        harga,
+        Data,
+        item,
+        alasan: hasilPenuhi.error,
+      })
+      return
+    }
+
     // Ambil data produk untuk dikirim
-    let DataProdukRaw = stokItems.map(s => s.data).join('\n')
-    
+    let DataProdukRaw = hasilPenuhi.lines.join('\n')
+
     // Format data produk sesuai format
     const productFormat = item.format || null
     let DataProduk = formatProductDataForFile(DataProdukRaw, productFormat)
-    
+
     // Update counter terjual di Produk
     const { data: dts } = await supabase
       .from('Varian')
@@ -4553,8 +4710,8 @@ ${DataProduk}
     const saldoBaru = await cekSaldo(query.from.id)
     
     // Calculate discount amount if voucher used
-    const discountAmount = vcr && !vcr.user.some(a => a === query.from.id) && vcr.limit > 0 ? vcr.potongan : 0
-    
+    const discountAmount = getVoucherPotongan(query.from.id, Data.voucher, Voucher)
+
     // Build completion message
     // Jika pembelian lebih dari 2, jangan tampilkan preview produk di caption
     const showPreview = Data.jumlah <= 2
@@ -4980,108 +5137,48 @@ Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik s
             console.log(`[Checkout Polling] MATCH FOUND! Pembayaran terdeteksi:`, JSON.stringify(match));
             statusP = true
             
-            // Validasi ulang stok sebelum mengambil produk
-            let stokItems = []
-            
+            // Uang pembeli SUDAH masuk lewat gateway di titik ini, jadi tidak
+            // ada lagi jalan keluar "silakan pesan ulang" — kalau pemenuhan
+            // gagal, nilainya harus dikembalikan ke saldo pembeli.
+            const hasilPenuhi = await penuhiPesanan({
+              item,
+              Data,
+              userId: query.from.id,
+              hargaSatuan: resolvedBayar.harga_satuan,
+            })
+
             if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
-              // Ambil stok yang dipilih customer
-              const allStok = await getStokItems(Data.kode.toLowerCase())
-              stokItems = allStok.filter(s => Data.selectedStokIds.includes(s.id) && s.status === 'tersedia')
-              
-              // Validasi semua stok masih tersedia
-              if (stokItems.length !== Data.selectedStokIds.length) {
-                // Release reservations
-                if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
-                  releaseReservation(Data.selectedStokIds)
-                  console.log(`🔓 Release ${Data.selectedStokIds.length} reserved stocks (stok tidak cukup)`)
-                }
-                
-                await retryBotOperation(async () => {
-                  return await bot.deleteMessage(ff.chat.id, ff.message_id);
-                }).catch(err => {
-                  if (err.response?.body?.error_code !== 400) {
-                    console.warn('Error deleting message:', err.message);
-                  }
-                });
-                await sendMessage(query.from.id, `❌ *STOK TIDAK CUKUP*
-=======================
-Maaf, beberapa stok yang dipilih sudah tidak tersedia.
-
-*Pesanan:* ${Data.jumlah} item
-*Stok Valid:* ${stokItems.length} item
-
-Silakan pesan ulang.`)
-                await cart.clear(query.from.id)
-                return
-              }
-            } else {
-              // Fallback ke FIFO
-              const stokCountCheck = await getStokCount(Data.kode.toLowerCase())
-              
-              if (stokCountCheck < Data.jumlah) {
-                // Release reservations jika ada
-                if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
-                  releaseReservation(Data.selectedStokIds)
-                  console.log(`🔓 Release ${Data.selectedStokIds.length} reserved stocks (stok tidak cukup FIFO)`)
-                }
-                
-                await retryBotOperation(async () => {
-                  return await bot.deleteMessage(ff.chat.id, ff.message_id);
-                }).catch(err => {
-                  if (err.response?.body?.error_code !== 400) {
-                    console.warn('Error deleting message:', err.message);
-                  }
-                });
-                await sendMessage(query.from.id, `❌ *STOK TIDAK CUKUP*
-=======================
-Maaf, stok produk tidak mencukupi untuk pesanan Anda.
-
-*Pesanan:* ${Data.jumlah} item
-*Stok Tersedia:* ${stokCountCheck} item
-
-Silakan pesan ulang dengan jumlah yang sesuai.`)
-                await cart.clear(query.from.id)
-                return
-              }
-              
-              // Ambil stok untuk transaksi
-              stokItems = await getStokForTransaction(Data.kode.toLowerCase(), Data.jumlah)
-              
-              if (stokItems.length < Data.jumlah) {
-                // Release reservations jika ada
-                if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
-                  releaseReservation(Data.selectedStokIds)
-                  console.log(`🔓 Release ${Data.selectedStokIds.length} reserved stocks (FIFO stok tidak cukup)`)
-                }
-                
-                await retryBotOperation(async () => {
-                  return await bot.deleteMessage(ff.chat.id, ff.message_id);
-                }).catch(err => {
-                  // Ignore error jika message sudah dihapus atau tidak ditemukan
-                  if (err.response?.body?.error_code !== 400) {
-                    console.warn('Error deleting message:', err.message);
-                  }
-                });
-                await sendMessage(query.from.id, `❌ *STOK TIDAK CUKUP*
-=======================
-Maaf, stok produk tidak mencukupi untuk pesanan Anda.
-
-*Pesanan:* ${Data.jumlah} item
-*Stok Tersedia:* ${stokItems.length} item
-
-Silakan pesan ulang dengan jumlah yang sesuai.`)
-                await cart.clear(query.from.id)
-                return
-              }
+              releaseReservation(Data.selectedStokIds)
             }
-            
-            // Mark stok sebagai terjual
-            const stokIds = stokItems.map(s => s.id)
-            await markStokTerjual(stokIds, Data.trxid)
-            
+
+            if (!hasilPenuhi.ok) {
+              console.error(`[Fulfillment] QRIS ${Data.trxid} gagal:`, hasilPenuhi.error)
+
+              await retryBotOperation(async () => {
+                return await bot.deleteMessage(ff.chat.id, ff.message_id);
+              }).catch(err => {
+                if (err.response?.body?.error_code !== 400) {
+                  console.warn('Error deleting message:', err.message);
+                }
+              });
+
+              // Pembayaran QRIS tidak bisa dibalikkan otomatis, jadi nilainya
+              // dikreditkan ke saldo — pembeli tetap utuh dan bisa langsung
+              // memakainya. Fee gateway di luar ini.
+              await kembalikanSaldo({
+                userId: query.from.id,
+                harga,
+                Data,
+                item,
+                alasan: `QRIS terbayar tapi pemenuhan gagal: ${hasilPenuhi.error}`,
+              })
+              await cart.clear(query.from.id)
+              return
+            }
+
             // Ambil data produk untuk dikirim
-            let DataProdukRaw = stokItems.map(s => s.data).join('\n')
-            
+            let DataProdukRaw = hasilPenuhi.lines.join('\n')
+
             // Format data produk sesuai format
             const productFormat = item.format || null
             let DataProduk = formatProductDataForFile(DataProdukRaw, productFormat)
@@ -5123,7 +5220,7 @@ let tggl = new Date().toISOString()
       });
       
       // Calculate discount amount if voucher used
-      const discountAmount = vcr && !vcr.user.some(a => a === query.from.id) && vcr.limit > 0 ? vcr.potongan : 0
+      const discountAmount = getVoucherPotongan(query.from.id, Data.voucher, Voucher)
       const totalHarga = (pay.fee || 0) + harga
       
       // Build completion message
@@ -5300,7 +5397,7 @@ Silakan hubungi CS untuk mendapatkan produk Anda.`)
 User: @${query.from.username || query.from.first_name}
 Trx ID: *${Data.trxid}*
 Produk: *${item.nama}*
-Harga: *${formatrupiah(resolvedSaldo.harga_satuan)}*
+Harga: *${formatrupiah(resolvedBayar.harga_satuan)}*
 Jumlah Beli: *${Data.jumlah}*
 Fee: *${formatrupiah(pay.fee || 0)}*
 Total Harga: *${formatrupiah(totalHarga)}*
@@ -7139,3 +7236,91 @@ Pembayaran Anda sudah kami terima. Produk akan segera diproses. Jika belum diter
   }
 })
 console.log("⏱️  [Pakasir Reconcile] Cron rekonsiliasi pembayaran aktif (setiap 2 menit).");
+
+// ===========================================================================
+// FASE 13 — SUMBER STOK KETIGA: KATALOG SUPPLIER
+// ===========================================================================
+//
+// Dua cron di bawah berjalan di PROSES BOT saja, bukan di dashboard, supaya
+// tidak ada dua penulis yang mengejar baris yang sama. Dashboard memicu fungsi
+// yang sama secara langsung lewat tombol "Sync sekarang"; semua tulisannya
+// upsert dan idempoten, jadi tumpang tindih tidak merusak apa pun.
+
+// Sinkronisasi katalog supplier. Intervalnya bisa diatur dari dashboard, tapi
+// node-cron butuh ekspresi tetap saat dijadwalkan, jadi cron-nya jalan tiap
+// menit dan yang mengatur ritme adalah pemeriksaan interval di dalamnya.
+let terakhirSyncSupplier = 0
+
+cron.schedule('* * * * *', async () => {
+  try {
+    const menit = Number(runtimeSettings.get('supplier_sync_interval_menit', 5)) || 5
+    const jedaMs = Math.max(1, menit) * 60 * 1000
+    if (Date.now() - terakhirSyncSupplier < jedaMs) return
+    terakhirSyncSupplier = Date.now()
+
+    const hasil = await supplierSync.syncAll()
+    if (!hasil.length) return
+
+    for (const r of hasil) {
+      const ringkas = `[Supplier Sync] ${r.supplier}: ${r.fetched} produk, ${r.matched} cocok, ${r.created} baru, ${r.skipped} dilewati`
+      if (r.errors?.length) console.warn(`${ringkas} — ${r.errors.length} error: ${r.errors[0]}`)
+      else console.log(ringkas)
+    }
+  } catch (e) {
+    console.error('[Supplier Sync] error:', e.message)
+  }
+})
+console.log('⏱️  [Supplier Sync] Cron sinkronisasi katalog supplier aktif.')
+
+// Kurs USD-IDR: sekali saat boot lalu tiap hari pukul 05:00 WIB. Kalau
+// pengambilan gagal, kurs terakhir yang diketahui baik tetap dipakai sehingga
+// harga tidak pernah melonjak liar karena API pihak ketiga bermasalah.
+cron.schedule('0 5 * * *', async () => {
+  try {
+    const hasil = await fx.refreshRate()
+    if (hasil.skipped) return
+    if (hasil.ok) {
+      console.log(`[FX] Kurs USD-IDR diperbarui: ${hasil.rate}`)
+    } else {
+      console.warn(`[FX] Gagal memperbarui kurs (${hasil.error}); tetap memakai ${hasil.rate}`)
+      if (channelContact.channelLog) {
+        await bot.sendMessage(channelContact.channelLog,
+          `⚠️ *KURS GAGAL DIPERBARUI*\nTetap memakai kurs terakhir: ${hasil.rate}\nAlasan: ${hasil.error}`,
+          { parse_mode: 'Markdown' }).catch(() => {})
+      }
+    }
+  } catch (e) {
+    console.error('[FX] error:', e.message)
+  }
+}, { timezone: 'Asia/Jakarta' })
+console.log('⏱️  [FX] Cron pembaruan kurs USD-IDR aktif (harian 05:00 WIB).')
+
+// Peringatan dompet supplier menipis. Dompet reseller dibayar di muka, jadi
+// saldo yang habis berarti setiap pembelian yang seharusnya dipenuhi supplier
+// akan gagal lalu direfund — mahal dan terlihat oleh pembeli.
+cron.schedule('0 */6 * * *', async () => {
+  try {
+    const minimal = Number(runtimeSettings.get('supplier_wallet_min_usd', 5)) || 5
+    const suppliers = await supplierSync.listSuppliers({ activeOnly: true })
+
+    for (const s of suppliers) {
+      const adapter = getAdapter(s.adapter)
+      if (!adapter) continue
+      try {
+        const saldo = await adapter.getBalance({ baseUrl: s.base_url, apiKey: s.api_key })
+        if (saldo.usd >= minimal) continue
+        console.warn(`[Supplier Wallet] ${s.nama}: USD ${saldo.usd} di bawah ambang ${minimal}`)
+        if (channelContact.channelLog) {
+          await bot.sendMessage(channelContact.channelLog,
+            `⚠️ *DOMPET SUPPLIER MENIPIS*\nSupplier: *${s.nama}*\nSaldo: *USD ${saldo.usd}*\nAmbang: USD ${minimal}\n\nIsi ulang sebelum pesanan mulai gagal.`,
+            { parse_mode: 'Markdown' }).catch(() => {})
+        }
+      } catch (e) {
+        console.warn(`[Supplier Wallet] gagal cek ${s.nama}: ${e.message}`)
+      }
+    }
+  } catch (e) {
+    console.error('[Supplier Wallet] error:', e.message)
+  }
+})
+console.log('⏱️  [Supplier Wallet] Cron pengecekan saldo dompet supplier aktif (tiap 6 jam).')

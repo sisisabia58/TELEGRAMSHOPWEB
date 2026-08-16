@@ -1,0 +1,265 @@
+<%
+    breadcrumbs = [
+        { label: 'Home', href: '/' },
+        { label: 'Catalog', href: '/produk' },
+        { label: 'Supplier' }
+    ];
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <%- include('partials/head') %>
+    <style>
+        .table-card .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .catalog-meta { color: var(--color-muted); font-size: 14px; }
+        .metric-tile .value.accent { color: var(--color-accent); }
+        .metric-tile .value.muted { color: var(--color-muted); }
+        .sumber-note {
+            background: var(--color-surface-alt, rgba(0,0,0,.03));
+            border-left: 3px solid var(--color-accent);
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: var(--color-muted);
+            line-height: 1.6;
+        }
+        .test-output {
+            display: none;
+            margin-top: 12px;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            max-height: 320px;
+            overflow: auto;
+        }
+        .test-output.ok { background: rgba(25,135,84,.08); border: 1px solid rgba(25,135,84,.3); }
+        .test-output.err { background: rgba(220,53,69,.08); border: 1px solid rgba(220,53,69,.3); }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <%- include('partials/sidebar') %>
+
+    <main class="main-content" id="main-content">
+        <%- include('partials/topbar') %>
+
+        <div class="container">
+            <%- include('partials/page-header', { breadcrumbs: breadcrumbs, pageHeaderActions: '' }) %>
+
+            <div class="sumber-note">
+                <strong>Sumber stok ketiga.</strong>
+                Supplier melengkapi dua cara memasukkan stok yang sudah ada — tambah manual dan bulk upload — dan tidak menggantikannya.
+                Stok milik sendiri tetap ikut bersaing: kalau harganya lebih murah, pesanan diambil dari
+                <a href="/stok">stok kita</a> dan tidak ada panggilan ke supplier sama sekali.
+            </div>
+
+            <%
+                const totalSupplier = suppliers.length;
+                const aktif = suppliers.filter(s => s.is_active).length;
+                let totalProduk = 0, totalTerpetakan = 0;
+                Object.values(statistik).forEach(s => { totalProduk += s.total; totalTerpetakan += s.terpetakan; });
+            %>
+            <div class="metric-strip">
+                <div class="metric-tile">
+                    <div class="label">Supplier</div>
+                    <div class="value"><%= totalSupplier %></div>
+                </div>
+                <div class="metric-tile">
+                    <div class="label">Aktif</div>
+                    <div class="value accent"><%= aktif %></div>
+                </div>
+                <div class="metric-tile">
+                    <div class="label">Produk Termirror</div>
+                    <div class="value"><%= totalProduk %></div>
+                </div>
+                <div class="metric-tile">
+                    <div class="label">Margin Global</div>
+                    <div class="value accent"><%= settings.marginPersen %>%</div>
+                </div>
+                <div class="metric-tile">
+                    <div class="label">Kurs USD</div>
+                    <div class="value muted"><%= Number(settings.fxRate).toLocaleString('id-ID') %></div>
+                </div>
+            </div>
+
+            <div class="card table-card">
+                <div class="card-header">
+                    <h2 class="card-title">Supplier Terhubung</h2>
+                    <span class="catalog-meta">Sinkronisasi otomatis tiap <%= settings.syncIntervalMenit %> menit</span>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Nama</th>
+                                    <th>Adapter</th>
+                                    <th>Produk</th>
+                                    <th>Terpetakan</th>
+                                    <th>Prioritas</th>
+                                    <th>Sync Terakhir</th>
+                                    <th>Status</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (suppliers.length === 0) { %>
+                                    <tr>
+                                        <td colspan="8">
+                                            <div class="empty-state">
+                                                <div class="empty-state-icon">🤝</div>
+                                                <div class="empty-state-title">Belum ada supplier</div>
+                                                <div class="empty-state-description">Hubungkan penjual lain untuk menjual stok mereka lewat bot ini</div>
+                                                <a href="/supplier/tambah" class="empty-state-action">➕ Tambah Supplier</a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% } else { %>
+                                    <% suppliers.forEach(s => { const st = statistik[s.id] || { total: 0, terpetakan: 0 }; %>
+                                        <tr>
+                                            <td><strong><%= s.nama %></strong></td>
+                                            <td><code><%= s.adapter %></code></td>
+                                            <td><%= st.total %></td>
+                                            <td>
+                                                <% if (st.total > 0 && st.terpetakan === st.total) { %>
+                                                    <span class="badge badge-success"><%= st.terpetakan %>/<%= st.total %></span>
+                                                <% } else { %>
+                                                    <span class="badge badge-secondary"><%= st.terpetakan %>/<%= st.total %></span>
+                                                <% } %>
+                                            </td>
+                                            <td><%= s.prioritas %></td>
+                                            <td>
+                                                <% if (s.last_sync_at) { %>
+                                                    <span class="catalog-meta"><%= new Date(s.last_sync_at).toLocaleString('id-ID') %></span>
+                                                    <% if (s.last_sync_status === 'ok') { %>
+                                                        <span class="badge badge-success">ok</span>
+                                                    <% } else if (s.last_sync_status === 'partial') { %>
+                                                        <span class="badge badge-warning" title="<%= s.last_sync_error || '' %>">sebagian</span>
+                                                    <% } else { %>
+                                                        <span class="badge badge-danger" title="<%= s.last_sync_error || '' %>">error</span>
+                                                    <% } %>
+                                                <% } else { %>
+                                                    <span class="badge badge-secondary">belum pernah</span>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <% if (s.is_active) { %>
+                                                    <span class="badge badge-success">Aktif</span>
+                                                <% } else { %>
+                                                    <span class="badge badge-danger">Nonaktif</span>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <div class="table-actions">
+                                                    <a href="/supplier/<%= s.id %>/produk" class="btn-icon" title="Lihat katalog"><svg class="icon" aria-hidden="true"><use href="#i-eye"></use></svg></a>
+                                                    <button type="button" class="btn-icon" title="Test koneksi" onclick="testKoneksi('<%= s.id %>')"><svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg></button>
+                                                    <button type="button" class="btn-icon" title="Sync sekarang" onclick="syncSekarang('<%= s.id %>')"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg></button>
+                                                    <a href="/supplier/<%= s.id %>/edit" class="btn-icon" title="Edit"><svg class="icon" aria-hidden="true"><use href="#i-pencil"></use></svg></a>
+                                                    <form method="POST" action="/supplier/<%= s.id %>/hapus" style="display:inline" onsubmit="return confirm('Hapus supplier <%= s.nama %>? Katalog terminornya ikut terhapus, tapi riwayat pesanan tetap tersimpan.')">
+                                                        <button type="submit" class="btn-icon" title="Hapus"><svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg></button>
+                                                    </form>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <% }) %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                    <pre class="test-output" id="testOutput"></pre>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <%- include('partials/mobile-tabs') %>
+
+    <script>
+        const out = () => document.getElementById('testOutput');
+
+        function tampilkan(teks, ok) {
+            const el = out();
+            el.textContent = teks;
+            el.className = 'test-output ' + (ok ? 'ok' : 'err');
+            el.style.display = 'block';
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        async function testKoneksi(id) {
+            tampilkan('Menghubungi supplier...', true);
+            try {
+                const r = await fetch('/api/supplier/' + id + '/test', { method: 'POST' });
+                const d = await r.json();
+                if (!d.success) return tampilkan('❌ Gagal: ' + (d.message || 'tidak diketahui'), false);
+
+                // Baris MENTAH sengaja ditampilkan: dokumentasi API tidak
+                // mendeklarasikan bentuk balasan, jadi ini cara memverifikasi
+                // pemetaan field kita terhadap data sungguhan.
+                tampilkan(
+                    '✅ Koneksi berhasil\\n' +
+                    'Saldo dompet: USD ' + d.balance.usd + ' (' + d.balance.points + ' poin)\\n' +
+                    'Contoh produk terambil: ' + d.sampleCount + '\\n\\n' +
+                    '--- BARIS MENTAH DARI API ---\\n' +
+                    JSON.stringify(d.sampleRaw, null, 2) + '\\n\\n' +
+                    '--- HASIL NORMALISASI KITA ---\\n' +
+                    JSON.stringify(d.sampleNormalized, null, 2) + '\\n\\n' +
+                    'Harga jual setelah margin + kurs: Rp ' + (d.contohIdr === null ? '(gagal hitung)' : Number(d.contohIdr).toLocaleString('id-ID')),
+                    true
+                );
+            } catch (e) {
+                tampilkan('❌ Error: ' + e.message, false);
+            }
+        }
+
+        async function syncSekarang(id) {
+            tampilkan('Menyinkronkan katalog... ini bisa memakan waktu untuk katalog besar.', true);
+            try {
+                const r = await fetch('/api/supplier/' + id + '/sync', { method: 'POST' });
+                const d = await r.json();
+                if (d.laporan) {
+                    const l = d.laporan;
+                    tampilkan(
+                        (d.success ? '✅ Sync selesai' : '⚠️ Sync selesai dengan catatan') + '\\n' +
+                        'Diambil: ' + l.fetched + '\\n' +
+                        'Disimpan: ' + l.upserted + '\\n' +
+                        'Cocok ke varian yang ada: ' + l.matched + '\\n' +
+                        'Produk baru dibuat: ' + l.created + '\\n' +
+                        'Dilewati (file/manual/tidak valid): ' + l.skipped + '\\n' +
+                        'Harga disegarkan: ' + l.repriced +
+                        (l.errors && l.errors.length ? '\\n\\nError:\\n- ' + l.errors.join('\\n- ') : ''),
+                        d.success
+                    );
+                    setTimeout(() => window.location.reload(), 2500);
+                } else {
+                    tampilkan('❌ Gagal: ' + (d.message || 'tidak diketahui'), false);
+                }
+            } catch (e) {
+                tampilkan('❌ Error: ' + e.message, false);
+            }
+        }
+
+        (function () {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('success') && window.toast) toast.success('Perubahan tersimpan!', 'Berhasil');
+            if (params.get('error') && window.toast) toast.error('Terjadi kesalahan!', 'Error');
+        })();
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+    </script>
+</body>
+</html>
