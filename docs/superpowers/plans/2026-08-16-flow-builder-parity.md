@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node.js, Express, EJS, Drawflow, Supabase Postgres, Vanilla JS/CSS, Node test runner (`node --test`).
 
-**Spec:** [implementation_plan.md](file:///C:/Users/wisnu/.gemini/antigravity-ide/brain/dc6650fb-5499-435a-9a5e-390ab684d55c/implementation_plan.md)
+**Spec:** `docs/superpowers/specs/2026-08-09-visual-flow-builder-design.md`
 
 ## Global Constraints
 

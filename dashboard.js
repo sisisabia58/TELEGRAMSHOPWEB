@@ -5873,13 +5873,13 @@ app.get('/api/bot-copy', isAuthenticated, async (req, res) => {
 app.post('/api/bot-copy', isAuthenticated, async (req, res) => {
   try {
     const updates = req.body.copy
-    if (!updates || typeof updates !== 'object') {
-      return res.json({ success: false, error: 'Missing copy object' })
+    if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+      return res.json({ success: false, error: 'Missing or invalid copy object' })
     }
     for (const [key, body] of Object.entries(updates)) {
       const { error } = await supabase
         .from('BotCopy')
-        .update({ body, updated_at: new Date().toISOString() })
+        .update({ body: String(body ?? ''), updated_at: new Date().toISOString() })
         .eq('key', key)
       if (error) throw error
     }

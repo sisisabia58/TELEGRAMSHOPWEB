@@ -260,7 +260,12 @@
       .replace(/_(.*?)_/g, '<i>$1</i>')
       .replace(/~(.*?)~/g, '<del>$1</del>')
       .replace(/`(.*?)`/g, '<code>$1</code>')
-      .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank">$1</a>')
+      .replace(/\[(.*?)\]\((.*?)\)/g, (match, label, url) => {
+        const trimmed = String(url).trim()
+        const isSafe = /^https?:\/\//i.test(trimmed) || /^tg:\/\//i.test(trimmed)
+        const safeUrl = isSafe ? encodeURI(trimmed).replace(/"/g, '&quot;') : '#'
+        return `<a href="${safeUrl}" target="_blank">${label}</a>`
+      })
   }
 
   function applyFormatting(before, after) {
@@ -437,9 +442,17 @@
     panel.querySelectorAll('.btn-row-delete').forEach((btn) => {
       btn.addEventListener('click', function () {
         const idx = Number(btn.getAttribute('data-delete'))
-        const flat = flattenButtons(node.buttons)
-        flat.splice(idx, 1)
-        node.buttons = flat.map((b) => [b])
+        let cur = 0
+        const result = []
+        for (const row of node.buttons || []) {
+          const newRow = []
+          for (const b of row) {
+            if (cur !== idx) newRow.push(b)
+            cur++
+          }
+          if (newRow.length > 0) result.push(newRow)
+        }
+        node.buttons = result
         renderPanel()
       })
     })
@@ -454,7 +467,19 @@
           const temp = flat[idx]
           flat[idx] = flat[targetIdx]
           flat[targetIdx] = temp
-          node.buttons = flat.map((b) => [b])
+          let cur = 0
+          const result = []
+          for (const row of node.buttons || []) {
+            const newRow = []
+            for (let c = 0; c < row.length; c++) {
+              if (cur < flat.length) {
+                newRow.push(flat[cur])
+                cur++
+              }
+            }
+            if (newRow.length > 0) result.push(newRow)
+          }
+          node.buttons = result
           renderPanel()
         }
       })
@@ -467,8 +492,20 @@
       btnDeleteNode.addEventListener('click', function () {
         const nodeKey = state.selectedKey
         if (!nodeKey) return
-        if (!window.confirm('Delete node "' + nodeKey + '"? This cannot be undone.')) return
-        state.draft.nodes = state.draft.nodes.filter((n) => n.key !== nodeKey)
+        if (state.draft.entry_key === nodeKey) {
+          alert('Cannot delete the entry node ("' + nodeKey + '"). Change the entry node before deleting.')
+          return
+        }
+        if (!window.confirm('Delete node "' + nodeKey + '"? Connections pointing to this node will be disconnected.')) return
+        state.draft.nodes = (state.draft.nodes || []).filter((n) => n.key !== nodeKey)
+        // Clean up dangling targets on other nodes
+        for (const other of state.draft.nodes || []) {
+          for (const row of other.buttons || []) {
+            for (const b of row || []) {
+              if (b.go === nodeKey) b.go = ''
+            }
+          }
+        }
         state.selectedKey = null
         renderCanvas()
         renderPanel()
@@ -957,20 +994,23 @@
       meta.textContent = 'No active flow configured.'
     }
 
-    if (!state.draft || !state.draft.nodes || !state.draft.nodes.length) {
-      setStatus('No flow nodes to display', 'err')
-      renderPanel()
-      return
-    }
-
     const container = document.getElementById('drawflow')
     editor = new Drawflow(container)
     editor.reroute = true
     editor.editor_mode = 'edit'
     editor.start()
     bindEditorEvents()
-    renderCanvas()
     bindToolbar()
+
+    if (!state.draft || !state.draft.nodes || !state.draft.nodes.length) {
+      if (!state.draft) state.draft = { nodes: [] }
+      if (!state.draft.nodes) state.draft.nodes = []
+      setStatus('No flow nodes configured — click + Message Node to start', 'ok')
+      renderPanel()
+      return
+    }
+
+    renderCanvas()
 
     const entry = state.draft.entry_key || 'welcome'
     selectNodeByKey(keyToId.has(entry) ? entry : state.draft.nodes[0].key)
