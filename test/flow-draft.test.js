@@ -94,3 +94,42 @@ test('publishPlan emits node patches and copy bodies', () => {
   )
   assert.ok(!plan.copies.some((c) => c.key == null))
 })
+
+test('draftFromPublished and publishPlan preserve media_url and media_type', () => {
+  const nodes = [
+    {
+      key: 'welcome',
+      kind: 'screen',
+      screen_key: 'screen.welcome',
+      pos_x: 0,
+      pos_y: 0,
+      buttons: [],
+      media_url: 'https://example.com/banner.png',
+      media_type: 'photo',
+    },
+  ]
+  const copyByKey = { 'screen.welcome': 'Halo!' }
+  const draft = draftFromPublished(nodes, copyByKey, 'welcome')
+  assert.strictEqual(draft.nodes[0].media_url, 'https://example.com/banner.png')
+  assert.strictEqual(draft.nodes[0].media_type, 'photo')
+
+  const plan = publishPlan(draft)
+  assert.strictEqual(plan.nodes[0].media_url, 'https://example.com/banner.png')
+  assert.strictEqual(plan.nodes[0].media_type, 'photo')
+})
+
+test('reorderButtons and generateButtonLabelKey maintain valid button rows', () => {
+  const { reorderButtonRow, generateButtonLabelKey } = require('../lib/flow-draft')
+  const buttons = [
+    [{ label: 'B1', go: 'step1' }],
+    [{ label: 'B2', go: 'step2' }],
+  ]
+  const reordered = reorderButtonRow(buttons, 0, 1)
+  assert.strictEqual(reordered[0][0].label, 'B2')
+  assert.strictEqual(reordered[1][0].label, 'B1')
+
+  const labelKey = generateButtonLabelKey('screen.welcome', 0)
+  assert.strictEqual(labelKey, 'btn.welcome.0')
+})
+
+

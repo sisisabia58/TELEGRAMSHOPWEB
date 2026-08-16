@@ -250,6 +250,48 @@
     return (state.draft.nodes || []).find((n) => n.key === key)
   }
 
+  function renderTelegramMarkdown(text) {
+    if (!text) return ''
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\*(.*?)\*/g, '<b>$1</b>')
+      .replace(/_(.*?)_/g, '<i>$1</i>')
+      .replace(/~(.*?)~/g, '<del>$1</del>')
+      .replace(/`(.*?)`/g, '<code>$1</code>')
+      .replace(/\[(.*?)\]\((.*?)\)/g, (match, label, url) => {
+        const trimmed = String(url).trim()
+        const isSafe = /^https?:\/\//i.test(trimmed) || /^tg:\/\//i.test(trimmed)
+        const safeUrl = isSafe ? encodeURI(trimmed).replace(/"/g, '&quot;') : '#'
+        return `<a href="${safeUrl}" target="_blank">${label}</a>`
+      })
+  }
+
+  function applyFormatting(before, after) {
+    const textarea = document.getElementById('panelBody')
+    if (!textarea) return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const sel = textarea.value.substring(start, end)
+    const replacement = before + (sel || 'text') + (after || before)
+    textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end)
+    textarea.focus()
+    textarea.setSelectionRange(start + before.length, end + before.length)
+    textarea.dispatchEvent(new Event('input'))
+  }
+
+  function insertVariable(varName) {
+    const textarea = document.getElementById('panelBody')
+    if (!textarea) return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    textarea.value = textarea.value.substring(0, start) + varName + textarea.value.substring(end)
+    textarea.focus()
+    textarea.setSelectionRange(start + varName.length, start + varName.length)
+    textarea.dispatchEvent(new Event('input'))
+  }
+
   function renderPanel() {
     const panel = document.getElementById('flowPanel')
     if (!panel) return
@@ -277,8 +319,34 @@
     html += '</div><div class="flow-panel-body">'
 
     if (node.kind === 'screen') {
+      html += '<div class="field"><label>Media URL (Image / Banner)</label>'
+      html += '<input type="url" id="panelMediaUrl" placeholder="https://example.com/image.jpg" value="' + escapeHtml(node.media_url || '') + '">'
+      if (node.media_url) {
+        html += '<div class="media-thumb-preview"><img src="' + escapeHtml(node.media_url) + '" alt="Media preview" onerror="this.style.display=\'none\'"></div>'
+      }
+      html += '</div>'
+
       html += '<div class="field"><label>Message text</label>'
-      html += '<textarea id="panelBody" placeholder="Message shown in Telegram…">' + escapeHtml(node.body || '') + '</textarea></div>'
+      html += '<div class="composer-toolbar">'
+      html += '<button type="button" class="btn-fmt" data-fmt="bold" title="Bold (*text*)"><b>B</b></button>'
+      html += '<button type="button" class="btn-fmt" data-fmt="italic" title="Italic (_text_)"><i>I</i></button>'
+      html += '<button type="button" class="btn-fmt" data-fmt="strike" title="Strikethrough (~text~)"><s>S</s></button>'
+      html += '<button type="button" class="btn-fmt" data-fmt="code" title="Code (`code`)"><code>&lt;/&gt;</code></button>'
+      html += '<button type="button" class="btn-fmt" data-fmt="link" title="Link ([text](url))">🔗</button>'
+      html += '<div class="var-picker-container">'
+      html += '<button type="button" class="btn-var-toggle" id="btnVarToggle" title="Insert Variable">{ }</button>'
+      html += '<div class="var-dropup hidden" id="varDropup">'
+      html += '<div class="var-item" data-var="{{first_name}}">first_name</div>'
+      html += '<div class="var-item" data-var="{{saldo}}">saldo</div>'
+      html += '<div class="var-item" data-var="{{username}}">username</div>'
+      html += '<div class="var-item" data-var="{{user_id}}">user_id</div>'
+      html += '</div>'
+      html += '</div>'
+      html += '</div>'
+
+      html += '<textarea id="panelBody" placeholder="Message shown in Telegram…">' + escapeHtml(node.body || '') + '</textarea>'
+      html += '<div class="live-preview-box"><strong>Live Preview:</strong><div id="livePreviewContent">' + renderTelegramMarkdown(node.body) + '</div></div>'
+      html += '</div>'
       html += '<p class="flow-panel-hint">Use {{first_name}}, {{nama_bot}}, {{saldo}}, etc. Publish writes this to BotCopy.</p>'
       html += '<div class="field"><label>Copy key</label><input type="text" class="readonly" readonly value="' + escapeHtml(node.screen_key || '') + '"></div>'
     } else {
@@ -304,19 +372,146 @@
       })
       html += '</select>'
       html += '<input type="text" class="btn-target sp-btn-target" placeholder="Target (node key / callback / url)" value="' + escapeHtml(target) + '">'
+      html += '<div class="btn-row-actions">'
+      if (idx > 0) html += '<button type="button" class="btn-row-move" data-move="up" data-idx="' + idx + '" title="Move Up">↑</button>'
+      if (idx < flat.length - 1) html += '<button type="button" class="btn-row-move" data-move="down" data-idx="' + idx + '" title="Move Down">↓</button>'
+      html += '<button type="button" class="btn-row-delete" data-delete="' + idx + '" title="Delete Button">×</button>'
+      html += '</div>'
       html += '</div></div>'
     })
 
     html += '</div>'
+    html += '<button type="button" id="btnAddButton" class="btn btn-secondary btn-sm" style="margin-top:8px;">+ Add Button</button>'
     html += '<p class="flow-panel-hint">For <code>go</code> buttons: set the target node key here, or drag a wire from the card’s output ports. Then click Apply.</p>'
     html += '</div>'
 
     html += '<div class="flow-panel-footer">'
+    html += '<button type="button" id="panelDeleteNode" class="btn-delete-node" title="Remove this node from the draft">Delete Node</button>'
     html += '<button type="button" id="panelApply" class="btn-apply">Apply</button>'
     html += '</div>'
 
     panel.innerHTML = html
+
+    // Attach composer events
+    const bodyArea = document.getElementById('panelBody')
+    if (bodyArea) {
+      bodyArea.addEventListener('input', function () {
+        const liveEl = document.getElementById('livePreviewContent')
+        if (liveEl) liveEl.innerHTML = renderTelegramMarkdown(bodyArea.value)
+      })
+    }
+
+    panel.querySelectorAll('.btn-fmt').forEach((btn) => {
+      btn.addEventListener('click', function () {
+        const fmt = btn.getAttribute('data-fmt')
+        if (fmt === 'bold') applyFormatting('*', '*')
+        else if (fmt === 'italic') applyFormatting('_', '_')
+        else if (fmt === 'strike') applyFormatting('~', '~')
+        else if (fmt === 'code') applyFormatting('`', '`')
+        else if (fmt === 'link') applyFormatting('[', '](https://)')
+      })
+    })
+
+    const varToggle = document.getElementById('btnVarToggle')
+    const varDropup = document.getElementById('varDropup')
+    if (varToggle && varDropup) {
+      varToggle.addEventListener('click', function (e) {
+        e.stopPropagation()
+        varDropup.classList.toggle('hidden')
+      })
+      panel.querySelectorAll('.var-item').forEach((item) => {
+        item.addEventListener('click', function () {
+          const varName = item.getAttribute('data-var')
+          insertVariable(varName)
+          varDropup.classList.add('hidden')
+        })
+      })
+    }
+
+    const btnAdd = document.getElementById('btnAddButton')
+    if (btnAdd) {
+      btnAdd.addEventListener('click', function () {
+        if (!node.buttons) node.buttons = []
+        const newIdx = flattenButtons(node.buttons).length
+        const label = 'Button ' + (newIdx + 1)
+        node.buttons.push([{ label, go: '' }])
+        renderPanel()
+      })
+    }
+
+    panel.querySelectorAll('.btn-row-delete').forEach((btn) => {
+      btn.addEventListener('click', function () {
+        const idx = Number(btn.getAttribute('data-delete'))
+        let cur = 0
+        const result = []
+        for (const row of node.buttons || []) {
+          const newRow = []
+          for (const b of row) {
+            if (cur !== idx) newRow.push(b)
+            cur++
+          }
+          if (newRow.length > 0) result.push(newRow)
+        }
+        node.buttons = result
+        renderPanel()
+      })
+    })
+
+    panel.querySelectorAll('.btn-row-move').forEach((btn) => {
+      btn.addEventListener('click', function () {
+        const idx = Number(btn.getAttribute('data-idx'))
+        const dir = btn.getAttribute('data-move')
+        const flat = flattenButtons(node.buttons)
+        const targetIdx = dir === 'up' ? idx - 1 : idx + 1
+        if (targetIdx >= 0 && targetIdx < flat.length) {
+          const temp = flat[idx]
+          flat[idx] = flat[targetIdx]
+          flat[targetIdx] = temp
+          let cur = 0
+          const result = []
+          for (const row of node.buttons || []) {
+            const newRow = []
+            for (let c = 0; c < row.length; c++) {
+              if (cur < flat.length) {
+                newRow.push(flat[cur])
+                cur++
+              }
+            }
+            if (newRow.length > 0) result.push(newRow)
+          }
+          node.buttons = result
+          renderPanel()
+        }
+      })
+    })
+
     document.getElementById('panelApply').addEventListener('click', applyPanelToDraft)
+
+    const btnDeleteNode = document.getElementById('panelDeleteNode')
+    if (btnDeleteNode) {
+      btnDeleteNode.addEventListener('click', function () {
+        const nodeKey = state.selectedKey
+        if (!nodeKey) return
+        if (state.draft.entry_key === nodeKey) {
+          alert('Cannot delete the entry node ("' + nodeKey + '"). Change the entry node before deleting.')
+          return
+        }
+        if (!window.confirm('Delete node "' + nodeKey + '"? Connections pointing to this node will be disconnected.')) return
+        state.draft.nodes = (state.draft.nodes || []).filter((n) => n.key !== nodeKey)
+        // Clean up dangling targets on other nodes
+        for (const other of state.draft.nodes || []) {
+          for (const row of other.buttons || []) {
+            for (const b of row || []) {
+              if (b.go === nodeKey) b.go = ''
+            }
+          }
+        }
+        state.selectedKey = null
+        renderCanvas()
+        renderPanel()
+        setStatus('Deleted node: ' + nodeKey, 'ok')
+      })
+    }
   }
 
   function applyPanelToDraft() {
@@ -328,6 +523,8 @@
     if (descEl) node.description = descEl.value
 
     if (node.kind === 'screen') {
+      const mediaEl = document.getElementById('panelMediaUrl')
+      if (mediaEl) node.media_url = mediaEl.value.trim() || null
       const bodyEl = document.getElementById('panelBody')
       if (bodyEl) node.body = bodyEl.value
     }
@@ -612,12 +809,160 @@
     setStatus('Flow engine ' + (checked ? 'enabled' : 'disabled') + ' — bot reloads in ~10s', 'ok')
   }
 
+  function generateUniqueNodeKey(prefix = 'screen') {
+    const existing = (state.draft.nodes || []).map((n) => n.key)
+    const basePrefix = prefix === 'screen' ? 'screen.custom_' : 'action.custom_'
+    let idx = 1
+    while (existing.includes(basePrefix + idx)) {
+      idx++
+    }
+    return basePrefix + idx
+  }
+
+  function addMessageNode() {
+    if (!state.draft) return
+    const key = generateUniqueNodeKey('screen')
+    const newNode = {
+      key,
+      kind: 'screen',
+      screen_key: key,
+      body: 'Halo *{{first_name}}*!',
+      pos_x: 150 + ((state.draft.nodes || []).length * 40) % 400,
+      pos_y: 150 + ((state.draft.nodes || []).length * 40) % 300,
+      media_url: null,
+      media_type: 'photo',
+      buttons: [[{ label: 'Menu', go: 'welcome' }]],
+      description: '',
+    }
+    state.draft.nodes.push(newNode)
+    renderCanvas()
+    selectNodeByKey(key)
+    setStatus('Added Message node: ' + key, 'ok')
+  }
+
+  function addActionNode() {
+    if (!state.draft) return
+    const key = generateUniqueNodeKey('action')
+    const newNode = {
+      key,
+      kind: 'action',
+      screen_key: null,
+      action: 'product_list',
+      pos_x: 200 + ((state.draft.nodes || []).length * 40) % 400,
+      pos_y: 200 + ((state.draft.nodes || []).length * 40) % 300,
+      buttons: [],
+      description: 'Open product catalog',
+    }
+    state.draft.nodes.push(newNode)
+    renderCanvas()
+    selectNodeByKey(key)
+    setStatus('Added Action node: ' + key, 'ok')
+  }
+
+  let globalStringsCache = {}
+
+  async function openGlobalStringsDrawer() {
+    const modal = document.getElementById('globalStringsModal')
+    if (modal) modal.classList.remove('hidden')
+    setStatus('Loading global strings…')
+    try {
+      const res = await fetch('/api/bot-copy')
+      const data = await res.json()
+      if (data.success && data.copy) {
+        globalStringsCache = {}
+        for (const [k, v] of Object.entries(data.copy)) {
+          if (!k.startsWith('screen.')) globalStringsCache[k] = v
+        }
+        renderGlobalStringsList()
+        setStatus('Global strings loaded', 'ok')
+      } else {
+        setStatus(data.error || 'Failed to load copy', 'err')
+      }
+    } catch (err) {
+      setStatus('Failed to fetch global copy', 'err')
+    }
+  }
+
+  function closeGlobalStringsDrawer() {
+    const modal = document.getElementById('globalStringsModal')
+    if (modal) modal.classList.add('hidden')
+  }
+
+  function renderGlobalStringsList() {
+    const container = document.getElementById('globalStringsList')
+    const searchVal = (document.getElementById('globalStringsSearch').value || '').toLowerCase().trim()
+    if (!container) return
+
+    let html = '<table class="global-strings-table"><thead><tr><th>Key</th><th>String Body</th></tr></thead><tbody>'
+    let count = 0
+    for (const [k, v] of Object.entries(globalStringsCache)) {
+      if (searchVal && !k.toLowerCase().includes(searchVal) && !String(v).toLowerCase().includes(searchVal)) continue
+      html += '<tr>'
+      html += '<td><code>' + escapeHtml(k) + '</code></td>'
+      html += '<td><textarea class="global-string-input" data-key="' + escapeHtml(k) + '">' + escapeHtml(v) + '</textarea></td>'
+      html += '</tr>'
+      count++
+    }
+    html += '</tbody></table>'
+    if (count === 0) html = '<p class="muted">No matching global strings found.</p>'
+    container.innerHTML = html
+  }
+
+  async function saveGlobalStrings() {
+    const inputs = document.querySelectorAll('.global-string-input')
+    const updates = {}
+    inputs.forEach((inp) => {
+      const key = inp.getAttribute('data-key')
+      updates[key] = inp.value
+    })
+    setStatus('Saving global strings…')
+    try {
+      const res = await fetch('/api/bot-copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ copy: updates }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setStatus('Global strings saved successfully!', 'ok')
+        closeGlobalStringsDrawer()
+      } else {
+        setStatus(data.error || 'Failed to save global strings', 'err')
+      }
+    } catch (err) {
+      setStatus('Save failed', 'err')
+    }
+  }
+
   function bindToolbar() {
     document.getElementById('btnSaveDraft').addEventListener('click', saveDraft)
     document.getElementById('btnPublish').addEventListener('click', publishDraft)
     document.getElementById('btnPreview').addEventListener('click', openPreview)
     document.getElementById('previewClose').addEventListener('click', closePreview)
     document.getElementById('previewBackdrop').addEventListener('click', closePreview)
+
+    const btnGlobal = document.getElementById('btnGlobalStrings')
+    if (btnGlobal) btnGlobal.addEventListener('click', openGlobalStringsDrawer)
+    const btnGlobalClose = document.getElementById('globalStringsClose')
+    if (btnGlobalClose) btnGlobalClose.addEventListener('click', closeGlobalStringsDrawer)
+    const btnGlobalBackdrop = document.getElementById('globalStringsBackdrop')
+    if (btnGlobalBackdrop) btnGlobalBackdrop.addEventListener('click', closeGlobalStringsDrawer)
+    const btnSaveGlobal = document.getElementById('btnSaveGlobalStrings')
+    if (btnSaveGlobal) btnSaveGlobal.addEventListener('click', saveGlobalStrings)
+    const searchInp = document.getElementById('globalStringsSearch')
+    if (searchInp) searchInp.addEventListener('input', renderGlobalStringsList)
+
+    const btnAddMsg = document.getElementById('btnAddMessageNode')
+    if (btnAddMsg) btnAddMsg.addEventListener('click', addMessageNode)
+    const btnAddAct = document.getElementById('btnAddActionNode')
+    if (btnAddAct) btnAddAct.addEventListener('click', addActionNode)
+
+    const btnZoomIn = document.getElementById('btnZoomIn')
+    if (btnZoomIn) btnZoomIn.addEventListener('click', function () { if (editor) editor.zoom_in() })
+    const btnZoomOut = document.getElementById('btnZoomOut')
+    if (btnZoomOut) btnZoomOut.addEventListener('click', function () { if (editor) editor.zoom_out() })
+    const btnFitView = document.getElementById('btnFitView')
+    if (btnFitView) btnFitView.addEventListener('click', function () { if (editor) editor.zoom_reset() })
 
     const enabledEl = document.getElementById('flowEnabled')
     enabledEl.addEventListener('change', function () {
@@ -649,20 +994,23 @@
       meta.textContent = 'No active flow configured.'
     }
 
-    if (!state.draft || !state.draft.nodes || !state.draft.nodes.length) {
-      setStatus('No flow nodes to display', 'err')
-      renderPanel()
-      return
-    }
-
     const container = document.getElementById('drawflow')
     editor = new Drawflow(container)
     editor.reroute = true
     editor.editor_mode = 'edit'
     editor.start()
     bindEditorEvents()
-    renderCanvas()
     bindToolbar()
+
+    if (!state.draft || !state.draft.nodes || !state.draft.nodes.length) {
+      if (!state.draft) state.draft = { nodes: [] }
+      if (!state.draft.nodes) state.draft.nodes = []
+      setStatus('No flow nodes configured — click + Message Node to start', 'ok')
+      renderPanel()
+      return
+    }
+
+    renderCanvas()
 
     const entry = state.draft.entry_key || 'welcome'
     selectNodeByKey(keyToId.has(entry) ? entry : state.draft.nodes[0].key)

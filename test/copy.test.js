@@ -83,3 +83,16 @@ test('unknown err key falls back', () => {
   const copy = muatCopy()
   assert.equal(copy.get('err.does_not_exist', {}, 'fallback'), 'fallback')
 })
+
+test('filterGlobalStrings isolates non-graph copy keys from screen copy keys', () => {
+  const copy = muatCopy()
+  const allCopy = {
+    'screen.welcome': 'Welcome!',
+    'err.stock_empty': 'Stok Kosong',
+    'msg.checkout.success': 'Terima kasih',
+    'btn.kembali': 'Kembali',
+  }
+  const globalStrings = copy.filterGlobalStrings(allCopy)
+  assert.deepStrictEqual(Object.keys(globalStrings), ['err.stock_empty', 'msg.checkout.success', 'btn.kembali'])
+})
+

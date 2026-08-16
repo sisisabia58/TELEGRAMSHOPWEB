@@ -17,6 +17,14 @@
                 <span>Flow engine enabled</span>
             </label>
             <div class="flow-toolbar-actions">
+                <button type="button" id="btnAddMessageNode" class="btn btn-secondary">+ Message Node</button>
+                <button type="button" id="btnAddActionNode" class="btn btn-secondary">+ Action Node</button>
+                <div class="zoom-controls">
+                    <button type="button" id="btnZoomIn" class="btn btn-sm btn-secondary" title="Zoom In">+</button>
+                    <button type="button" id="btnZoomOut" class="btn btn-sm btn-secondary" title="Zoom Out">-</button>
+                    <button type="button" id="btnFitView" class="btn btn-sm btn-secondary" title="Reset Zoom">⛶</button>
+                </div>
+                <button type="button" id="btnGlobalStrings" class="btn btn-secondary">Global Strings 🌐</button>
                 <button type="button" id="btnSaveDraft" class="btn btn-secondary">Save draft</button>
                 <button type="button" id="btnPreview" class="btn">Preview</button>
                 <button type="button" id="btnPublish" class="btn btn-primary">Publish</button>
@@ -45,6 +53,25 @@
                 </div>
                 <div id="previewCaption" class="phone-caption"></div>
                 <div id="previewKeyboard" class="phone-keyboard"></div>
+            </div>
+        </div>
+
+        <div id="globalStringsModal" class="global-strings-modal hidden" role="dialog" aria-modal="true" aria-labelledby="globalStringsTitle">
+            <div class="global-strings-backdrop" id="globalStringsBackdrop"></div>
+            <div class="global-strings-drawer">
+                <div class="global-strings-header">
+                    <h3 id="globalStringsTitle">Global Strings (Non-Graph Copy)</h3>
+                    <button type="button" id="globalStringsClose" class="global-strings-close" aria-label="Close global strings">×</button>
+                </div>
+                <div class="global-strings-toolbar">
+                    <input type="text" id="globalStringsSearch" placeholder="Search keys (e.g. err.*, msg.*)..." aria-label="Search global string keys">
+                </div>
+                <div class="global-strings-body" id="globalStringsList">
+                    <p class="muted">Loading global strings...</p>
+                </div>
+                <div class="global-strings-footer">
+                    <button type="button" id="btnSaveGlobalStrings" class="btn btn-primary">Save Global Strings</button>
+                </div>
             </div>
         </div>
     </main>

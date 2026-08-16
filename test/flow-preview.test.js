@@ -102,3 +102,22 @@ test('buildProductCardView shows variants and qty previews', () => {
   const qty = flat.find((b) => b.preview && b.preview.type === 'qty')
   assert.equal(qty.preview.kode, 'nf1')
 })
+
+test('renderTelegramMarkdown converts Telegram formatting to HTML snippet', () => {
+  const flowPreview = muatPreview()
+  const input = '*Halo* _user_ ~strikethrough~ `code` [link](https://example.com)'
+  const html = flowPreview.renderTelegramMarkdown(input)
+  assert.strictEqual(
+    html,
+    '<b>Halo</b> <i>user</i> <del>strikethrough</del> <code>code</code> <a href="https://example.com" target="_blank">link</a>'
+  )
+})
+
+test('generateUniqueNodeKey creates non-colliding screen key', () => {
+  const flowPreview = muatPreview()
+  const existingKeys = ['screen.welcome', 'screen.custom_1']
+  const newKey = flowPreview.generateUniqueNodeKey('screen', existingKeys)
+  assert.strictEqual(newKey, 'screen.custom_2')
+})
+
+

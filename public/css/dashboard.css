@@ -4,6 +4,10 @@
     box-sizing: border-box;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 :root {
   --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
   --color-bg: #F1F5F9;
@@ -2034,6 +2038,9 @@ textarea:focus {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   z-index: 1200;
+}
+.notification-panel[hidden] {
+  display: none !important;
 }
 .notification-panel-header,
 .notification-panel-footer {
