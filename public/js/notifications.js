@@ -31,10 +31,25 @@ class NotificationCenter {
       this.togglePanel()
     })
 
-    this.els.panel.addEventListener('click', (e) => e.stopPropagation())
+    this.els.panel.addEventListener('click', (e) => {
+      if (e.target.closest('a')) {
+        this.togglePanel(false)
+      } else {
+        e.stopPropagation()
+      }
+    })
 
-    document.addEventListener('click', () => {
-      if (this.panelOpen) this.togglePanel(false)
+    // Capture phase listeners so canvas or widgets calling stopPropagation cannot block closing
+    document.addEventListener('pointerdown', (e) => {
+      if (this.panelOpen && !this.els.panel.contains(e.target) && !this.els.bell.contains(e.target)) {
+        this.togglePanel(false)
+      }
+    }, true)
+
+    document.addEventListener('click', (e) => {
+      if (this.panelOpen && !this.els.panel.contains(e.target) && !this.els.bell.contains(e.target)) {
+        this.togglePanel(false)
+      }
     })
 
     document.addEventListener('keydown', (e) => {
