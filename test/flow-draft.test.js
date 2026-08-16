@@ -94,3 +94,27 @@ test('publishPlan emits node patches and copy bodies', () => {
   )
   assert.ok(!plan.copies.some((c) => c.key == null))
 })
+
+test('draftFromPublished and publishPlan preserve media_url and media_type', () => {
+  const nodes = [
+    {
+      key: 'welcome',
+      kind: 'screen',
+      screen_key: 'screen.welcome',
+      pos_x: 0,
+      pos_y: 0,
+      buttons: [],
+      media_url: 'https://example.com/banner.png',
+      media_type: 'photo',
+    },
+  ]
+  const copyByKey = { 'screen.welcome': 'Halo!' }
+  const draft = draftFromPublished(nodes, copyByKey, 'welcome')
+  assert.strictEqual(draft.nodes[0].media_url, 'https://example.com/banner.png')
+  assert.strictEqual(draft.nodes[0].media_type, 'photo')
+
+  const plan = publishPlan(draft)
+  assert.strictEqual(plan.nodes[0].media_url, 'https://example.com/banner.png')
+  assert.strictEqual(plan.nodes[0].media_type, 'photo')
+})
+
