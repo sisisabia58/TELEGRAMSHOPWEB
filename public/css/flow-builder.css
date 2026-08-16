@@ -215,12 +215,48 @@
 
 .sp-btn-row .sp-btn-grid {
   display: grid;
-  grid-template-columns: 1fr 90px;
+  grid-template-columns: 1fr 90px auto;
   gap: 8px;
+  align-items: center;
 }
 
 .sp-btn-row .sp-btn-target {
-  grid-column: 1 / -1;
+  grid-column: 1 / 3;
+}
+
+.btn-row-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-row-move, .btn-row-delete {
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  cursor: pointer;
+  color: #555;
+  padding: 0;
+}
+
+.btn-row-move:hover {
+  background: #f0f4f8;
+  color: #111;
+}
+
+.btn-row-delete {
+  color: #d32f2f;
+  border-color: #f87171;
+}
+
+.btn-row-delete:hover {
+  background: #fef2f2;
+  color: #b91c1c;
 }
 
 .sp-btn-add {

@@ -367,10 +367,16 @@
       })
       html += '</select>'
       html += '<input type="text" class="btn-target sp-btn-target" placeholder="Target (node key / callback / url)" value="' + escapeHtml(target) + '">'
+      html += '<div class="btn-row-actions">'
+      if (idx > 0) html += '<button type="button" class="btn-row-move" data-move="up" data-idx="' + idx + '" title="Move Up">↑</button>'
+      if (idx < flat.length - 1) html += '<button type="button" class="btn-row-move" data-move="down" data-idx="' + idx + '" title="Move Down">↓</button>'
+      html += '<button type="button" class="btn-row-delete" data-delete="' + idx + '" title="Delete Button">×</button>'
+      html += '</div>'
       html += '</div></div>'
     })
 
     html += '</div>'
+    html += '<button type="button" id="btnAddButton" class="btn btn-secondary btn-sm" style="margin-top:8px;">+ Add Button</button>'
     html += '<p class="flow-panel-hint">For <code>go</code> buttons: set the target node key here, or drag a wire from the card’s output ports. Then click Apply.</p>'
     html += '</div>'
 
@@ -415,6 +421,43 @@
         })
       })
     }
+
+    const btnAdd = document.getElementById('btnAddButton')
+    if (btnAdd) {
+      btnAdd.addEventListener('click', function () {
+        if (!node.buttons) node.buttons = []
+        const newIdx = flattenButtons(node.buttons).length
+        const label = 'Button ' + (newIdx + 1)
+        node.buttons.push([{ label, go: '' }])
+        renderPanel()
+      })
+    }
+
+    panel.querySelectorAll('.btn-row-delete').forEach((btn) => {
+      btn.addEventListener('click', function () {
+        const idx = Number(btn.getAttribute('data-delete'))
+        const flat = flattenButtons(node.buttons)
+        flat.splice(idx, 1)
+        node.buttons = flat.map((b) => [b])
+        renderPanel()
+      })
+    })
+
+    panel.querySelectorAll('.btn-row-move').forEach((btn) => {
+      btn.addEventListener('click', function () {
+        const idx = Number(btn.getAttribute('data-idx'))
+        const dir = btn.getAttribute('data-move')
+        const flat = flattenButtons(node.buttons)
+        const targetIdx = dir === 'up' ? idx - 1 : idx + 1
+        if (targetIdx >= 0 && targetIdx < flat.length) {
+          const temp = flat[idx]
+          flat[idx] = flat[targetIdx]
+          flat[targetIdx] = temp
+          node.buttons = flat.map((b) => [b])
+          renderPanel()
+        }
+      })
+    })
 
     document.getElementById('panelApply').addEventListener('click', applyPanelToDraft)
   }

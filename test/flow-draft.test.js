@@ -118,3 +118,18 @@ test('draftFromPublished and publishPlan preserve media_url and media_type', () 
   assert.strictEqual(plan.nodes[0].media_type, 'photo')
 })
 
+test('reorderButtons and generateButtonLabelKey maintain valid button rows', () => {
+  const { reorderButtonRow, generateButtonLabelKey } = require('../lib/flow-draft')
+  const buttons = [
+    [{ label: 'B1', go: 'step1' }],
+    [{ label: 'B2', go: 'step2' }],
+  ]
+  const reordered = reorderButtonRow(buttons, 0, 1)
+  assert.strictEqual(reordered[0][0].label, 'B2')
+  assert.strictEqual(reordered[1][0].label, 'B1')
+
+  const labelKey = generateButtonLabelKey('screen.welcome', 0)
+  assert.strictEqual(labelKey, 'btn.welcome.0')
+})
+
+
