@@ -250,6 +250,43 @@
     return (state.draft.nodes || []).find((n) => n.key === key)
   }
 
+  function renderTelegramMarkdown(text) {
+    if (!text) return ''
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\*(.*?)\*/g, '<b>$1</b>')
+      .replace(/_(.*?)_/g, '<i>$1</i>')
+      .replace(/~(.*?)~/g, '<del>$1</del>')
+      .replace(/`(.*?)`/g, '<code>$1</code>')
+      .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank">$1</a>')
+  }
+
+  function applyFormatting(before, after) {
+    const textarea = document.getElementById('panelBody')
+    if (!textarea) return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const sel = textarea.value.substring(start, end)
+    const replacement = before + (sel || 'text') + (after || before)
+    textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end)
+    textarea.focus()
+    textarea.setSelectionRange(start + before.length, end + before.length)
+    textarea.dispatchEvent(new Event('input'))
+  }
+
+  function insertVariable(varName) {
+    const textarea = document.getElementById('panelBody')
+    if (!textarea) return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    textarea.value = textarea.value.substring(0, start) + varName + textarea.value.substring(end)
+    textarea.focus()
+    textarea.setSelectionRange(start + varName.length, start + varName.length)
+    textarea.dispatchEvent(new Event('input'))
+  }
+
   function renderPanel() {
     const panel = document.getElementById('flowPanel')
     if (!panel) return
@@ -277,8 +314,34 @@
     html += '</div><div class="flow-panel-body">'
 
     if (node.kind === 'screen') {
+      html += '<div class="field"><label>Media URL (Image / Banner)</label>'
+      html += '<input type="url" id="panelMediaUrl" placeholder="https://example.com/image.jpg" value="' + escapeHtml(node.media_url || '') + '">'
+      if (node.media_url) {
+        html += '<div class="media-thumb-preview"><img src="' + escapeHtml(node.media_url) + '" alt="Media preview" onerror="this.style.display=\'none\'"></div>'
+      }
+      html += '</div>'
+
       html += '<div class="field"><label>Message text</label>'
-      html += '<textarea id="panelBody" placeholder="Message shown in Telegram…">' + escapeHtml(node.body || '') + '</textarea></div>'
+      html += '<div class="composer-toolbar">'
+      html += '<button type="button" class="btn-fmt" data-fmt="bold" title="Bold (*text*)"><b>B</b></button>'
+      html += '<button type="button" class="btn-fmt" data-fmt="italic" title="Italic (_text_)"><i>I</i></button>'
+      html += '<button type="button" class="btn-fmt" data-fmt="strike" title="Strikethrough (~text~)"><s>S</s></button>'
+      html += '<button type="button" class="btn-fmt" data-fmt="code" title="Code (`code`)"><code>&lt;/&gt;</code></button>'
+      html += '<button type="button" class="btn-fmt" data-fmt="link" title="Link ([text](url))">🔗</button>'
+      html += '<div class="var-picker-container">'
+      html += '<button type="button" class="btn-var-toggle" id="btnVarToggle" title="Insert Variable">{ }</button>'
+      html += '<div class="var-dropup hidden" id="varDropup">'
+      html += '<div class="var-item" data-var="{{first_name}}">first_name</div>'
+      html += '<div class="var-item" data-var="{{saldo}}">saldo</div>'
+      html += '<div class="var-item" data-var="{{username}}">username</div>'
+      html += '<div class="var-item" data-var="{{user_id}}">user_id</div>'
+      html += '</div>'
+      html += '</div>'
+      html += '</div>'
+
+      html += '<textarea id="panelBody" placeholder="Message shown in Telegram…">' + escapeHtml(node.body || '') + '</textarea>'
+      html += '<div class="live-preview-box"><strong>Live Preview:</strong><div id="livePreviewContent">' + renderTelegramMarkdown(node.body) + '</div></div>'
+      html += '</div>'
       html += '<p class="flow-panel-hint">Use {{first_name}}, {{nama_bot}}, {{saldo}}, etc. Publish writes this to BotCopy.</p>'
       html += '<div class="field"><label>Copy key</label><input type="text" class="readonly" readonly value="' + escapeHtml(node.screen_key || '') + '"></div>'
     } else {
@@ -316,6 +379,43 @@
     html += '</div>'
 
     panel.innerHTML = html
+
+    // Attach composer events
+    const bodyArea = document.getElementById('panelBody')
+    if (bodyArea) {
+      bodyArea.addEventListener('input', function () {
+        const liveEl = document.getElementById('livePreviewContent')
+        if (liveEl) liveEl.innerHTML = renderTelegramMarkdown(bodyArea.value)
+      })
+    }
+
+    panel.querySelectorAll('.btn-fmt').forEach((btn) => {
+      btn.addEventListener('click', function () {
+        const fmt = btn.getAttribute('data-fmt')
+        if (fmt === 'bold') applyFormatting('*', '*')
+        else if (fmt === 'italic') applyFormatting('_', '_')
+        else if (fmt === 'strike') applyFormatting('~', '~')
+        else if (fmt === 'code') applyFormatting('`', '`')
+        else if (fmt === 'link') applyFormatting('[', '](https://)')
+      })
+    })
+
+    const varToggle = document.getElementById('btnVarToggle')
+    const varDropup = document.getElementById('varDropup')
+    if (varToggle && varDropup) {
+      varToggle.addEventListener('click', function (e) {
+        e.stopPropagation()
+        varDropup.classList.toggle('hidden')
+      })
+      panel.querySelectorAll('.var-item').forEach((item) => {
+        item.addEventListener('click', function () {
+          const varName = item.getAttribute('data-var')
+          insertVariable(varName)
+          varDropup.classList.add('hidden')
+        })
+      })
+    }
+
     document.getElementById('panelApply').addEventListener('click', applyPanelToDraft)
   }
 
@@ -328,6 +428,8 @@
     if (descEl) node.description = descEl.value
 
     if (node.kind === 'screen') {
+      const mediaEl = document.getElementById('panelMediaUrl')
+      if (mediaEl) node.media_url = mediaEl.value.trim() || null
       const bodyEl = document.getElementById('panelBody')
       if (bodyEl) node.body = bodyEl.value
     }
