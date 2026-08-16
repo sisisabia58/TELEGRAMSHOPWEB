@@ -5856,6 +5856,41 @@ app.post('/settings/bot-copy/:key', isAuthenticated, async (req, res) => {
   }
 })
 
+// JSON API for Global Strings drawer in Flow Builder
+app.get('/api/bot-copy', isAuthenticated, async (req, res) => {
+  try {
+    const { data: rows, error } = await supabase.from('BotCopy').select('key, body')
+    if (error) throw error
+    const copy = {}
+    for (const row of rows || []) copy[row.key] = row.body
+    res.json({ success: true, copy })
+  } catch (e) {
+    console.error(e)
+    res.json({ success: false, error: e.message })
+  }
+})
+
+app.post('/api/bot-copy', isAuthenticated, async (req, res) => {
+  try {
+    const updates = req.body.copy
+    if (!updates || typeof updates !== 'object') {
+      return res.json({ success: false, error: 'Missing copy object' })
+    }
+    for (const [key, body] of Object.entries(updates)) {
+      const { error } = await supabase
+        .from('BotCopy')
+        .update({ body, updated_at: new Date().toISOString() })
+        .eq('key', key)
+      if (error) throw error
+    }
+    await runtimeSettings.bump()
+    res.json({ success: true })
+  } catch (e) {
+    console.error(e)
+    res.json({ success: false, error: e.message })
+  }
+})
+
 // ============================================
 // BOT FLOW SETTINGS
 // ============================================

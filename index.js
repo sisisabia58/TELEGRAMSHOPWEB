@@ -2256,7 +2256,9 @@ async function handleFlowResult(userId, result, { msgId = null, query = null } =
     return false
   }
   if (result.type === 'screen') {
-    if (msgId) {
+    if (result.node && result.node.media_url) {
+      await flow.dispatchFlowScreen(bot, userId, result.node, msgId, result.caption)
+    } else if (msgId) {
       await editOrSendBannerMessage(userId, msgId, result.caption, { reply_markup: result.reply_markup })
     } else {
       await sendBannerMessage(userId, result.caption, { reply_markup: result.reply_markup })

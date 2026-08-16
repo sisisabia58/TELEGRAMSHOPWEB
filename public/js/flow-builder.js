@@ -381,6 +381,7 @@
     html += '</div>'
 
     html += '<div class="flow-panel-footer">'
+    html += '<button type="button" id="panelDeleteNode" class="btn-delete-node" title="Remove this node from the draft">Delete Node</button>'
     html += '<button type="button" id="panelApply" class="btn-apply">Apply</button>'
     html += '</div>'
 
@@ -460,6 +461,20 @@
     })
 
     document.getElementById('panelApply').addEventListener('click', applyPanelToDraft)
+
+    const btnDeleteNode = document.getElementById('panelDeleteNode')
+    if (btnDeleteNode) {
+      btnDeleteNode.addEventListener('click', function () {
+        const nodeKey = state.selectedKey
+        if (!nodeKey) return
+        if (!window.confirm('Delete node "' + nodeKey + '"? This cannot be undone.')) return
+        state.draft.nodes = state.draft.nodes.filter((n) => n.key !== nodeKey)
+        state.selectedKey = null
+        renderCanvas()
+        renderPanel()
+        setStatus('Deleted node: ' + nodeKey, 'ok')
+      })
+    }
   }
 
   function applyPanelToDraft() {
@@ -775,8 +790,8 @@
       kind: 'screen',
       screen_key: key,
       body: 'Halo *{{first_name}}*!',
-      pos_x: 150,
-      pos_y: 150,
+      pos_x: 150 + ((state.draft.nodes || []).length * 40) % 400,
+      pos_y: 150 + ((state.draft.nodes || []).length * 40) % 300,
       media_url: null,
       media_type: 'photo',
       buttons: [[{ label: 'Menu', go: 'welcome' }]],
@@ -796,8 +811,8 @@
       kind: 'action',
       screen_key: null,
       action: 'product_list',
-      pos_x: 200,
-      pos_y: 200,
+      pos_x: 200 + ((state.draft.nodes || []).length * 40) % 400,
+      pos_y: 200 + ((state.draft.nodes || []).length * 40) % 300,
       buttons: [],
       description: 'Open product catalog',
     }
