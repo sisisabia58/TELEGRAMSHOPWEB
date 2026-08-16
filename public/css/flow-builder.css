@@ -726,3 +726,121 @@
   display: block;
 }
 
+/* Global Strings Drawer Modal */
+.global-strings-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.global-strings-modal.hidden {
+  display: none;
+}
+
+.global-strings-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.global-strings-drawer {
+  position: relative;
+  width: 600px;
+  max-width: 90vw;
+  height: 100%;
+  background: #fff;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+}
+
+.global-strings-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--sp-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f8fafc;
+}
+
+.global-strings-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--sp-text);
+}
+
+.global-strings-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--sp-muted);
+}
+
+.global-strings-toolbar {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--sp-border);
+  background: #fff;
+}
+
+.global-strings-toolbar input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--sp-border);
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.global-strings-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 20px;
+}
+
+.global-strings-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.global-strings-table th {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 2px solid var(--sp-border);
+  font-size: 12px;
+  color: var(--sp-muted);
+}
+
+.global-strings-table td {
+  padding: 8px 4px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: top;
+}
+
+.global-string-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 8px;
+  border: 1px solid var(--sp-border);
+  border-radius: 4px;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.global-strings-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--sp-border);
+  background: #f8fafc;
+  display: flex;
+  justify-content: flex-end;
+}
+
+

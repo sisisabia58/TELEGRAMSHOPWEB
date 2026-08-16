@@ -807,12 +807,98 @@
     setStatus('Added Action node: ' + key, 'ok')
   }
 
+  let globalStringsCache = {}
+
+  async function openGlobalStringsDrawer() {
+    const modal = document.getElementById('globalStringsModal')
+    if (modal) modal.classList.remove('hidden')
+    setStatus('Loading global strings…')
+    try {
+      const res = await fetch('/api/bot-copy')
+      const data = await res.json()
+      if (data.success && data.copy) {
+        globalStringsCache = {}
+        for (const [k, v] of Object.entries(data.copy)) {
+          if (!k.startsWith('screen.')) globalStringsCache[k] = v
+        }
+        renderGlobalStringsList()
+        setStatus('Global strings loaded', 'ok')
+      } else {
+        setStatus(data.error || 'Failed to load copy', 'err')
+      }
+    } catch (err) {
+      setStatus('Failed to fetch global copy', 'err')
+    }
+  }
+
+  function closeGlobalStringsDrawer() {
+    const modal = document.getElementById('globalStringsModal')
+    if (modal) modal.classList.add('hidden')
+  }
+
+  function renderGlobalStringsList() {
+    const container = document.getElementById('globalStringsList')
+    const searchVal = (document.getElementById('globalStringsSearch').value || '').toLowerCase().trim()
+    if (!container) return
+
+    let html = '<table class="global-strings-table"><thead><tr><th>Key</th><th>String Body</th></tr></thead><tbody>'
+    let count = 0
+    for (const [k, v] of Object.entries(globalStringsCache)) {
+      if (searchVal && !k.toLowerCase().includes(searchVal) && !String(v).toLowerCase().includes(searchVal)) continue
+      html += '<tr>'
+      html += '<td><code>' + escapeHtml(k) + '</code></td>'
+      html += '<td><textarea class="global-string-input" data-key="' + escapeHtml(k) + '">' + escapeHtml(v) + '</textarea></td>'
+      html += '</tr>'
+      count++
+    }
+    html += '</tbody></table>'
+    if (count === 0) html = '<p class="muted">No matching global strings found.</p>'
+    container.innerHTML = html
+  }
+
+  async function saveGlobalStrings() {
+    const inputs = document.querySelectorAll('.global-string-input')
+    const updates = {}
+    inputs.forEach((inp) => {
+      const key = inp.getAttribute('data-key')
+      updates[key] = inp.value
+    })
+    setStatus('Saving global strings…')
+    try {
+      const res = await fetch('/api/bot-copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ copy: updates }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setStatus('Global strings saved successfully!', 'ok')
+        closeGlobalStringsDrawer()
+      } else {
+        setStatus(data.error || 'Failed to save global strings', 'err')
+      }
+    } catch (err) {
+      setStatus('Save failed', 'err')
+    }
+  }
+
   function bindToolbar() {
     document.getElementById('btnSaveDraft').addEventListener('click', saveDraft)
     document.getElementById('btnPublish').addEventListener('click', publishDraft)
     document.getElementById('btnPreview').addEventListener('click', openPreview)
     document.getElementById('previewClose').addEventListener('click', closePreview)
     document.getElementById('previewBackdrop').addEventListener('click', closePreview)
+
+    const btnGlobal = document.getElementById('btnGlobalStrings')
+    if (btnGlobal) btnGlobal.addEventListener('click', openGlobalStringsDrawer)
+    const btnGlobalClose = document.getElementById('globalStringsClose')
+    if (btnGlobalClose) btnGlobalClose.addEventListener('click', closeGlobalStringsDrawer)
+    const btnGlobalBackdrop = document.getElementById('globalStringsBackdrop')
+    if (btnGlobalBackdrop) btnGlobalBackdrop.addEventListener('click', closeGlobalStringsDrawer)
+    const btnSaveGlobal = document.getElementById('btnSaveGlobalStrings')
+    if (btnSaveGlobal) btnSaveGlobal.addEventListener('click', saveGlobalStrings)
+    const searchInp = document.getElementById('globalStringsSearch')
+    if (searchInp) searchInp.addEventListener('input', renderGlobalStringsList)
 
     const btnAddMsg = document.getElementById('btnAddMessageNode')
     if (btnAddMsg) btnAddMsg.addEventListener('click', addMessageNode)
