@@ -1,0 +1,125 @@
+<%
+    breadcrumbs = [
+        { label: 'Home', href: '/' },
+        { label: 'Catalog', href: '/produk' },
+        { label: 'Supplier', href: '/supplier' },
+        { label: supplier && supplier.id ? 'Edit' : 'Tambah' }
+    ];
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <%- include('partials/head') %>
+    <style>
+        .form-hint { color: var(--color-muted); font-size: 13px; margin-top: 4px; line-height: 1.5; }
+        .form-actions { display: flex; gap: 12px; margin-top: 24px; }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <%- include('partials/sidebar') %>
+
+    <main class="main-content" id="main-content">
+        <%- include('partials/topbar') %>
+
+        <div class="container">
+            <%- include('partials/page-header', { breadcrumbs: breadcrumbs, pageHeaderActions: '' }) %>
+
+            <% if (error) { %>
+                <div class="alert alert-danger"><%= error %></div>
+            <% } %>
+
+            <div class="card">
+                <div class="card-body">
+                    <form method="POST" action="/supplier/simpan">
+                        <% if (supplier && supplier.id) { %>
+                            <input type="hidden" name="id" value="<%= supplier.id %>">
+                        <% } %>
+
+                        <div class="form-group">
+                            <label for="nama">Nama Supplier</label>
+                            <input type="text" id="nama" name="nama" class="form-control" required
+                                   value="<%= supplier ? (supplier.nama || '') : '' %>" placeholder="Bite Store">
+                            <div class="form-hint">Hanya untuk keperluan internal. Nama supplier tidak pernah ditampilkan ke pembeli.</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="adapter">Adapter</label>
+                            <select id="adapter" name="adapter" class="form-control" required onchange="isiBaseUrl()">
+                                <% adapters.forEach(a => { %>
+                                    <option value="<%= a.key %>"
+                                            data-base="<%= a.defaultBaseUrl %>"
+                                            <%= supplier && supplier.adapter === a.key ? 'selected' : '' %>><%= a.label %></option>
+                                <% }) %>
+                            </select>
+                            <div class="form-hint">Adapter menerjemahkan bentuk API tiap penjual ke bentuk seragam. Penjual baru = satu file baru di <code>lib/suppliers/</code>.</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="base_url">Base URL</label>
+                            <input type="url" id="base_url" name="base_url" class="form-control"
+                                   value="<%= supplier ? (supplier.base_url || '') : '' %>">
+                            <div class="form-hint">Kosongkan untuk memakai URL bawaan adapter.</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="api_key">API Key</label>
+                            <input type="password" id="api_key" name="api_key" class="form-control" autocomplete="new-password"
+                                   placeholder="<%= supplier && supplier.id ? 'Biarkan kosong untuk tidak mengubah' : 'bsk_...' %>">
+                            <div class="form-hint">
+                                <% if (supplier && supplier.id) { %>
+                                    Kunci yang tersimpan tidak ditampilkan. Isi hanya kalau mau menggantinya.
+                                <% } else { %>
+                                    Dikirim sebagai header <code>X-API-Key</code> di setiap permintaan.
+                                <% } %>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="prioritas">Prioritas</label>
+                            <input type="number" id="prioritas" name="prioritas" class="form-control" step="1"
+                                   value="<%= supplier ? (supplier.prioritas || 0) : 0 %>">
+                            <div class="form-hint">
+                                Hanya dipakai sebagai penyeri kalau dua penawaran harganya sama persis — angka lebih kecil menang.
+                                Stok milik sendiri selalu menang lebih dulu, berapa pun angka ini.
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="is_active" <%= !supplier || supplier.is_active !== false ? 'checked' : '' %>>
+                                Aktif
+                            </label>
+                            <div class="form-hint">Supplier nonaktif tidak disinkronkan dan penawarannya tidak pernah dipilih saat checkout.</div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-success">Simpan</button>
+                            <a href="/supplier" class="btn btn-secondary">Batal</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <%- include('partials/mobile-tabs') %>
+
+    <script>
+        function isiBaseUrl() {
+            const sel = document.getElementById('adapter');
+            const base = document.getElementById('base_url');
+            const bawaan = sel.options[sel.selectedIndex].dataset.base;
+            if (!base.value.trim()) base.value = bawaan;
+        }
+        document.addEventListener('DOMContentLoaded', isiBaseUrl);
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+    </script>
+</body>
+</html>

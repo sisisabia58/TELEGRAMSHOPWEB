@@ -26,6 +26,8 @@
 | 9 — Copy err/btn | [2026-08-09-copy-err-btn.md](./2026-08-09-copy-err-btn.md) | **Done** |
 | 10 — Dashboard style polish (Semrush-inspired) | [2026-08-10-dashboard-style-polish.md](./2026-08-10-dashboard-style-polish.md) | **Done** |
 | 11 — Notification inbox (bell panel) | [2026-08-10-notification-inbox.md](./2026-08-10-notification-inbox.md) | **Done** |
+| 12 — Flow builder parity | [2026-08-16-flow-builder-parity.md](./2026-08-16-flow-builder-parity.md) | **Done** |
+| 13 — Multi-supplier reseller sourcing | [../runbooks/phase13-supplier-sourcing.md](../runbooks/phase13-supplier-sourcing.md) | **Done** (third stock source alongside manual add + bulk upload) |
 
 ## Why separate plans
 

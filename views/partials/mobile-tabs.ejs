@@ -4,7 +4,7 @@
     <svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg>
     <span>Overview</span>
   </a>
-  <a href="/produk" class="mobile-tab <%= ['produk','stok','pricing','bulk'].includes(activePage) ? 'active' : '' %>">
+  <a href="/produk" class="mobile-tab <%= ['produk','stok','supplier','pricing','bulk'].includes(activePage) ? 'active' : '' %>">
     <svg class="icon" aria-hidden="true"><use href="#i-box"></use></svg>
     <span>Catalog</span>
   </a>
@@ -12,7 +12,7 @@
     <svg class="icon" aria-hidden="true"><use href="#i-users"></use></svg>
     <span>Customers</span>
   </a>
-  <a href="#" onclick="toggleSidebar(); return false;" class="mobile-tab <%= ['dashboard','produk','stok','pricing','bulk','user','deposit','transaksi','voucher'].includes(activePage) ? '' : 'active' %>">
+  <a href="#" onclick="toggleSidebar(); return false;" class="mobile-tab <%= ['dashboard','produk','stok','supplier','pricing','bulk','user','deposit','transaksi','voucher'].includes(activePage) ? '' : 'active' %>">
     <svg class="icon" aria-hidden="true"><use href="#i-more-horizontal"></use></svg>
     <span>More</span>
   </a>

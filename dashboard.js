@@ -14,6 +14,11 @@ const bulk = require('./lib/bulk')
 const flowDraft = require('./lib/flow-draft')
 const flowPreview = require('./lib/flow-preview')
 const copyLib = require('./lib/copy')
+// Sumber stok ketiga: katalog supplier (fase 13).
+const supplierSync = require('./lib/supplier-sync')
+const sourcing = require('./lib/sourcing')
+const fx = require('./lib/fx')
+const supplierAdapters = require('./lib/suppliers')
 const ejs = require('ejs')
 const { formatrupiah, formatTanggal } = require('./lib/format')
 const { buildOverviewModel, summarizeStock } = require('./lib/dashboard-overview')
@@ -149,6 +154,7 @@ function productVariantTitle(prefix, locals) {
 const iconPlus = '<svg class="icon icon-sm" aria-hidden="true"><use href="#i-plus"></use></svg>'
 const iconDownload = '<svg class="icon icon-sm" aria-hidden="true"><use href="#i-download"></use></svg>'
 const iconTrash = '<svg class="icon icon-sm" aria-hidden="true"><use href="#i-trash"></use></svg>'
+const iconSettings = '<svg class="icon icon-sm" aria-hidden="true"><use href="#i-settings"></use></svg>'
 
 const chromeLocalsByView = {
   dashboard: () => ({ currentPage: 'dashboard', pageTitle: `Dashboard ${NamaBot}` }),
@@ -164,6 +170,28 @@ const chromeLocalsByView = {
   'produk-stok-tambah': (locals) => ({ currentPage: 'produk', pageTitle: productVariantTitle('Tambah Stok —', locals) }),
   'produk-stok-edit': (locals) => ({ currentPage: 'produk', pageTitle: productVariantTitle('Edit Stok —', locals) }),
   'produk-stok-hapus': (locals) => ({ currentPage: 'produk', pageTitle: productVariantTitle('Hapus Stok —', locals) }),
+  // Sumber stok ketiga (fase 13). Ketiganya memakai currentPage 'supplier'
+  // supaya satu item nav di grup Catalog tetap menyala di semua sub-halaman.
+  supplier: () => ({
+    currentPage: 'supplier',
+    pageTitle: 'Supplier',
+    topbarExtra: `<a href="/supplier/pengaturan" class="btn-top">${iconSettings} Pengaturan</a> <a href="/supplier/tambah" class="btn btn-success">${iconPlus} Tambah Supplier</a>`
+  }),
+  'supplier-form': (locals) => ({
+    currentPage: 'supplier',
+    pageTitle: locals.supplier?.id ? 'Edit Supplier' : 'Tambah Supplier',
+    topbarExtra: '<a href="/supplier" class="btn-top">← Supplier</a>'
+  }),
+  'supplier-produk': (locals) => ({
+    currentPage: 'supplier',
+    pageTitle: `Katalog: ${locals.supplier?.nama || 'Supplier'}`,
+    topbarExtra: '<a href="/supplier" class="btn-top">← Supplier</a>'
+  }),
+  'supplier-pengaturan': () => ({
+    currentPage: 'supplier',
+    pageTitle: 'Pengaturan Reseller',
+    topbarExtra: '<a href="/supplier" class="btn-top">← Supplier</a>'
+  }),
   transaksi: (locals) => {
     const queryString = buildQueryString(locals.filters)
     const exportUrl = queryString ? `/transaksi/export?${queryString}` : '/transaksi/export'
@@ -1450,6 +1478,16 @@ app.patch('/api/produk/:id/varian/:varianId', isAuthenticated, async (req, res) 
         update.kode = kodeLower
       }
       if (body.harga !== undefined) {
+        // Harga varian yang dibuat sinkronisasi supplier dikelola oleh sync
+        // (modal + margin + kurs) dan ditulis ulang tiap putaran. Field-nya
+        // sudah readonly di UI, tapi readonly hanya berlaku di browser —
+        // request langsung tetap harus ditolak, kalau tidak admin mengira
+        // harganya berubah padahal akan tertimpa beberapa menit kemudian.
+        if (current.sumber === 'supplier') {
+          return res.status(400).json({
+            error: 'Harga varian supplier dikelola sinkronisasi. Ubah margin di Catalog → Supplier → Pengaturan.',
+          })
+        }
         const hargaInt = parseInt(body.harga, 10)
         if (isNaN(hargaInt) || hargaInt < 0) {
           return res.status(400).json({ error: 'Harga tidak valid' })
@@ -7315,6 +7353,425 @@ app.get('/bulk/export', isAuthenticated, async (req, res) => {
   } catch (error) {
     console.error('Error bulk exporting:', error)
     res.status(500).send('Error bulk exporting: ' + error.message)
+  }
+})
+
+// ============================================
+// ROUTE: SUPPLIER (sumber stok ketiga — fase 13)
+// ============================================
+//
+// Halaman-halaman ini duduk di grup "Catalog" bersama Produk / Stok / Bulk,
+// karena supplier adalah cara KETIGA memasukkan stok — bukan pengganti tambah
+// manual maupun bulk upload, yang keduanya tetap apa adanya.
+
+// Nilai pengaturan reseller, dibaca langsung dari DB (dashboard tidak memakai
+// cache runtime-settings; ia membaca saat menangani request).
+async function getResellerSettings() {
+  const kunci = [
+    'reseller_margin_persen', 'reseller_rounding', 'fx_mode', 'fx_usd_idr',
+    'fx_buffer_persen', 'fx_updated_at', 'supplier_sync_interval_menit',
+    'supplier_kategori_default', 'supplier_wallet_min_usd',
+  ]
+  const { data } = await supabase.from('NotificationSettings').select('*').in('setting_key', kunci)
+  const map = {}
+  for (const row of data || []) {
+    const v = row.setting_value
+    map[row.setting_key] = v && typeof v === 'object' && 'value' in v ? v.value : v
+  }
+  return {
+    marginPersen: Number(map.reseller_margin_persen ?? 10),
+    rounding: Number(map.reseller_rounding ?? 500),
+    fxMode: map.fx_mode === 'manual' ? 'manual' : 'auto',
+    fxRate: Number(map.fx_usd_idr ?? 16500),
+    fxBufferPersen: Number(map.fx_buffer_persen ?? 2),
+    fxUpdatedAt: map.fx_updated_at || null,
+    syncIntervalMenit: Number(map.supplier_sync_interval_menit ?? 5),
+    kategoriDefault: map.supplier_kategori_default || 'reseller',
+    walletMinUsd: Number(map.supplier_wallet_min_usd ?? 5),
+  }
+}
+
+// Konfigurasi harga dalam bentuk yang dipakai fx.computeIdrPrice. Sengaja dibaca
+// dari DB dan bukan dari cache proses, supaya angka yang ditampilkan dashboard
+// selalu yang barusan disimpan admin.
+function pricingDari(settings) {
+  return {
+    rate: settings.fxRate,
+    marginPersen: settings.marginPersen,
+    bufferPersen: settings.fxBufferPersen,
+    roundTo: settings.rounding,
+  }
+}
+
+app.get('/supplier', isAuthenticated, async (req, res) => {
+  try {
+    const suppliers = await supplierSync.listSuppliers()
+    const settings = await getResellerSettings()
+
+    // Jumlah produk termirror + berapa yang sudah terpetakan, per supplier.
+    const { data: produkRows } = await supabase
+      .from('SupplierProduct')
+      .select('supplier_id, varian_id, is_available')
+
+    const statistik = {}
+    for (const s of suppliers) statistik[s.id] = { total: 0, terpetakan: 0 }
+    for (const row of produkRows || []) {
+      if (!row.is_available) continue
+      const st = statistik[row.supplier_id]
+      if (!st) continue
+      st.total++
+      if (row.varian_id) st.terpetakan++
+    }
+
+    res.render('supplier', {
+      title: `Supplier - ${NamaBot}`,
+      namaBot: NamaBot,
+      username: req.session.username,
+      suppliers,
+      statistik,
+      settings,
+      adapters: supplierAdapters.listAdapters(),
+      success: req.query.success || null,
+      error: req.query.error || null,
+      req,
+    })
+  } catch (error) {
+    console.error('Error loading suppliers:', error)
+    res.status(500).send('Error loading suppliers: ' + error.message)
+  }
+})
+
+app.get('/supplier/tambah', isAuthenticated, (req, res) => {
+  res.render('supplier-form', {
+    title: `Tambah Supplier - ${NamaBot}`,
+    namaBot: NamaBot,
+    username: req.session.username,
+    supplier: null,
+    adapters: supplierAdapters.listAdapters(),
+    error: null,
+    req,
+  })
+})
+
+app.get('/supplier/pengaturan', isAuthenticated, async (req, res) => {
+  try {
+    const settings = await getResellerSettings()
+    // Contoh perhitungan supaya admin bisa melihat efek margin/kurs sebelum
+    // menyimpan, tanpa harus membuka katalog.
+    const contoh = [1, 2.5, 5].map((usd) => ({
+      usd,
+      idr: fx.computeIdrPrice(usd, pricingDari(settings)),
+    }))
+    res.render('supplier-pengaturan', {
+      title: `Pengaturan Reseller - ${NamaBot}`,
+      namaBot: NamaBot,
+      username: req.session.username,
+      settings,
+      contoh,
+      formatrupiah,
+      formatTanggal,
+      success: req.query.success || null,
+      error: req.query.error || null,
+      req,
+    })
+  } catch (error) {
+    console.error('Error loading reseller settings:', error)
+    res.status(500).send('Error loading reseller settings: ' + error.message)
+  }
+})
+
+app.get('/supplier/:id/edit', isAuthenticated, async (req, res) => {
+  try {
+    const { data: supplier } = await supabase.from('Supplier').select('*').eq('id', req.params.id).maybeSingle()
+    if (!supplier) return res.redirect('/supplier?error=notfound')
+    res.render('supplier-form', {
+      title: `Edit Supplier - ${NamaBot}`,
+      namaBot: NamaBot,
+      username: req.session.username,
+      supplier,
+      adapters: supplierAdapters.listAdapters(),
+      error: null,
+      req,
+    })
+  } catch (error) {
+    console.error('Error loading supplier:', error)
+    res.status(500).send('Error loading supplier: ' + error.message)
+  }
+})
+
+app.post('/supplier/simpan', isAuthenticated, async (req, res) => {
+  const { id, nama, adapter, base_url, api_key, prioritas, is_active } = req.body
+
+  const renderError = (pesan) => res.render('supplier-form', {
+    title: `${id ? 'Edit' : 'Tambah'} Supplier - ${NamaBot}`,
+    namaBot: NamaBot,
+    username: req.session.username,
+    supplier: { id, nama, adapter, base_url, api_key, prioritas, is_active: is_active === 'on' },
+    adapters: supplierAdapters.listAdapters(),
+    error: pesan,
+    req,
+  })
+
+  try {
+    if (!nama || !nama.trim()) return renderError('Nama supplier wajib diisi!')
+    if (!supplierAdapters.getAdapter(adapter)) return renderError('Adapter tidak dikenal!')
+
+    // base_url divalidasi di SERVER, bukan hanya lewat type="url" di form.
+    // Sync dan fulfillment mengirim api_key supplier ke host ini, jadi URL yang
+    // bisa diisi bebas adalah jalan keluar kredensial dan pintu masuk SSRF.
+    const cekUrl = supplierAdapters.validateBaseUrl(adapter, base_url)
+    if (!cekUrl.ok) return renderError(cekUrl.error)
+
+    const row = {
+      nama: nama.trim(),
+      slug: catalog.slugify(nama) || `supplier-${Date.now()}`,
+      adapter,
+      base_url: cekUrl.value,
+      prioritas: parseInt(prioritas, 10) || 0,
+      is_active: is_active === 'on',
+      updated_at: new Date().toISOString(),
+    }
+
+    // API key kosong saat edit berarti "biarkan seperti semula" — supaya admin
+    // tidak perlu mengetik ulang kunci rahasia setiap kali mengubah nama.
+    if (api_key && api_key.trim()) row.api_key = api_key.trim()
+    else if (!id) row.api_key = ''
+
+    if (id) {
+      const { error } = await supabase.from('Supplier').update(row).eq('id', id)
+      if (error) throw error
+      await logActivity(req, 'update_supplier', 'Supplier', id, { nama: row.nama })
+    } else {
+      const { error } = await supabase.from('Supplier').insert(row)
+      if (error) throw error
+      await logActivity(req, 'create_supplier', 'Supplier', null, { nama: row.nama })
+    }
+
+    await runtimeSettings.bump()
+    res.redirect('/supplier?success=simpan')
+  } catch (error) {
+    console.error('Error saving supplier:', error)
+    renderError('Gagal menyimpan: ' + error.message)
+  }
+})
+
+app.post('/supplier/:id/hapus', isAuthenticated, async (req, res) => {
+  try {
+    // SupplierProduct ikut terhapus (CASCADE), tapi SupplierOrder tidak —
+    // FK-nya SET NULL, jadi jejak transaksi lama tetap utuh untuk laporan.
+    const { error } = await supabase.from('Supplier').delete().eq('id', req.params.id)
+    if (error) throw error
+    await logActivity(req, 'delete_supplier', 'Supplier', req.params.id)
+    await runtimeSettings.bump()
+    res.redirect('/supplier?success=hapus')
+  } catch (error) {
+    console.error('Error deleting supplier:', error)
+    res.redirect('/supplier?error=hapus')
+  }
+})
+
+// Tombol "Test koneksi". Sengaja mengembalikan baris MENTAH pertama: dokumentasi
+// API tidak mendeklarasikan bentuk balasan, jadi ini satu-satunya cara
+// memastikan pemetaan field kita benar terhadap data sungguhan.
+app.post('/api/supplier/:id/test', isAuthenticated, async (req, res) => {
+  try {
+    const { data: supplier } = await supabase.from('Supplier').select('*').eq('id', req.params.id).maybeSingle()
+    if (!supplier) return res.status(404).json({ success: false, message: 'Supplier tidak ditemukan' })
+
+    const adapter = supplierAdapters.getAdapter(supplier.adapter)
+    if (!adapter) return res.status(400).json({ success: false, message: 'Adapter tidak dikenal' })
+
+    const hasil = await adapter.testConnection({ baseUrl: supplier.base_url, apiKey: supplier.api_key })
+    const settings = await getResellerSettings()
+    const contohIdr = hasil.sampleNormalized
+      ? fx.computeIdrPrice(hasil.sampleNormalized.hargaAsal, pricingDari(settings))
+      : null
+
+    res.json({ success: true, ...hasil, contohIdr })
+  } catch (error) {
+    const status = error.response?.status
+    res.status(200).json({
+      success: false,
+      message: status ? `HTTP ${status} — ${error.message}` : error.message,
+    })
+  }
+})
+
+app.post('/api/supplier/:id/sync', isAuthenticated, async (req, res) => {
+  try {
+    const { data: supplier } = await supabase.from('Supplier').select('*').eq('id', req.params.id).maybeSingle()
+    if (!supplier) return res.status(404).json({ success: false, message: 'Supplier tidak ditemukan' })
+
+    const laporan = await supplierSync.syncSupplier(supplier)
+    await logActivity(req, 'sync_supplier', 'Supplier', supplier.id, laporan)
+    res.json({ success: laporan.errors.length === 0, laporan })
+  } catch (error) {
+    console.error('Error syncing supplier:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+// Katalog termirror satu supplier, dengan kolom pemetaan.
+app.get('/supplier/:id/produk', isAuthenticated, async (req, res) => {
+  try {
+    const { data: supplier } = await supabase.from('Supplier').select('*').eq('id', req.params.id).maybeSingle()
+    if (!supplier) return res.redirect('/supplier?error=notfound')
+
+    const filter = req.query.filter || 'all'
+    let q = supabase
+      .from('SupplierProduct')
+      .select('*, varian:Varian(id, label, kode, sumber, produk:Produk(nama))')
+      .eq('supplier_id', supplier.id)
+      .order('nama', { ascending: true })
+
+    if (filter === 'unmapped') q = q.is('varian_id', null)
+    if (filter === 'available') q = q.eq('is_available', true)
+
+    const { data: produk, error } = await q
+    if (error) throw error
+
+    const settings = await getResellerSettings()
+    const pricing = pricingDari(settings)
+    const rows = (produk || []).map((p) => ({
+      ...p,
+      harga_idr: fx.computeIdrPrice(p.harga_asal, pricing),
+      varian_nama: p.varian ? `${p.varian.produk?.nama || ''} — ${p.varian.label}` : null,
+    }))
+
+    // Untuk dropdown pemetaan ulang: hanya varian MILIK KITA. Memetakan ke
+    // varian bikinan sync akan menggabungkan dua katalog supplier lewat pintu
+    // belakang, yang bukan hal yang diinginkan admin saat menekan "petakan".
+    const { data: varianRows } = await supabase
+      .from('Varian')
+      .select('id, label, kode, sumber, produk:Produk(nama)')
+      .eq('sumber', 'sendiri')
+      .order('kode', { ascending: true })
+
+    res.render('supplier-produk', {
+      title: `Katalog ${supplier.nama} - ${NamaBot}`,
+      namaBot: NamaBot,
+      username: req.session.username,
+      supplier,
+      produk: rows,
+      varianList: (varianRows || []).map((v) => ({
+        id: v.id,
+        label: `${v.produk?.nama || ''} — ${v.label} (${v.kode})`,
+      })),
+      filter,
+      settings,
+      formatrupiah,
+      formatTanggal,
+      success: req.query.success || null,
+      error: req.query.error || null,
+      req,
+    })
+  } catch (error) {
+    console.error('Error loading supplier products:', error)
+    res.status(500).send('Error loading supplier products: ' + error.message)
+  }
+})
+
+// Pemetaan ulang manual. Menyetel mapping_mode='manual' membuatnya LENGKET:
+// sync tidak akan pernah menimpanya lagi.
+app.post('/api/supplier/produk/:id/petakan', isAuthenticated, async (req, res) => {
+  try {
+    const varianId = req.body.varian_id || null
+
+    // Hanya varian MILIK KITA yang boleh jadi tujuan pemetaan. Dropdown di
+    // halaman memang hanya menampilkan itu, tapi endpoint ini menerima nilai
+    // apa pun dari body — tanpa pemeriksaan di sini, satu request langsung bisa
+    // menempelkan dua katalog supplier ke satu varian lewat pintu belakang.
+    if (varianId) {
+      const { data: target } = await supabase
+        .from('Varian')
+        .select('id, sumber')
+        .eq('id', varianId)
+        .maybeSingle()
+      if (!target) {
+        return res.status(400).json({ success: false, message: 'Varian tujuan tidak ditemukan' })
+      }
+      if (target.sumber !== 'sendiri') {
+        return res.status(400).json({
+          success: false,
+          message: 'Hanya varian milik sendiri yang bisa jadi tujuan pemetaan',
+        })
+      }
+    }
+
+    const { error } = await supabase
+      .from('SupplierProduct')
+      .update({
+        varian_id: varianId,
+        mapping_mode: varianId ? 'manual' : 'unmapped',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+    if (error) throw error
+
+    await logActivity(req, 'map_supplier_product', 'SupplierProduct', req.params.id, { varian_id: varianId })
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Error mapping supplier product:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+app.post('/api/settings/reseller', isAuthenticated, async (req, res) => {
+  try {
+    const {
+      margin_persen, rounding, fx_mode, fx_usd_idr, fx_buffer_persen,
+      sync_interval_menit, kategori_default, wallet_min_usd,
+    } = req.body
+
+    const margin = Number(margin_persen)
+    if (!Number.isFinite(margin) || margin < 0) {
+      return res.status(400).json({ success: false, message: 'Margin harus angka >= 0' })
+    }
+    const kurs = Number(fx_usd_idr)
+    if (!Number.isFinite(kurs) || kurs <= 0) {
+      return res.status(400).json({ success: false, message: 'Kurs harus angka > 0' })
+    }
+
+    const now = new Date().toISOString()
+    const updates = [
+      ['reseller_margin_persen', margin],
+      ['reseller_rounding', Math.max(0, Number(rounding) || 0)],
+      ['fx_mode', fx_mode === 'manual' ? 'manual' : 'auto'],
+      ['fx_usd_idr', kurs],
+      ['fx_buffer_persen', Math.max(0, Number(fx_buffer_persen) || 0)],
+      ['supplier_sync_interval_menit', Math.max(1, Number(sync_interval_menit) || 5)],
+      ['supplier_kategori_default', (kategori_default || 'reseller').trim()],
+      ['supplier_wallet_min_usd', Math.max(0, Number(wallet_min_usd) || 0)],
+    ]
+
+    for (const [key, value] of updates) {
+      const { error } = await supabase
+        .from('NotificationSettings')
+        .upsert({ setting_key: key, setting_value: { value }, updated_at: now }, { onConflict: 'setting_key' })
+      if (error) throw error
+    }
+
+    // Beri tahu proses bot supaya harga langsung memakai angka baru. Tidak ada
+    // harga tersimpan yang perlu dihitung ulang: harga IDR selalu diturunkan
+    // saat dibaca dari harga_asal + kurs + margin yang berlaku.
+    await runtimeSettings.bump()
+    await logActivity(req, 'update_reseller_settings', 'Settings', 'reseller')
+    res.json({ success: true, message: 'Pengaturan reseller berhasil disimpan!' })
+  } catch (error) {
+    console.error('Error saving reseller settings:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+// Ambil kurs sekarang juga (tombol di halaman pengaturan).
+app.post('/api/settings/reseller/kurs', isAuthenticated, async (req, res) => {
+  try {
+    const hasil = await fx.refreshRate({ force: true })
+    if (!hasil.ok) return res.json({ success: false, message: hasil.error, rate: hasil.rate })
+    await logActivity(req, 'refresh_fx_rate', 'Settings', 'reseller', { rate: hasil.rate })
+    res.json({ success: true, rate: hasil.rate })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
   }
 })
 

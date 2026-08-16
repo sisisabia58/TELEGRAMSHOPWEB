@@ -4,8 +4,11 @@ const assert = require('node:assert')
 const jalurClient = require.resolve('../lib/supabase.js')
 const jalurStock = require.resolve('../lib/stock.js')
 const jalurCatalog = require.resolve('../lib/catalog.js')
+const jalurSourcing = require.resolve('../lib/sourcing.js')
+const jalurFx = require.resolve('../lib/fx.js')
+const jalurSettings = require.resolve('../lib/runtime-settings.js')
 
-function buatFake({ products = [], variants = [], stockCounts = {} } = {}) {
+function buatFake({ products = [], variants = [], supplierProducts = [] } = {}) {
   const fake = {
     from(tabel) {
       const st = { tabel, filter: {}, inFilter: null, maybe: false, orderCol: null }
@@ -23,6 +26,7 @@ function buatFake({ products = [], variants = [], stockCounts = {} } = {}) {
           st.orderCol = col
           return b
         },
+        range() { return b },
         maybeSingle() {
           st.maybe = true
           return b
@@ -50,6 +54,16 @@ function buatFake({ products = [], variants = [], stockCounts = {} } = {}) {
               }
               return { data: st.maybe ? (rows[0] || null) : rows, error: null }
             }
+            if (st.tabel === 'SupplierProduct') {
+              let rows = supplierProducts.slice()
+              if (st.inFilter) {
+                rows = rows.filter((r) => st.inFilter.vals.includes(r[st.inFilter.col]))
+              }
+              for (const [k, v] of Object.entries(st.filter)) {
+                rows = rows.filter((r) => r[k] === v)
+              }
+              return { data: rows, error: null }
+            }
             return { data: st.maybe ? null : [], error: null }
           }
           return Promise.resolve(run()).then(res, rej)
@@ -61,11 +75,22 @@ function buatFake({ products = [], variants = [], stockCounts = {} } = {}) {
   return fake
 }
 
-function muatCatalog(opts) {
+function muatCatalog(opts = {}) {
   const fake = buatFake(opts)
-  delete require.cache[jalurCatalog]
-  delete require.cache[jalurStock]
+  const stockCounts = opts.stockCounts || {}
+  // catalog -> sourcing -> {stock, fx} -> runtime-settings. SEMUANYA harus
+  // dibuang dari cache, kalau tidak sourcing memegang stub stock dari
+  // pemanggilan muatCatalog sebelumnya dan menjawab dengan data tes yang salah.
+  for (const p of [jalurCatalog, jalurSourcing, jalurFx, jalurStock]) delete require.cache[p]
+
   require.cache[jalurClient] = { id: jalurClient, filename: jalurClient, loaded: true, exports: fake }
+  require.cache[jalurSettings] = {
+    id: jalurSettings, filename: jalurSettings, loaded: true,
+    exports: {
+      get: (key, fallback) => (opts.settings || {})[key] ?? fallback,
+      bump: async () => 1,
+    },
+  }
   require.cache[jalurStock] = {
     id: jalurStock,
     filename: jalurStock,
@@ -73,22 +98,22 @@ function muatCatalog(opts) {
     exports: {
       getStokCountsByKode: async (kodes) => {
         const out = Object.create(null)
-        for (const k of kodes) {
+        for (const k of kodes || []) {
           const key = String(k).toLowerCase()
-          out[key] = opts.stockCounts?.[key] ?? opts.stockCounts?.[k] ?? 0
+          out[key] = stockCounts[key] ?? stockCounts[k] ?? 0
         }
         return out
       },
-      getStokCountByKode: async (kode) => opts.stockCounts?.[String(kode).toLowerCase()] || 0,
+      getStokCountByKode: async (kode) => stockCounts[String(kode).toLowerCase()] || 0,
     },
   }
   return require(jalurCatalog)
 }
 
 test.after(() => {
-  delete require.cache[jalurClient]
-  delete require.cache[jalurStock]
-  delete require.cache[jalurCatalog]
+  for (const p of [jalurClient, jalurStock, jalurCatalog, jalurSourcing, jalurFx, jalurSettings]) {
+    delete require.cache[p]
+  }
 })
 
 test('slugify lowercases and hyphenates', () => {
@@ -133,4 +158,121 @@ test('totalStock sums variant counts', async () => {
     stockCounts: { a: 2, b: 3 },
   })
   assert.equal(await catalog.totalStock(produkId), 5)
+})
+
+// ---------------------------------------------------------------------------
+// Kesadaran supplier (Fase 13). Sumber stok ketiga MENAMBAH dua yang lama.
+// ---------------------------------------------------------------------------
+
+const PENGATURAN_HARGA = {
+  fx_usd_idr: 10000, reseller_margin_persen: 0, fx_buffer_persen: 0, reseller_rounding: 0,
+}
+
+function katalogNetflix(extra = {}) {
+  return muatCatalog({
+    products: [{ id: 'p1', nama: 'Netflix', slug: 'netflix', is_active: true, urutan: 0 }],
+    variants: [{ id: 'v1', produk_id: 'p1', label: '30 Hari', kode: 'netflix-30d', harga: 50000, is_active: true, urutan: 1, sumber: 'sendiri' }],
+    settings: PENGATURAN_HARGA,
+    ...extra,
+  })
+}
+
+test('varian tanpa penawaran supplier berperilaku persis seperti sebelumnya', async () => {
+  const catalog = katalogNetflix({ stockCounts: { 'netflix-30d': 4 } })
+  const [v] = (await catalog.listProducts())[0].variants
+  assert.equal(v.stok_count, 4)
+  assert.equal(v.stok_sendiri, 4)
+  assert.equal(v.harga_efektif, 50000, 'harga kita sendiri')
+  assert.equal(v.punya_supplier, false)
+  assert.equal(catalog.hargaVarian(v), 50000)
+})
+
+test('stok supplier ditambahkan ke hitungan stok varian', async () => {
+  const catalog = katalogNetflix({
+    stockCounts: { 'netflix-30d': 2 },
+    supplierProducts: [{
+      id: 'sp1', supplier_id: 's1', external_id: '100', varian_id: 'v1',
+      harga_asal: 2.5, currency: 'USD', stok: 7, in_stock: true, is_available: true,
+      supplier: { id: 's1', nama: 'Seller A', prioritas: 0, is_active: true },
+    }],
+  })
+  const [v] = (await catalog.listProducts())[0].variants
+  assert.equal(v.stok_count, 9, '2 milik kita + 7 milik supplier')
+  assert.equal(v.stok_sendiri, 2)
+  assert.equal(v.punya_supplier, true)
+})
+
+test('harga_efektif memakai sumber termurah', async () => {
+  const catalog = katalogNetflix({
+    stockCounts: { 'netflix-30d': 2 },
+    supplierProducts: [{
+      id: 'sp1', supplier_id: 's1', external_id: '100', varian_id: 'v1',
+      harga_asal: 2.5, currency: 'USD', stok: 7, in_stock: true, is_available: true,
+      supplier: { id: 's1', nama: 'Seller A', prioritas: 0, is_active: true },
+    }],
+  })
+  const [v] = (await catalog.listProducts())[0].variants
+  assert.equal(v.harga_efektif, 25000, 'supplier 2.5 USD lebih murah dari 50000 kita')
+  assert.equal(v.sumber_terbaik, 'supplier')
+  assert.equal(catalog.hargaVarian(v), 25000)
+})
+
+test('stok sendiri yang lebih murah tetap menang', async () => {
+  const catalog = muatCatalog({
+    products: [{ id: 'p1', nama: 'Netflix', slug: 'netflix', is_active: true, urutan: 0 }],
+    variants: [{ id: 'v1', produk_id: 'p1', label: '30 Hari', kode: 'netflix-30d', harga: 20000, is_active: true, urutan: 1, sumber: 'sendiri' }],
+    settings: PENGATURAN_HARGA,
+    stockCounts: { 'netflix-30d': 3 },
+    supplierProducts: [{
+      id: 'sp1', supplier_id: 's1', external_id: '100', varian_id: 'v1',
+      harga_asal: 2.5, currency: 'USD', stok: 7, in_stock: true, is_available: true,
+      supplier: { id: 's1', nama: 'Seller A', prioritas: 0, is_active: true },
+    }],
+  })
+  const [v] = (await catalog.listProducts())[0].variants
+  assert.equal(v.harga_efektif, 20000)
+  assert.equal(v.sumber_terbaik, 'sendiri')
+})
+
+test('varian habis total memberi harga_efektif null dan hargaVarian jatuh ke harga dasar', async () => {
+  const catalog = katalogNetflix({ stockCounts: {} })
+  const [v] = (await catalog.listProducts())[0].variants
+  assert.equal(v.stok_count, 0)
+  assert.equal(v.harga_efektif, null)
+  assert.equal(catalog.hargaVarian(v), 50000, 'layar "habis" tetap menampilkan angka')
+})
+
+test('attachStock membawa daftar penawaran untuk perhitungan per-jumlah', async () => {
+  // harga_efektif hanya berlaku untuk 1 unit. Pemanggil butuh daftar
+  // penawarannya supaya bisa menghitung ulang saat pembeli minta banyak —
+  // pada qty besar, sumber termurah bisa berbeda.
+  const catalog = katalogNetflix({
+    stockCounts: { 'netflix-30d': 2 },
+    supplierProducts: [{
+      id: 'sp1', supplier_id: 's1', external_id: '100', varian_id: 'v1',
+      harga_asal: 2.5, currency: 'USD', stok: 7, in_stock: true, is_available: true,
+      supplier: { id: 's1', nama: 'Seller A', prioritas: 0, is_active: true },
+    }],
+  })
+  const [v] = (await catalog.listProducts())[0].variants
+  assert.ok(Array.isArray(v.offers))
+  assert.equal(v.offers.length, 2)
+  assert.deepEqual(v.offers.map((o) => o.sumber).sort(), ['sendiri', 'supplier'])
+})
+
+test('attachStock tetap membawa offers di jalur cadangan tanpa supplier', async () => {
+  const catalog = katalogNetflix({ stockCounts: { 'netflix-30d': 4 } })
+  const [v] = (await catalog.listProducts())[0].variants
+  assert.ok(Array.isArray(v.offers))
+  assert.equal(v.offers.length, 1)
+  assert.equal(v.offers[0].sumber, 'sendiri')
+  assert.equal(v.offers[0].stok, 4)
+})
+
+test('hargaVarian aman untuk masukan kosong', () => {
+  const catalog = muatCatalog()
+  assert.equal(catalog.hargaVarian(null), 0)
+  assert.equal(catalog.hargaVarian({}), 0)
+  assert.equal(catalog.hargaVarian({ harga: 1234 }), 1234)
+  assert.equal(catalog.hargaVarian({ harga: 1234, harga_efektif: 999 }), 999)
 })
