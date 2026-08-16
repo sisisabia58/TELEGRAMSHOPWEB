@@ -58,8 +58,37 @@ test('normalizeProductRow memetakan bentuk yang didokumentasikan', () => {
 test('normalizeProductRow menerima harga berupa string', () => {
   assert.equal(bitestore.normalizeProductRow({ id: 1, price: '2.50' }).hargaAsal, 2.5)
   assert.equal(bitestore.normalizeProductRow({ id: 1, price: '$3.00' }).hargaAsal, 3)
-  assert.equal(bitestore.normalizeProductRow({ id: 1, price: '' }).hargaAsal, 0)
-  assert.equal(bitestore.normalizeProductRow({ id: 1, price: null }).hargaAsal, 0)
+})
+
+test('normalizeProductRow membedakan harga TIDAK DIKETAHUI dari harga nol', () => {
+  // Kalau harga yang hilang dipetakan ke 0, penawarannya jadi penawaran Rp 0
+  // yang otomatis mengalahkan semua penawaran berbayar — kita menjual gratis
+  // barang yang modalnya tidak kita ketahui.
+  assert.equal(bitestore.normalizeProductRow({ id: 1, price: null }).hargaAsal, null)
+  assert.equal(bitestore.normalizeProductRow({ id: 1, price: '' }).hargaAsal, null)
+  assert.equal(bitestore.normalizeProductRow({ id: 1 }).hargaAsal, null)
+  assert.equal(bitestore.normalizeProductRow({ id: 1, price: 'gratis' }).hargaAsal, null)
+  assert.equal(bitestore.normalizeProductRow({ id: 1, price: -5 }).hargaAsal, null)
+
+  // Nol yang memang ditulis penjual tetap nol (produk gratis yang didukung).
+  assert.equal(bitestore.normalizeProductRow({ id: 1, price: 0 }).hargaAsal, 0)
+  assert.equal(bitestore.normalizeProductRow({ id: 1, price: '0' }).hargaAsal, 0)
+})
+
+test('listProducts membuang produk yang harganya tidak diketahui', async () => {
+  bitestore.__setHttp({
+    get: async () => ({
+      data: [
+        { id: 1, name: 'Berharga', price: 2.5, stock: 3 },
+        { id: 2, name: 'Tanpa harga', stock: 3 },
+        { id: 3, name: 'Harga rusak', price: 'entah', stock: 3 },
+        { id: 4, name: 'Gratis beneran', price: 0, stock: 3 },
+      ],
+    }),
+  })
+  const hasil = await bitestore.listProducts(KREDENSIAL)
+  assert.deepEqual(hasil.produk.map((p) => p.externalId), ['1', '4'])
+  assert.equal(hasil.skipped, 2)
 })
 
 test('normalizeProductRow menerima nama field alternatif', () => {
@@ -214,6 +243,17 @@ test('createOrder mengirim Idempotency-Key dan body yang benar', async () => {
   assert.deepEqual(dikirim.body, { productId: '42', quantity: 2 })
   assert.equal(dikirim.cfg.headers['Idempotency-Key'], 'TRX-1-0')
   assert.equal(dikirim.cfg.headers['X-API-Key'], 'bsk_test')
+})
+
+test('createOrder MENOLAK jalan tanpa Idempotency-Key', async () => {
+  // Tanpa kunci ini, percobaan ulang apa pun membuat pesanan berbayar kedua.
+  let terkirim = false
+  bitestore.__setHttp({ post: async () => { terkirim = true; return { data: {} } } })
+
+  await assert.rejects(() => bitestore.createOrder({ ...KREDENSIAL, externalId: 1 }), /idempotencyKey/)
+  await assert.rejects(() => bitestore.createOrder({ ...KREDENSIAL, externalId: 1, idempotencyKey: '' }), /idempotencyKey/)
+  await assert.rejects(() => bitestore.createOrder({ ...KREDENSIAL, externalId: 1, idempotencyKey: '   ' }), /idempotencyKey/)
+  assert.equal(terkirim, false, 'tidak boleh ada request yang terkirim')
 })
 
 test('createOrder melempar saat saldo dompet kurang (402)', async () => {

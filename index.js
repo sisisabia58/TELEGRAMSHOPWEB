@@ -382,18 +382,50 @@ async function getVarianForCart(kode) {
   }
 }
 
+// Harga untuk JUMLAH tertentu.
+//
+// Harus diselesaikan terhadap penawaran yang benar-benar sanggup memenuhi qty,
+// bukan terhadap yang termurah untuk 1 unit. Keduanya bisa BERBEDA:
+//
+//   stok sendiri : 2 unit @ Rp10.000   <- termurah, tapi cuma cukup untuk 2
+//   supplier     : 10 unit @ Rp15.000
+//
+// Pembeli minta 3. Yang termurah-untuk-1-unit adalah stok sendiri, tapi yang
+// benar-benar bisa mengirim 3 unit hanya supplier. Kalau harga diambil dari
+// stok sendiri, pembeli ditagih 3x10.000 = 30.000 sementara modal kita
+// 3x15.000 = 45.000 — rugi diam-diam di setiap transaksi seperti ini.
+//
+// Tier kuantitas tetap HANYA berlaku untuk stok sendiri: harga supplier sudah
+// modal + margin, memberi diskon di atasnya bisa menjual di bawah modal.
 async function hargaUntukQty(item, qty) {
-  // Tier kuantitas HANYA berlaku untuk stok sendiri.
-  //
-  // Harga supplier sudah merupakan modal + margin; menerapkan diskon kuantitas
-  // di atasnya bisa menjual di bawah modal tanpa ada yang menyadarinya, karena
-  // kerugiannya cuma muncul sebagai margin yang menipis di laporan.
-  if (item?.sumber_terbaik === sourcing.SUPPLIER) {
-    const harga = hargaVarian(item)
-    const q = Math.max(1, Math.trunc(Number(qty) || 1))
+  const q = Math.max(1, Math.trunc(Number(qty) || 1))
+  const offers = item?.offers
+
+  // Jalur lama untuk pemanggil yang tidak membawa daftar penawaran.
+  if (!Array.isArray(offers) || offers.length === 0) {
+    if (item?.sumber_terbaik === sourcing.SUPPLIER) {
+      const harga = hargaVarian(item)
+      return { harga_satuan: harga, subtotal: harga * q, matched_min_qty: null }
+    }
+    return pricing.resolveForVarian(item, q)
+  }
+
+  const terbaik = sourcing.pickBestOffer(offers, q)
+
+  // Tidak ada satu sumber pun yang sanggup memenuhi qty. Pakai penawaran
+  // termahal yang diketahui sebagai harga tampilan supaya angkanya tidak pernah
+  // lebih rendah dari modal; validasi stok di jalur checkout yang menolaknya.
+  if (!terbaik) {
+    const tertinggi = offers.reduce((a, o) => Math.max(a, o.harga_satuan || 0), 0)
+    const harga = tertinggi || hargaVarian(item)
     return { harga_satuan: harga, subtotal: harga * q, matched_min_qty: null }
   }
-  return pricing.resolveForVarian(item, qty)
+
+  if (terbaik.sumber === sourcing.SUPPLIER) {
+    return { harga_satuan: terbaik.harga_satuan, subtotal: terbaik.harga_satuan * q, matched_min_qty: null }
+  }
+
+  return pricing.resolveForVarian(item, q)
 }
 
 // Stok supplier tidak punya baris di tabel "Stok", jadi tidak ada yang bisa
@@ -444,8 +476,20 @@ async function penuhiPesanan({ item, Data, userId, hargaSatuan }) {
 // Tidak pernah melempar: kegagalan di jalur pemberitahuan tidak boleh membuat
 // pengembalian saldo ikut batal.
 async function kembalikanSaldo({ userId, harga, Data, item, alasan }) {
+  // addSaldo() MENELAN errornya sendiri dan tetap resolve, jadi memanggilnya di
+  // dalam try/catch tidak membuktikan apa pun. Satu-satunya bukti yang bisa
+  // dipercaya adalah saldonya benar-benar naik — kalau tidak, pembeli kehilangan
+  // uang DAN barang, dan itu tidak boleh dilaporkan sebagai "dikembalikan".
+  let berhasil = false
+  let saldoSebelum = null
   try {
+    saldoSebelum = await cekSaldo(userId)
     await addSaldo(userId, harga)
+    const saldoSesudah = await cekSaldo(userId)
+    berhasil = Number(saldoSesudah) >= Number(saldoSebelum) + Number(harga)
+    if (!berhasil) {
+      console.error(`[Refund] SALDO TIDAK BERUBAH untuk ${Data.trxid}: ${saldoSebelum} -> ${saldoSesudah}, harusnya +${harga}`)
+    }
   } catch (e) {
     console.error('[Refund] GAGAL mengembalikan saldo:', e)
   }
@@ -456,17 +500,34 @@ async function kembalikanSaldo({ userId, harga, Data, item, alasan }) {
     console.error('[Refund] gagal menandai SupplierOrder:', e)
   }
 
-  try {
-    await sendMessage(userId, `⚠️ *PESANAN GAGAL DIPROSES*
+  const pesanPembeli = berhasil
+    ? `⚠️ *PESANAN GAGAL DIPROSES*
 ━━━━━━━━━━━━━━━━━━━━
 Maaf, stok untuk *${item?.nama || 'produk ini'}* tidak bisa kami ambil saat ini.
 
 💰 Saldo kamu sudah *dikembalikan penuh* sebesar ${formatrupiah(harga)}.
 📋 Trx ID: \`${Data.trxid}\`
 
-Silakan coba lagi beberapa saat lagi atau hubungi CS.`, {
+Silakan coba lagi beberapa saat lagi atau hubungi CS.`
+    : `⚠️ *PESANAN GAGAL DIPROSES*
+━━━━━━━━━━━━━━━━━━━━
+Maaf, stok untuk *${item?.nama || 'produk ini'}* tidak bisa kami ambil saat ini.
+
+❗️ Pengembalian saldo sebesar ${formatrupiah(harga)} *BELUM berhasil kami proses otomatis*.
+📋 Trx ID: \`${Data.trxid}\`
+
+Admin sudah kami beri tahu. Mohon hubungi CS dengan menyertakan Trx ID di atas agar dana kamu segera dikembalikan.`
+
+  try {
+    await sendMessage(userId, pesanPembeli, {
       parse_mode: 'Markdown',
-      reply_markup: { inline_keyboard: [[{ text: copy.get('btn.kembali'), callback_data: 'kembaliawal' }]] },
+      reply_markup: {
+        inline_keyboard: [[
+          berhasil
+            ? { text: copy.get('btn.kembali'), callback_data: 'kembaliawal' }
+            : { text: '💬 Hubungi CS', url: channelContact.cs || 'https://t.me' },
+        ]],
+      },
     })
   } catch (e) {
     console.error('[Refund] gagal memberi tahu pembeli:', e)
@@ -474,19 +535,24 @@ Silakan coba lagi beberapa saat lagi atau hubungi CS.`, {
 
   try {
     if (channelContact.channelLog) {
-      await bot.sendMessage(channelContact.channelLog, `⚠️ *PESANAN GAGAL — SALDO DIKEMBALIKAN*
+      const judul = berhasil
+        ? '⚠️ *PESANAN GAGAL — SALDO DIKEMBALIKAN*'
+        : '🚨 *PESANAN GAGAL — PENGEMBALIAN SALDO JUGA GAGAL, PERLU TINDAKAN MANUAL*'
+      await bot.sendMessage(channelContact.channelLog, `${judul}
 =======================
 User: ${userId}
 Trx ID: *${Data.trxid}*
 Produk: *${item?.nama || Data.kode}*
 Jumlah: *${Data.jumlah}*
-Dikembalikan: *${formatrupiah(harga)}*
-Alasan: ${alasan || 'tidak diketahui'}
+${berhasil ? 'Dikembalikan' : 'GAGAL dikembalikan'}: *${formatrupiah(harga)}*
+${berhasil ? '' : `Saldo sebelum: ${saldoSebelum === null ? 'tidak terbaca' : formatrupiah(saldoSebelum)}\n`}Alasan: ${alasan || 'tidak diketahui'}
 =======================`, { parse_mode: 'Markdown' })
     }
   } catch (e) {
     console.error('[Refund] gagal mengirim log:', e)
   }
+
+  return berhasil
 }
 
 // Layar pemilih jumlah/stok. Dulu ditulis dua kali (blok "lanjut" dan

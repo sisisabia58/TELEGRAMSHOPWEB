@@ -20,6 +20,8 @@ function muatSourcing({ supplierRows = [], ownCounts = {}, settings = {}, error 
           select() { return b },
           in() { return b },
           eq() { return b },
+          order() { return b },
+          range() { return b },
           upsert() { return Promise.resolve({ error: null }) },
           then(res, rej) {
             return Promise.resolve({ data: error ? null : supplierRows, error }).then(res, rej)
@@ -228,6 +230,47 @@ test('pada harga sama persis, stok sendiri menang atas supplier', () => {
     supplierRows: [supplierRow({ harga_asal: 2.5, prioritas: -99 })],
   })
   assert.equal(s.pickBestOffer(offers, 1).sumber, 'sendiri')
+})
+
+test('sumber termurah bisa BERBEDA antara qty 1 dan qty besar', () => {
+  const s = muatSourcing()
+  // Stok sendiri lebih murah tapi cuma 2 unit; supplier lebih mahal tapi banyak.
+  // Kalau harga diambil dari pemenang qty=1 (stok sendiri) sementara yang
+  // benar-benar mengirim adalah supplier, kita menagih di bawah modal.
+  const offers = s.buildOffers({
+    varian: { ...VARIAN, harga: 10000 }, ownStokCount: 2, pricing: PRICING,
+    supplierRows: [supplierRow({ harga_asal: 1.5, stok: 10 })], // 15000
+  })
+
+  assert.equal(s.pickBestOffer(offers, 1).sumber, 'sendiri')
+  assert.equal(s.pickBestOffer(offers, 1).harga_satuan, 10000)
+
+  assert.equal(s.pickBestOffer(offers, 3).sumber, 'supplier')
+  assert.equal(s.pickBestOffer(offers, 3).harga_satuan, 15000)
+})
+
+test('penawaran dengan harga TIDAK DIKETAHUI tidak pernah masuk daftar', () => {
+  const s = muatSourcing()
+  // harga_asal null berarti supplier tidak memberi tahu harganya. Kalau
+  // diperlakukan sebagai 0, ia jadi penawaran termurah mutlak dan kita menjual
+  // gratis barang yang modalnya tidak diketahui.
+  const offers = s.buildOffers({
+    varian: VARIAN, ownStokCount: 3, pricing: PRICING,
+    supplierRows: [supplierRow({ harga_asal: null, stok: 99 })],
+  })
+  assert.equal(offers.length, 1)
+  assert.equal(offers[0].sumber, 'sendiri')
+  assert.equal(s.pickBestOffer(offers, 1).harga_satuan, 50000, 'bukan 0')
+})
+
+test('harga nol yang memang disengaja tetap boleh ditawarkan', () => {
+  const s = muatSourcing()
+  const offers = s.buildOffers({
+    varian: VARIAN, ownStokCount: 0, pricing: PRICING,
+    supplierRows: [supplierRow({ harga_asal: 0, stok: 5 })],
+  })
+  assert.equal(offers.length, 1)
+  assert.equal(offers[0].harga_satuan, 0)
 })
 
 test('pickBestOffer menormalkan qty yang aneh', () => {

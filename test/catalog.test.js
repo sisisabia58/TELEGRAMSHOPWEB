@@ -26,6 +26,7 @@ function buatFake({ products = [], variants = [], supplierProducts = [] } = {}) 
           st.orderCol = col
           return b
         },
+        range() { return b },
         maybeSingle() {
           st.maybe = true
           return b
@@ -239,6 +240,33 @@ test('varian habis total memberi harga_efektif null dan hargaVarian jatuh ke har
   assert.equal(v.stok_count, 0)
   assert.equal(v.harga_efektif, null)
   assert.equal(catalog.hargaVarian(v), 50000, 'layar "habis" tetap menampilkan angka')
+})
+
+test('attachStock membawa daftar penawaran untuk perhitungan per-jumlah', async () => {
+  // harga_efektif hanya berlaku untuk 1 unit. Pemanggil butuh daftar
+  // penawarannya supaya bisa menghitung ulang saat pembeli minta banyak —
+  // pada qty besar, sumber termurah bisa berbeda.
+  const catalog = katalogNetflix({
+    stockCounts: { 'netflix-30d': 2 },
+    supplierProducts: [{
+      id: 'sp1', supplier_id: 's1', external_id: '100', varian_id: 'v1',
+      harga_asal: 2.5, currency: 'USD', stok: 7, in_stock: true, is_available: true,
+      supplier: { id: 's1', nama: 'Seller A', prioritas: 0, is_active: true },
+    }],
+  })
+  const [v] = (await catalog.listProducts())[0].variants
+  assert.ok(Array.isArray(v.offers))
+  assert.equal(v.offers.length, 2)
+  assert.deepEqual(v.offers.map((o) => o.sumber).sort(), ['sendiri', 'supplier'])
+})
+
+test('attachStock tetap membawa offers di jalur cadangan tanpa supplier', async () => {
+  const catalog = katalogNetflix({ stockCounts: { 'netflix-30d': 4 } })
+  const [v] = (await catalog.listProducts())[0].variants
+  assert.ok(Array.isArray(v.offers))
+  assert.equal(v.offers.length, 1)
+  assert.equal(v.offers[0].sumber, 'sendiri')
+  assert.equal(v.offers[0].stok, 4)
 })
 
 test('hargaVarian aman untuk masukan kosong', () => {

@@ -55,7 +55,9 @@ function buatDeps(over = {}) {
     rankOffers: (offers, qty) => sourcing.rankOffers(offers, qty),
     getOffers: async () => [],
     getStokForTransaction: async () => [],
-    markStokTerjual: async () => {},
+    // Klaim atomik: default-nya semua baris yang diminta berhasil diklaim.
+    claimStok: async (ids) => ({ ok: true, rows: ids.map((id) => ({ id, data: `data-${id}` })) }),
+    releaseStok: async () => {},
     getSupplier: async (id) => ({ id, nama: `Seller ${id}`, adapter: 'bitestore', base_url: 'x', api_key: 'k', is_active: true }),
     createOrder: async () => ({ ok: true, orderId: '1', keys: ['key-1'], status: 'completed' }),
     recordSupplierOrder: async (row) => { dicatat.push(row); return { id: `so-${dicatat.length}`, ...row } },
@@ -74,6 +76,7 @@ test('memenuhi dari stok sendiri tanpa menyentuh supplier', async () => {
   const { deps } = buatDeps({
     getOffers: async () => [offerSendiri()],
     getStokForTransaction: async () => [{ id: 'st1', data: 'a@b:pw' }, { id: 'st2', data: 'c@d:pw' }],
+    claimStok: async () => ({ ok: true, rows: [{ id: 'st1', data: 'a@b:pw' }, { id: 'st2', data: 'c@d:pw' }] }),
     createOrder: async () => { supplierDipanggil = true; throw new Error('tidak boleh dipanggil') },
   })
 
@@ -85,17 +88,53 @@ test('memenuhi dari stok sendiri tanpa menyentuh supplier', async () => {
   assert.equal(supplierDipanggil, false)
 })
 
-test('menandai baris stok sendiri sebagai terjual dengan trxid', async () => {
+test('mengklaim baris stok sendiri secara atomik dengan trxid', async () => {
   const f = muatFulfillment()
-  let ditandai = null
+  let diklaim = null
   const { deps } = buatDeps({
     getOffers: async () => [offerSendiri()],
     getStokForTransaction: async () => [{ id: 'st1', data: 'x' }],
-    markStokTerjual: async (ids, trxid) => { ditandai = { ids, trxid } },
+    claimStok: async (ids, trxid) => {
+      diklaim = { ids, trxid }
+      return { ok: true, rows: [{ id: 'st1', data: 'x' }] }
+    },
   })
 
   await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-9', deps })
-  assert.deepEqual(ditandai, { ids: ['st1'], trxid: 'TRX-9' })
+  assert.deepEqual(diklaim, { ids: ['st1'], trxid: 'TRX-9' })
+})
+
+test('klaim sebagian dilepas lagi dan dianggap gagal', async () => {
+  const f = muatFulfillment()
+  // Dua pembeli berebut baris yang sama: kita cuma menang satu dari dua.
+  // Mengirim 1 dari 2 yang dibayar lebih buruk daripada gagal dan refund.
+  let dilepas = null
+  const { deps } = buatDeps({
+    getOffers: async () => [offerSendiri({ stok: 5 })],
+    getStokForTransaction: async () => [{ id: 'st1', data: 'a' }, { id: 'st2', data: 'b' }],
+    claimStok: async () => ({ ok: true, rows: [{ id: 'st1', data: 'a' }] }),
+    releaseStok: async (ids) => { dilepas = ids },
+  })
+
+  const r = await f.fulfill({ varian: VARIAN, qty: 2, trxid: 'TRX-R', deps })
+  assert.equal(r.ok, false)
+  assert.match(r.error, /keburu diambil/)
+  assert.deepEqual(dilepas, ['st1'], 'baris yang sempat dimenangkan harus dilepas lagi')
+})
+
+test('kegagalan klaim TIDAK dilaporkan sebagai berhasil', async () => {
+  const f = muatFulfillment()
+  // markStokTerjual yang lama menelan error dan mengembalikan undefined, jadi
+  // update yang gagal tetap tampak sukses dan pembeli dianggap terlayani.
+  const { deps } = buatDeps({
+    getOffers: async () => [offerSendiri()],
+    getStokForTransaction: async () => [{ id: 'st1', data: 'x' }],
+    claimStok: async () => ({ ok: false, rows: [], error: 'koneksi putus' }),
+  })
+
+  const r = await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-K', deps })
+  assert.equal(r.ok, false)
+  assert.match(r.error, /gagal klaim stok/)
 })
 
 test('stok sendiri yang ternyata kurang tidak dianggap berhasil', async () => {
@@ -154,7 +193,51 @@ test('memakai Idempotency-Key yang stabil dari trxid', async () => {
   await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-SAMA', deps })
   await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-SAMA', deps })
   assert.equal(kunci[0], kunci[1], 'trxid yang sama harus menghasilkan kunci yang sama')
-  assert.equal(kunci[0], f.idempotencyKey('TRX-SAMA', 0))
+})
+
+test('Idempotency-Key TIDAK berubah saat urutan penawaran berubah', async () => {
+  const f = muatFulfillment()
+  // Inti masalahnya: kunci berbasis indeks berubah begitu ada penawaran lebih
+  // murah muncul di depan, sehingga percobaan ulang membeli DUA KALI ke penjual
+  // yang sama. Identitas penawaranlah yang harus menentukan kunci.
+  const murah = offerSupplier({ supplier_id: 'baru', supplier_product_id: 'spX', external_id: '999', harga: 10000 })
+  const lama = offerSupplier({ supplier_id: 's1', external_id: '100', harga: 30000 })
+
+  const kunci = []
+  const buat = async (_s, args) => {
+    kunci.push({ ext: args.externalId, key: args.idempotencyKey })
+    return { ok: true, orderId: '1', keys: ['k'], status: 'completed' }
+  }
+
+  const { deps: d1 } = buatDeps({ getOffers: async () => [lama], createOrder: buat })
+  await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-Z', deps: d1 })
+
+  // Putaran kedua: penawaran lebih murah muncul, jadi `lama` bukan lagi indeks 0.
+  const { deps: d2 } = buatDeps({
+    getOffers: async () => [murah, lama],
+    createOrder: async (s, args) => {
+      if (args.externalId === '999') throw new Error('penjual baru sedang error')
+      return buat(s, args)
+    },
+  })
+  await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-Z', deps: d2 })
+
+  const untukLama = kunci.filter((k) => k.ext === '100')
+  assert.equal(untukLama.length, 2)
+  assert.equal(untukLama[0].key, untukLama[1].key, 'penawaran yang sama harus tetap memakai kunci yang sama')
+})
+
+test('kunci berbeda untuk penjual, produk, dan jumlah yang berbeda', async () => {
+  const f = muatFulfillment()
+  const a = { supplier_id: 's1', external_id: '100' }
+  const b = { supplier_id: 's2', external_id: '100' }
+  const c = { supplier_id: 's1', external_id: '200' }
+
+  assert.notEqual(f.idempotencyKey('T', a, 1), f.idempotencyKey('T', b, 1))
+  assert.notEqual(f.idempotencyKey('T', a, 1), f.idempotencyKey('T', c, 1))
+  assert.notEqual(f.idempotencyKey('T', a, 1), f.idempotencyKey('T', a, 2))
+  assert.notEqual(f.idempotencyKey('T1', a, 1), f.idempotencyKey('T2', a, 1))
+  assert.equal(f.idempotencyKey('T', a, 1), f.idempotencyKey('T', a, 1))
 })
 
 test('pesanan supplier tanpa key dianggap GAGAL', async () => {
@@ -311,8 +394,9 @@ test('kegagalan pencatatan audit tidak membatalkan pengiriman yang berhasil', as
   assert.deepEqual(r.lines, ['key-1'])
 })
 
-test('idempotencyKey berbentuk trxid-indeks', () => {
+test('idempotencyKey aman dipakai sebagai header HTTP', () => {
   const f = muatFulfillment()
-  assert.equal(f.idempotencyKey('TRX-1', 0), 'TRX-1-0')
-  assert.equal(f.idempotencyKey('TRX-1', 3), 'TRX-1-3')
+  const k = f.idempotencyKey('TRX-1', { supplier_id: 's 1', external_id: 'a/b' }, 2)
+  assert.match(k, /^[A-Za-z0-9_-]+$/, 'hanya karakter aman untuk header')
+  assert.ok(k.includes('TRX-1'))
 })

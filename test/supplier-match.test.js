@@ -65,13 +65,38 @@ test('buildKey menyamakan urutan kata dan satuan durasi', () => {
 
 test('buildKey membuang kata basa-basi penjual', () => {
   assert.equal(
-    match.buildKey('Akun Netflix Premium 1 Bulan Garansi'),
+    match.buildKey('Akun Netflix Premium 1 Bulan'),
     match.buildKey('Netflix Premium 30 Hari')
   )
   assert.equal(
     match.buildKey('🔥 PROMO Spotify Premium 1 Month READY'),
     match.buildKey('Spotify Premium 30 Hari')
   )
+})
+
+test('buildKey MEMPERTAHANKAN kata yang menentukan barangnya apa', () => {
+  // "Netflix Private" dan "Netflix Sharing" barang berbeda dengan harga
+  // berbeda. Kalau kedua kata ini dibuang, keduanya jatuh ke kunci yang sama
+  // dan penawaran sharing bisa menempel ke varian private kita — pembeli
+  // membayar satu barang dan menerima barang lain.
+  assert.notEqual(
+    match.buildKey('Netflix Private 1 Bulan'),
+    match.buildKey('Netflix Sharing 1 Bulan')
+  )
+  assert.notEqual(
+    match.buildKey('Netflix Premium 1 Bulan Garansi'),
+    match.buildKey('Netflix Premium 1 Bulan')
+  )
+  assert.notEqual(
+    match.buildKey('Canva Pro Legal 1 Bulan'),
+    match.buildKey('Canva Pro 1 Bulan')
+  )
+})
+
+test('matchOffer tidak menempelkan sharing ke varian private', () => {
+  const hanyaPrivate = [{ id: 'v1', label: '30 Hari', produk_nama: 'Netflix Private' }]
+  assert.equal(match.matchOffer('Netflix Private 1 Bulan', hanyaPrivate).id, 'v1')
+  assert.equal(match.matchOffer('Netflix Sharing 1 Bulan', hanyaPrivate), null)
 })
 
 test('buildKey TIDAK menyamakan produk yang memang berbeda', () => {
@@ -89,7 +114,7 @@ const VARIANTS = [
 
 test('matchOffer mencocokkan nama supplier ke varian yang benar', () => {
   assert.equal(match.matchOffer('Netflix Premium 1 Month', VARIANTS).id, 'v1')
-  assert.equal(match.matchOffer('🔥 Akun Netflix Premium 30 Hari Garansi', VARIANTS).id, 'v1')
+  assert.equal(match.matchOffer('🔥 Akun Netflix Premium 30 Hari', VARIANTS).id, 'v1')
   assert.equal(match.matchOffer('netflix premium 2 bulan', VARIANTS).id, 'v2')
   assert.equal(match.matchOffer('Spotify Premium 30 days', VARIANTS).id, 'v3')
 })

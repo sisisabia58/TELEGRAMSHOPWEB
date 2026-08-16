@@ -1478,6 +1478,16 @@ app.patch('/api/produk/:id/varian/:varianId', isAuthenticated, async (req, res) 
         update.kode = kodeLower
       }
       if (body.harga !== undefined) {
+        // Harga varian yang dibuat sinkronisasi supplier dikelola oleh sync
+        // (modal + margin + kurs) dan ditulis ulang tiap putaran. Field-nya
+        // sudah readonly di UI, tapi readonly hanya berlaku di browser —
+        // request langsung tetap harus ditolak, kalau tidak admin mengira
+        // harganya berubah padahal akan tertimpa beberapa menit kemudian.
+        if (current.sumber === 'supplier') {
+          return res.status(400).json({
+            error: 'Harga varian supplier dikelola sinkronisasi. Ubah margin di Catalog → Supplier → Pengaturan.',
+          })
+        }
         const hargaInt = parseInt(body.harga, 10)
         if (isNaN(hargaInt) || hargaInt < 0) {
           return res.status(400).json({ error: 'Harga tidak valid' })
@@ -7506,12 +7516,17 @@ app.post('/supplier/simpan', isAuthenticated, async (req, res) => {
     if (!nama || !nama.trim()) return renderError('Nama supplier wajib diisi!')
     if (!supplierAdapters.getAdapter(adapter)) return renderError('Adapter tidak dikenal!')
 
-    const def = supplierAdapters.getAdapter(adapter)
+    // base_url divalidasi di SERVER, bukan hanya lewat type="url" di form.
+    // Sync dan fulfillment mengirim api_key supplier ke host ini, jadi URL yang
+    // bisa diisi bebas adalah jalan keluar kredensial dan pintu masuk SSRF.
+    const cekUrl = supplierAdapters.validateBaseUrl(adapter, base_url)
+    if (!cekUrl.ok) return renderError(cekUrl.error)
+
     const row = {
       nama: nama.trim(),
       slug: catalog.slugify(nama) || `supplier-${Date.now()}`,
       adapter,
-      base_url: (base_url || '').trim() || def.defaultBaseUrl,
+      base_url: cekUrl.value,
       prioritas: parseInt(prioritas, 10) || 0,
       is_active: is_active === 'on',
       updated_at: new Date().toISOString(),
@@ -7661,6 +7676,28 @@ app.get('/supplier/:id/produk', isAuthenticated, async (req, res) => {
 app.post('/api/supplier/produk/:id/petakan', isAuthenticated, async (req, res) => {
   try {
     const varianId = req.body.varian_id || null
+
+    // Hanya varian MILIK KITA yang boleh jadi tujuan pemetaan. Dropdown di
+    // halaman memang hanya menampilkan itu, tapi endpoint ini menerima nilai
+    // apa pun dari body — tanpa pemeriksaan di sini, satu request langsung bisa
+    // menempelkan dua katalog supplier ke satu varian lewat pintu belakang.
+    if (varianId) {
+      const { data: target } = await supabase
+        .from('Varian')
+        .select('id, sumber')
+        .eq('id', varianId)
+        .maybeSingle()
+      if (!target) {
+        return res.status(400).json({ success: false, message: 'Varian tujuan tidak ditemukan' })
+      }
+      if (target.sumber !== 'sendiri') {
+        return res.status(400).json({
+          success: false,
+          message: 'Hanya varian milik sendiri yang bisa jadi tujuan pemetaan',
+        })
+      }
+    }
+
     const { error } = await supabase
       .from('SupplierProduct')
       .update({
