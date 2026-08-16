@@ -757,12 +757,74 @@
     setStatus('Flow engine ' + (checked ? 'enabled' : 'disabled') + ' — bot reloads in ~10s', 'ok')
   }
 
+  function generateUniqueNodeKey(prefix = 'screen') {
+    const existing = (state.draft.nodes || []).map((n) => n.key)
+    const basePrefix = prefix === 'screen' ? 'screen.custom_' : 'action.custom_'
+    let idx = 1
+    while (existing.includes(basePrefix + idx)) {
+      idx++
+    }
+    return basePrefix + idx
+  }
+
+  function addMessageNode() {
+    if (!state.draft) return
+    const key = generateUniqueNodeKey('screen')
+    const newNode = {
+      key,
+      kind: 'screen',
+      screen_key: key,
+      body: 'Halo *{{first_name}}*!',
+      pos_x: 150,
+      pos_y: 150,
+      media_url: null,
+      media_type: 'photo',
+      buttons: [[{ label: 'Menu', go: 'welcome' }]],
+      description: '',
+    }
+    state.draft.nodes.push(newNode)
+    renderCanvas()
+    selectNodeByKey(key)
+    setStatus('Added Message node: ' + key, 'ok')
+  }
+
+  function addActionNode() {
+    if (!state.draft) return
+    const key = generateUniqueNodeKey('action')
+    const newNode = {
+      key,
+      kind: 'action',
+      screen_key: null,
+      action: 'product_list',
+      pos_x: 200,
+      pos_y: 200,
+      buttons: [],
+      description: 'Open product catalog',
+    }
+    state.draft.nodes.push(newNode)
+    renderCanvas()
+    selectNodeByKey(key)
+    setStatus('Added Action node: ' + key, 'ok')
+  }
+
   function bindToolbar() {
     document.getElementById('btnSaveDraft').addEventListener('click', saveDraft)
     document.getElementById('btnPublish').addEventListener('click', publishDraft)
     document.getElementById('btnPreview').addEventListener('click', openPreview)
     document.getElementById('previewClose').addEventListener('click', closePreview)
     document.getElementById('previewBackdrop').addEventListener('click', closePreview)
+
+    const btnAddMsg = document.getElementById('btnAddMessageNode')
+    if (btnAddMsg) btnAddMsg.addEventListener('click', addMessageNode)
+    const btnAddAct = document.getElementById('btnAddActionNode')
+    if (btnAddAct) btnAddAct.addEventListener('click', addActionNode)
+
+    const btnZoomIn = document.getElementById('btnZoomIn')
+    if (btnZoomIn) btnZoomIn.addEventListener('click', function () { if (editor) editor.zoom_in() })
+    const btnZoomOut = document.getElementById('btnZoomOut')
+    if (btnZoomOut) btnZoomOut.addEventListener('click', function () { if (editor) editor.zoom_out() })
+    const btnFitView = document.getElementById('btnFitView')
+    if (btnFitView) btnFitView.addEventListener('click', function () { if (editor) editor.zoom_reset() })
 
     const enabledEl = document.getElementById('flowEnabled')
     enabledEl.addEventListener('change', function () {

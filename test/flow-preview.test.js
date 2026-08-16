@@ -113,3 +113,11 @@ test('renderTelegramMarkdown converts Telegram formatting to HTML snippet', () =
   )
 })
 
+test('generateUniqueNodeKey creates non-colliding screen key', () => {
+  const flowPreview = muatPreview()
+  const existingKeys = ['screen.welcome', 'screen.custom_1']
+  const newKey = flowPreview.generateUniqueNodeKey('screen', existingKeys)
+  assert.strictEqual(newKey, 'screen.custom_2')
+})
+
+

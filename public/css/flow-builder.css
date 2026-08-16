@@ -43,7 +43,20 @@
 .flow-toolbar-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
   flex-wrap: wrap;
+}
+
+.zoom-controls {
+  display: inline-flex;
+  gap: 2px;
+  margin: 0 4px;
+}
+
+.zoom-controls button {
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .flow-toolbar .btn-primary {
