@@ -147,3 +147,33 @@ test('isEnabled reads runtime setting', () => {
   const off = muatFlow({ nodes: sampleNodes, enabled: false })
   assert.equal(off.isEnabled(), false)
 })
+
+test('dispatchFlowScreen selects sendPhoto when media_url is present', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  let dispatchedMethod = null
+  let dispatchedPayload = null
+  const mockBot = {
+    sendPhoto: async (chatId, photo, opts) => {
+      dispatchedMethod = 'sendPhoto'
+      dispatchedPayload = { chatId, photo, opts }
+    },
+    sendMessage: async (chatId, text, opts) => {
+      dispatchedMethod = 'sendMessage'
+      dispatchedPayload = { chatId, text, opts }
+    },
+  }
+  const mediaNode = {
+    key: 'welcome',
+    kind: 'screen',
+    screen_key: 'screen.welcome',
+    media_url: 'https://example.com/logo.jpg',
+    media_type: 'photo',
+    buttons: [],
+  }
+
+  await flow.dispatchFlowScreen(mockBot, 12345, mediaNode, null, 'Welcome Text')
+  assert.strictEqual(dispatchedMethod, 'sendPhoto')
+  assert.strictEqual(dispatchedPayload.photo, 'https://example.com/logo.jpg')
+  assert.strictEqual(dispatchedPayload.opts.caption, 'Welcome Text')
+})
+
