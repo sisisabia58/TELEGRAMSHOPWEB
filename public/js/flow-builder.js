@@ -705,10 +705,18 @@
   }
 
   function formatCaptionHtml(caption) {
-    let s = escapeHtml(caption || '')
+    if (!caption) return ''
+    let s = escapeHtml(caption)
     s = s.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
     s = s.replace(/_([^_\n]+)_/g, '<em>$1</em>')
     s = s.replace(/~([^~\n]+)~/g, '<s>$1</s>')
+    s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    s = s.replace(/\[(.*?)\]\((.*?)\)/g, function (_m, label, url) {
+      const trimmed = String(url).trim()
+      const ok = /^https?:\/\//i.test(trimmed) || /^tg:\/\//i.test(trimmed)
+      const href = ok ? encodeURI(trimmed).replace(/"/g, '&quot;') : '#'
+      return '<a href="' + href + '" target="_blank" rel="noopener">' + label + '</a>'
+    })
     return s
   }
 
@@ -793,6 +801,16 @@
     if (title) title.textContent = data.key || data.action || 'Preview'
     const cap = document.getElementById('previewCaption')
     if (cap) cap.innerHTML = formatCaptionHtml(data.caption || '')
+    const mediaEl = document.getElementById('previewMedia')
+    if (mediaEl) {
+      if (data.media_url) {
+        mediaEl.classList.remove('hidden')
+        mediaEl.innerHTML = '<img src="' + escapeHtml(data.media_url) + '" alt="" onerror="this.parentElement.classList.add(\'hidden\')">'
+      } else {
+        mediaEl.classList.add('hidden')
+        mediaEl.innerHTML = ''
+      }
+    }
     buildPreviewKeyboard(data.buttons || [])
   }
 
