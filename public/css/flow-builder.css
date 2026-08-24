@@ -47,6 +47,13 @@
   flex-wrap: wrap;
 }
 
+.flow-entry-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+}
+
 .zoom-controls {
   display: inline-flex;
   gap: 2px;
@@ -366,6 +373,10 @@
 .drawflow .drawflow-node.selected {
   background: transparent !important;
   z-index: 5;
+}
+
+.drawflow-node.is-entry .drawflow_content_node {
+  outline: 2px solid var(--teal-600, #0F766E);
 }
 
 .drawflow .drawflow-node .drawflow_content_node {
