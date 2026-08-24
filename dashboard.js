@@ -5973,11 +5973,10 @@ app.get('/api/bot-flow', isAuthenticated, async (req, res) => {
 
 app.post('/api/bot-flow/draft', isAuthenticated, async (req, res) => {
   try {
-    const { flow, nodes } = await loadActiveFlowBundle()
+    const { flow } = await loadActiveFlowBundle()
     if (!flow) throw new Error('No active flow')
-    const publishedKeys = nodes.map((n) => n.key)
     const draft = req.body.draft
-    const v = flowDraft.validateDraft(draft, publishedKeys)
+    const v = flowDraft.validateDraft(draft, { allowedActions: FLOW_ACTIONS })
     if (!v.ok) return res.status(400).json({ success: false, errors: v.errors })
     const { error } = await supabase
       .from('BotFlow')
@@ -6111,42 +6110,83 @@ app.post('/api/bot-flow/preview-step', isAuthenticated, async (req, res) => {
 
 app.post('/api/bot-flow/publish', isAuthenticated, async (req, res) => {
   try {
-    const { flow, nodes } = await loadActiveFlowBundle()
+    const { flow, nodes, copyByKey } = await loadActiveFlowBundle()
     if (!flow) throw new Error('No active flow')
     const publishedKeys = nodes.map((n) => n.key)
     const draft = req.body.draft || flow.draft
     if (!draft) throw new Error('No draft to publish')
-    const v = flowDraft.validateDraft(draft, publishedKeys)
+
+    const v = flowDraft.validateDraft(draft, { allowedActions: FLOW_ACTIONS })
     if (!v.ok) return res.status(400).json({ success: false, errors: v.errors })
-    const plan = flowDraft.publishPlan(draft)
-    for (const patch of plan.nodes) {
+
+    const diff = flowDraft.diffPublishPlan(draft, publishedKeys, Object.keys(copyByKey))
+
+    if (diff.nodeDeletes.length) {
       const { error } = await supabase
         .from('BotFlowNode')
-        .update({
-          kind: patch.kind,
-          screen_key: patch.screen_key,
-          action: patch.action,
-          description: patch.description,
-          buttons: patch.buttons,
-          pos_x: patch.pos_x,
-          pos_y: patch.pos_y,
-          updated_at: new Date().toISOString(),
-        })
+        .delete()
         .eq('flow_id', flow.id)
-        .eq('key', patch.key)
+        .in('key', diff.nodeDeletes)
       if (error) throw error
     }
-    for (const c of plan.copies) {
+
+    for (const patch of diff.nodeUpserts) {
+      const row = {
+        flow_id: flow.id,
+        key: patch.key,
+        kind: patch.kind,
+        screen_key: patch.screen_key,
+        action: patch.action,
+        description: patch.description,
+        buttons: patch.buttons,
+        pos_x: patch.pos_x,
+        pos_y: patch.pos_y,
+        media_url: patch.media_url,
+        media_type: patch.media_type,
+        updated_at: new Date().toISOString(),
+      }
+      const isNew = !publishedKeys.includes(patch.key)
+      if (isNew) {
+        const { error } = await supabase.from('BotFlowNode').insert(row)
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('BotFlowNode')
+          .update(row)
+          .eq('flow_id', flow.id)
+          .eq('key', patch.key)
+        if (error) throw error
+      }
+    }
+
+    for (const c of diff.copyInserts) {
+      const { error } = await supabase.from('BotCopy').insert({
+        key: c.key,
+        kind: 'screen',
+        body: c.body,
+        description: c.description || '',
+        variables: '[]',
+      })
+      if (error) throw error
+    }
+
+    for (const c of diff.copyUpserts) {
       const { error } = await supabase
         .from('BotCopy')
         .update({ body: c.body, updated_at: new Date().toISOString() })
         .eq('key', c.key)
       if (error) throw error
     }
+
     await supabase
       .from('BotFlow')
-      .update({ draft, draft_updated_at: new Date().toISOString() })
+      .update({
+        draft,
+        draft_updated_at: new Date().toISOString(),
+        entry_key: diff.entryKey,
+      })
       .eq('id', flow.id)
+
     await runtimeSettings.bump()
     res.json({ success: true })
   } catch (e) {
