@@ -5,6 +5,8 @@ const {
   draftFromPublished,
   applyWire,
   publishPlan,
+  diffPublishPlan,
+  DEFAULT_FLOW_ACTIONS,
 } = require('../lib/flow-draft')
 
 const KEYS = ['welcome', 'product_list', 'saldo_menu']
@@ -47,19 +49,78 @@ const baseDraft = {
   ],
 }
 
-test('validateDraft rejects unknown key', () => {
+test('validateDraft accepts new custom screen node key', () => {
   const d = structuredClone(baseDraft)
-  d.nodes.push({ key: 'nope', kind: 'screen', screen_key: 'x', buttons: [], pos_x: 0, pos_y: 0 })
-  const r = validateDraft(d, KEYS)
-  assert.equal(r.ok, false)
-  assert.ok(r.errors.some((e) => /unknown key/i.test(e)))
+  d.nodes.push({
+    key: 'screen.custom_1',
+    kind: 'screen',
+    screen_key: 'screen.custom_1',
+    body: 'Custom',
+    pos_x: 0,
+    pos_y: 0,
+    buttons: [],
+    description: '',
+  })
+  const r = validateDraft(d, { allowedActions: DEFAULT_FLOW_ACTIONS })
+  assert.equal(r.ok, true, r.errors.join('; '))
 })
 
-test('validateDraft rejects missing published key', () => {
+test('validateDraft rejects go target that does not exist', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].buttons = [[{ label: 'X', go: 'missing_node' }]]
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => /missing_node/.test(e)))
+})
+
+test('validateDraft rejects unknown action', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[1].action = 'not_a_real_action'
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => /action/i.test(e)))
+})
+
+test('diffPublishPlan emits nodeDeletes for removed published keys', () => {
   const d = structuredClone(baseDraft)
   d.nodes = d.nodes.filter((n) => n.key !== 'saldo_menu')
-  const r = validateDraft(d, KEYS)
-  assert.equal(r.ok, false)
+  const diff = diffPublishPlan(d, KEYS, ['screen.welcome', 'screen.saldo_menu'])
+  assert.deepEqual(diff.nodeDeletes, ['saldo_menu'])
+  assert.equal(diff.nodeUpserts.length, 2)
+})
+
+test('diffPublishPlan emits copyInserts for new screen_key', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes.push({
+    key: 'screen.custom_1',
+    kind: 'screen',
+    screen_key: 'screen.custom_1',
+    body: 'Hello custom',
+    pos_x: 10,
+    pos_y: 10,
+    buttons: [],
+    description: 'Custom info screen',
+  })
+  const diff = diffPublishPlan(d, KEYS, ['screen.welcome', 'screen.saldo_menu'])
+  assert.equal(diff.copyInserts.length, 1)
+  assert.deepEqual(diff.copyInserts[0], {
+    key: 'screen.custom_1',
+    body: 'Hello custom',
+    description: 'Custom info screen',
+  })
+  assert.ok(!diff.copyUpserts.some((c) => c.key === 'screen.custom_1'))
+})
+
+test('diffPublishPlan emits copyUpserts for existing screen keys', () => {
+  const diff = diffPublishPlan(baseDraft, KEYS, ['screen.welcome', 'screen.saldo_menu'])
+  assert.ok(diff.copyUpserts.some((c) => c.key === 'screen.welcome' && c.body === 'Hi {{first_name}}'))
+})
+
+test('diffPublishPlan sets entryKey from draft', () => {
+  const d = structuredClone(baseDraft)
+  d.entry_key = 'product_list'
+  const diff = diffPublishPlan(d, KEYS, [])
+  assert.equal(diff.entryKey, 'product_list')
 })
 
 test('validateDraft rejects button with multiple modes', () => {
