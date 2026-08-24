@@ -6178,7 +6178,7 @@ app.post('/api/bot-flow/publish', isAuthenticated, async (req, res) => {
       if (error) throw error
     }
 
-    await supabase
+    const { error: flowUpdateError } = await supabase
       .from('BotFlow')
       .update({
         draft,
@@ -6186,6 +6186,7 @@ app.post('/api/bot-flow/publish', isAuthenticated, async (req, res) => {
         entry_key: diff.entryKey,
       })
       .eq('id', flow.id)
+    if (flowUpdateError) throw flowUpdateError
 
     await runtimeSettings.bump()
     res.json({ success: true })

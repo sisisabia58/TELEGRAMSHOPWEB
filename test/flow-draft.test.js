@@ -65,6 +65,22 @@ test('validateDraft accepts new custom screen node key', () => {
   assert.equal(r.ok, true, r.errors.join('; '))
 })
 
+test('validateDraft rejects missing entry_key', () => {
+  const d = structuredClone(baseDraft)
+  delete d.entry_key
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => e === 'entry_key required'))
+})
+
+test('validateDraft rejects entry_key not in nodes', () => {
+  const d = structuredClone(baseDraft)
+  d.entry_key = 'missing_node'
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => /entry_key missing from nodes/.test(e)))
+})
+
 test('validateDraft rejects go target that does not exist', () => {
   const d = structuredClone(baseDraft)
   d.nodes[0].buttons = [[{ label: 'X', go: 'missing_node' }]]
