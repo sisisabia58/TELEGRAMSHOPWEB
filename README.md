@@ -136,6 +136,29 @@ Hanya jalankan dashboard:
 npm run dashboard
 ```
 
+### Menjalankan dengan variabel dari Railway
+
+Production secrets untuk repo ini hidup di Railway project **teleshop-improvement-v2** (environment `production`, service `teleshop-improvement-v2`). Jangan commit file `.env` dan jangan menyalin nilai secret ke Cursor secrets kecuali Anda memang ingin duplikasi.
+
+1. Pasang [Railway CLI](https://docs.railway.com/guides/cli) dan autentikasi (`railway login`, atau set `RAILWAY_API_TOKEN` untuk sesi headless).
+2. Link project sekali di folder repo:
+   ```bash
+   railway link
+   ```
+   Pilih project **teleshop-improvement-v2**, environment **production**, service **teleshop-improvement-v2**.
+3. Dashboard saja (disarankan untuk local / Cloud Agent — tidak mem-poll Telegram):
+   ```bash
+   npm run railway:dashboard
+   ```
+   Setara dengan `railway run npm run dashboard`. CLI menyuntikkan variabel Railway ke proses; tidak menulis `.env`.
+4. Bot + dashboard:
+   ```bash
+   npm run railway:start
+   ```
+   Setara dengan `railway run npm start`.
+
+**Konflik polling Telegram:** deployment Railway yang sedang jalan sudah menjalankan `index.js` (long poll). Jangan jalankan poller kedua dengan `TOKEN_BOT` yang sama — Telegram API mengembalikan **409 Conflict**. Untuk cek token, panggil `getMe` sekali (`https://api.telegram.org/bot<token>/getMe`) lalu berhenti; jangan biarkan `polling: true` di mesin kedua.
+
 ---
 
 ## 📁 Struktur Proyek
