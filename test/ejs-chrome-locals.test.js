@@ -191,3 +191,29 @@ test('halaman supplier tidak pernah menuliskan api_key ke HTML', async () => {
     )
   }
 })
+
+test('laporan test koneksi dan sync memakai newline JS, dan menjaga d.balance', async () => {
+  const html = await ejs.renderFile(
+    path.join(viewRoot, 'supplier.ejs'),
+    {
+      ...baseLocals,
+      currentPage: 'supplier',
+      pageTitle: 'Supplier Test',
+      suppliers: [],
+      statistik: {},
+      settings: SETTINGS_RESELLER,
+      adapters: [{ key: 'bitestore', label: 'Bite Store', defaultBaseUrl: 'https://contoh.test' }],
+      success: null,
+      error: null,
+    },
+    { views: [viewRoot] }
+  )
+
+  // Di sumber JS yang sampai ke browser, '\n' (satu backslash) adalah newline.
+  // '\\n' (dua backslash) tampil sebagai teks "\n" di dalam <pre>.
+  assert.match(html, /Koneksi berhasil\\n/)
+  assert.equal(html.includes('Koneksi berhasil\\\\n'), false)
+  assert.match(html, /Diambil: ' \+ l\.fetched \+ '\\n'/)
+  assert.match(html, /tidak tersedia/)
+  assert.match(html, /d\.balance\s*\?/)
+})

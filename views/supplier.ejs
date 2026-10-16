@@ -211,13 +211,13 @@
                 // mendeklarasikan bentuk balasan, jadi ini cara memverifikasi
                 // pemetaan field kita terhadap data sungguhan.
                 tampilkan(
-                    '✅ Koneksi berhasil\\n' +
-                    'Saldo dompet: USD ' + d.balance.usd + ' (' + d.balance.points + ' poin)\\n' +
-                    'Contoh produk terambil: ' + d.sampleCount + '\\n\\n' +
-                    '--- BARIS MENTAH DARI API ---\\n' +
-                    JSON.stringify(d.sampleRaw, null, 2) + '\\n\\n' +
-                    '--- HASIL NORMALISASI KITA ---\\n' +
-                    JSON.stringify(d.sampleNormalized, null, 2) + '\\n\\n' +
+                    '✅ Koneksi berhasil\n' +
+                    'Saldo dompet: ' + (d.balance ? 'USD ' + d.balance.usd + ' (' + d.balance.points + ' poin)' : '(tidak tersedia)') + '\n' +
+                    'Contoh produk terambil: ' + d.sampleCount + '\n\n' +
+                    '--- BARIS MENTAH DARI API ---\n' +
+                    JSON.stringify(d.sampleRaw, null, 2) + '\n\n' +
+                    '--- HASIL NORMALISASI KITA ---\n' +
+                    JSON.stringify(d.sampleNormalized, null, 2) + '\n\n' +
                     'Harga jual setelah margin + kurs: Rp ' + (d.contohIdr === null ? '(gagal hitung)' : Number(d.contohIdr).toLocaleString('id-ID')),
                     true
                 );
@@ -234,14 +234,14 @@
                 if (d.laporan) {
                     const l = d.laporan;
                     tampilkan(
-                        (d.success ? '✅ Sync selesai' : '⚠️ Sync selesai dengan catatan') + '\\n' +
-                        'Diambil: ' + l.fetched + '\\n' +
-                        'Disimpan: ' + l.upserted + '\\n' +
-                        'Cocok ke varian yang ada: ' + l.matched + '\\n' +
-                        'Produk baru dibuat: ' + l.created + '\\n' +
-                        'Dilewati (file/manual/tidak valid): ' + l.skipped + '\\n' +
+                        (d.success ? '✅ Sync selesai' : '⚠️ Sync selesai dengan catatan') + '\n' +
+                        'Diambil: ' + l.fetched + '\n' +
+                        'Disimpan: ' + l.upserted + '\n' +
+                        'Cocok ke varian yang ada: ' + l.matched + '\n' +
+                        'Produk baru dibuat: ' + l.created + '\n' +
+                        'Dilewati (file/manual/tidak valid): ' + l.skipped + '\n' +
                         'Harga disegarkan: ' + l.repriced +
-                        (l.errors && l.errors.length ? '\\n\\nError:\\n- ' + l.errors.join('\\n- ') : ''),
+                        (l.errors && l.errors.length ? '\n\nError:\n- ' + l.errors.join('\n- ') : ''),
                         d.success
                     );
                     setTimeout(() => window.location.reload(), 2500);
