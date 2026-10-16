@@ -128,3 +128,66 @@ test('authenticated views render topbarExtra from EJS locals', async () => {
     assert.match(html, /href="\/sentinel-action"/, `${testCase.view} should render topbarExtra`)
   }
 })
+
+test('halaman supplier tidak pernah menuliskan api_key ke HTML', async () => {
+  const rahasia = 'bsk_RAHASIA_JANGAN_BOCOR_9f3a'
+  const supplier = {
+    id: 's1',
+    nama: 'Seller A',
+    adapter: 'bitestore',
+    base_url: 'https://bite-store-bot-production.up.railway.app',
+    api_key: rahasia,
+    prioritas: 0,
+    is_active: true,
+  }
+
+  const halaman = [
+    {
+      view: 'supplier.ejs',
+      locals: {
+        currentPage: 'supplier',
+        suppliers: [supplier],
+        statistik: { s1: { total: 1, terpetakan: 1 } },
+        settings: SETTINGS_RESELLER,
+        adapters: [{ key: 'bitestore', label: 'Bite Store', defaultBaseUrl: supplier.base_url }],
+        success: null,
+        error: null,
+      },
+    },
+    {
+      view: 'supplier-form.ejs',
+      locals: {
+        currentPage: 'supplier',
+        supplier,
+        adapters: [{ key: 'bitestore', label: 'Bite Store', defaultBaseUrl: supplier.base_url }],
+        error: null,
+      },
+    },
+    {
+      view: 'supplier-produk.ejs',
+      locals: {
+        currentPage: 'supplier',
+        supplier,
+        produk: [],
+        varianList: [],
+        filter: 'all',
+        settings: SETTINGS_RESELLER,
+        success: null,
+        error: null,
+      },
+    },
+  ]
+
+  for (const testCase of halaman) {
+    const html = await ejs.renderFile(
+      path.join(viewRoot, testCase.view),
+      { ...baseLocals, ...testCase.locals },
+      { views: [viewRoot] }
+    )
+    assert.equal(
+      html.includes(rahasia),
+      false,
+      `${testCase.view} tidak boleh memuat api_key`
+    )
+  }
+})

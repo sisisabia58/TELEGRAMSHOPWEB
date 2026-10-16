@@ -7405,7 +7405,7 @@ function pricingDari(settings) {
 
 app.get('/supplier', isAuthenticated, async (req, res) => {
   try {
-    const suppliers = await supplierSync.listSuppliers()
+    const suppliers = (await supplierSync.listSuppliers()).map(supplierAdapters.tanpaApiKey)
     const settings = await getResellerSettings()
 
     // Jumlah produk termirror + berapa yang sudah terpetakan, per supplier.
@@ -7482,7 +7482,11 @@ app.get('/supplier/pengaturan', isAuthenticated, async (req, res) => {
 
 app.get('/supplier/:id/edit', isAuthenticated, async (req, res) => {
   try {
-    const { data: supplier } = await supabase.from('Supplier').select('*').eq('id', req.params.id).maybeSingle()
+    const { data: supplier } = await supabase
+      .from('Supplier')
+      .select(supplierAdapters.SUPPLIER_PUBLIC_COLUMNS)
+      .eq('id', req.params.id)
+      .maybeSingle()
     if (!supplier) return res.redirect('/supplier?error=notfound')
     res.render('supplier-form', {
       title: `Edit Supplier - ${NamaBot}`,
@@ -7506,7 +7510,9 @@ app.post('/supplier/simpan', isAuthenticated, async (req, res) => {
     title: `${id ? 'Edit' : 'Tambah'} Supplier - ${NamaBot}`,
     namaBot: NamaBot,
     username: req.session.username,
-    supplier: { id, nama, adapter, base_url, api_key, prioritas, is_active: is_active === 'on' },
+    supplier: supplierAdapters.tanpaApiKey({
+      id, nama, adapter, base_url, prioritas, is_active: is_active === 'on',
+    }),
     adapters: supplierAdapters.listAdapters(),
     error: pesan,
     req,
@@ -7581,7 +7587,8 @@ app.post('/api/supplier/:id/test', isAuthenticated, async (req, res) => {
     const adapter = supplierAdapters.getAdapter(supplier.adapter)
     if (!adapter) return res.status(400).json({ success: false, message: 'Adapter tidak dikenal' })
 
-    const hasil = await adapter.testConnection({ baseUrl: supplier.base_url, apiKey: supplier.api_key })
+    const baseUrl = await supplierAdapters.assertSafeOutbound(supplier.adapter, supplier.base_url)
+    const hasil = await adapter.testConnection({ baseUrl, apiKey: supplier.api_key })
     const settings = await getResellerSettings()
     const contohIdr = hasil.sampleNormalized
       ? fx.computeIdrPrice(hasil.sampleNormalized.hargaAsal, pricingDari(settings))
@@ -7614,7 +7621,11 @@ app.post('/api/supplier/:id/sync', isAuthenticated, async (req, res) => {
 // Katalog termirror satu supplier, dengan kolom pemetaan.
 app.get('/supplier/:id/produk', isAuthenticated, async (req, res) => {
   try {
-    const { data: supplier } = await supabase.from('Supplier').select('*').eq('id', req.params.id).maybeSingle()
+    const { data: supplier } = await supabase
+      .from('Supplier')
+      .select(supplierAdapters.SUPPLIER_PUBLIC_COLUMNS)
+      .eq('id', req.params.id)
+      .maybeSingle()
     if (!supplier) return res.redirect('/supplier?error=notfound')
 
     const filter = req.query.filter || 'all'
