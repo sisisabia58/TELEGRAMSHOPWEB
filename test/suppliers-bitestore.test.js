@@ -4,9 +4,16 @@ const assert = require('node:assert')
 const bitestore = require('../lib/suppliers/bitestore')
 const registry = require('../lib/suppliers')
 
-const KREDENSIAL = { baseUrl: 'https://contoh.test', apiKey: 'bsk_test' }
+const KREDENSIAL = { baseUrl: bitestore.defaultBaseUrl, apiKey: 'bsk_test' }
 
-test.after(() => bitestore.__setHttp(require('axios')))
+test.before(() => {
+  registry.__setLookup(async () => [{ address: '203.0.113.10', family: 4 }])
+})
+
+test.after(() => {
+  registry.__setLookup(null)
+  bitestore.__setHttp(require('axios'))
+})
 
 // ---------------------------------------------------------------------------
 // unwrapList — openapi.json tidak mendeklarasikan bentuk balasan, jadi
@@ -226,6 +233,44 @@ test('listProducts berhenti di halaman terakhir yang tidak penuh', async () => {
   })
   await bitestore.listProducts(KREDENSIAL)
   assert.equal(panggilan, 1, 'halaman pendek berarti selesai')
+})
+
+test('panggilan keluar menolak base_url di luar allowlist dan tidak mengirim api_key', async () => {
+  let terkirim = false
+  bitestore.__setHttp({
+    get: async () => { terkirim = true; return { data: [] } },
+    post: async () => { terkirim = true; return { data: {} } },
+  })
+
+  const jahat = { baseUrl: 'https://penyerang.example.com', apiKey: 'bsk_RAHASIA' }
+  await assert.rejects(() => bitestore.listProducts(jahat))
+  await assert.rejects(() => bitestore.getBalance(jahat))
+  await assert.rejects(() => bitestore.getOrder({ ...jahat, orderId: '1' }))
+  await assert.rejects(() => bitestore.testConnection(jahat))
+  await assert.rejects(() => bitestore.createOrder({ ...jahat, externalId: 1, idempotencyKey: 'k' }))
+  assert.equal(terkirim, false, 'api_key tidak boleh terkirim ke host penyerang')
+})
+
+test('panggilan keluar tidak mengikuti redirect (mencegah bocornya api_key)', async () => {
+  let cfgGet = null
+  let cfgPost = null
+  bitestore.__setHttp({
+    get: async (_url, cfg) => {
+      cfgGet = cfg
+      return { data: [{ id: 1, price: 1, stock: 1 }] }
+    },
+    post: async (_url, _body, cfg) => {
+      cfgPost = cfg
+      return { data: { orderId: 1, deliveredKeys: ['k'], status: 'completed' } }
+    },
+  })
+
+  await bitestore.listProducts(KREDENSIAL)
+  await bitestore.createOrder({ ...KREDENSIAL, externalId: 1, idempotencyKey: 'k' })
+  assert.equal(cfgGet.maxRedirects, 0)
+  assert.equal(cfgPost.maxRedirects, 0)
+  assert.equal(typeof cfgGet.lookup, 'function', 'lookup kustom menolak IP privat saat resolve')
+  assert.equal(typeof cfgPost.lookup, 'function')
 })
 
 test('createOrder mengirim Idempotency-Key dan body yang benar', async () => {

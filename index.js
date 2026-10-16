@@ -43,7 +43,7 @@ const sourcing = require('./lib/sourcing')
 const fulfillment = require('./lib/fulfillment')
 const supplierSync = require('./lib/supplier-sync')
 const fx = require('./lib/fx')
-const { getAdapter } = require('./lib/suppliers')
+const { getAdapter, assertSafeOutbound } = require('./lib/suppliers')
 
 // Harga yang ditampilkan DAN ditagih untuk satu varian. Selalu pakai ini, jangan
 // baca v.harga langsung: untuk varian yang dipasok supplier, v.harga cuma angka
@@ -7373,7 +7373,8 @@ cron.schedule('0 */6 * * *', async () => {
       const adapter = getAdapter(s.adapter)
       if (!adapter) continue
       try {
-        const saldo = await adapter.getBalance({ baseUrl: s.base_url, apiKey: s.api_key })
+        const baseUrl = await assertSafeOutbound(s.adapter, s.base_url)
+        const saldo = await adapter.getBalance({ baseUrl, apiKey: s.api_key })
         if (saldo.usd >= minimal) continue
         console.warn(`[Supplier Wallet] ${s.nama}: USD ${saldo.usd} di bawah ambang ${minimal}`)
         if (channelContact.channelLog) {
