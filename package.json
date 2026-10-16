@@ -6,7 +6,9 @@
     "test": "node --test",
     "start": "concurrently \"node index.js\" \"node dashboard.js\"",
     "dashboard": "node dashboard.js",
-    "dev": "concurrently \"node index.js\" \"node dashboard.js\""
+    "dev": "concurrently \"node index.js\" \"node dashboard.js\"",
+    "railway:dashboard": "railway run npm run dashboard",
+    "railway:start": "railway run npm start"
   },
   "keywords": [],
   "author": "",
