@@ -27,7 +27,10 @@ railway status --json          # linked project/env/service
 railway up --detach            # deploy cwd
 railway logs --lines 200       # recent logs
 railway variable list --json   # env vars
+railway run npm run dashboard  # local dashboard with Railway vars (no .env, no bot poller)
 ```
+
+App production lives in Railway project **teleshop-improvement-v2** (environment `production`). After `railway link`, `npm run railway:dashboard` / `npm run railway:start` wrap `railway run`. Do not start a second Telegram poller while the Railway replica is already polling `TOKEN_BOT` (409 Conflict); use dashboard-only or a one-shot `getMe`. Never write Railway variables to a committed `.env`.
 
 **Supabase common commands:**
 ```bash
