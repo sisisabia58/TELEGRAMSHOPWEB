@@ -2,7 +2,9 @@
 # https://supabase.com/docs/guides/local-development/cli/config
 # A string used to distinguish different Supabase projects on the same host. Defaults to the
 # working directory name when running `supabase init`.
-project_id = "sajffqniegtvhyopshvx"
+# Local stack name (must match AGENTS.md / docker container prefix `supabase_db_workspace`).
+# Hosted ref sajffqniegtvhyopshvx is used only for `supabase link` + `db push`.
+project_id = "workspace"
 
 [api]
 enabled = true

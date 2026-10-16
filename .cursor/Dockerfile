@@ -42,9 +42,10 @@ RUN curl --retry 3 --retry-delay 5 -fsSL \
 # Non-root user (Cursor Cloud default)
 ########################################################
 
-RUN id -u ubuntu &>/dev/null || useradd -m -s /bin/bash ubuntu
-RUN groupadd -f docker && usermod -aG docker ubuntu
-RUN usermod -aG sudo ubuntu
-RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu
+RUN id -u ubuntu &>/dev/null || useradd -m -s /bin/bash ubuntu && \
+    groupadd -f docker && usermod -aG docker ubuntu && \
+    (getent group sudo >/dev/null && usermod -aG sudo ubuntu || true) && \
+    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
+    chmod 0440 /etc/sudoers.d/ubuntu
 
 WORKDIR /workspace
