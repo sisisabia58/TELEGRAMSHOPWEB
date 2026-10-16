@@ -7762,9 +7762,9 @@ app.post('/api/settings/reseller', isAuthenticated, async (req, res) => {
       if (error) throw error
     }
 
-    // Beri tahu proses bot supaya harga langsung memakai angka baru. Tidak ada
-    // harga tersimpan yang perlu dihitung ulang: harga IDR selalu diturunkan
-    // saat dibaca dari harga_asal + kurs + margin yang berlaku.
+    // Beri tahu proses bot supaya harga_efektif langsung memakai angka baru.
+    // Harga cadangan di Varian.sumber='supplier' baru dihitung ulang pada
+    // sinkronisasi berikutnya — jangan anggap Varian.harga ikut berubah di sini.
     await runtimeSettings.bump()
     await logActivity(req, 'update_reseller_settings', 'Settings', 'reseller')
     res.json({ success: true, message: 'Pengaturan reseller berhasil disimpan!' })

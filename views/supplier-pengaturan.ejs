@@ -46,9 +46,9 @@ harga_jual = harga_supplier &times; kurs &times; (1 + buffer%) &times; (1 + marg
              lalu dibulatkan <strong>ke atas</strong> ke kelipatan pembulatan
                     </div>
                     <p class="form-hint">
-                        Harga rupiah tidak pernah disimpan di database — selalu dihitung ulang saat dibaca.
-                        Karena itu mengubah margin atau kurs di halaman ini langsung berlaku untuk seluruh katalog,
-                        dan tidak mungkin ada baris yang tertinggal dengan harga lama.
+                        Harga jual di katalog pembeli dihitung ulang saat dibaca dari harga supplier + kurs + margin,
+                        jadi perubahan di halaman ini langsung berlaku di bot dan checkout.
+                        Harga cadangan yang tersimpan pada varian milik supplier diperbarui pada sinkronisasi berikutnya.
                     </p>
                     <table class="contoh-table">
                         <tbody>

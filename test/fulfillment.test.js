@@ -60,10 +60,17 @@ function buatDeps(over = {}) {
     releaseStok: async () => {},
     getSupplier: async (id) => ({ id, nama: `Seller ${id}`, adapter: 'bitestore', base_url: 'x', api_key: 'k', is_active: true }),
     createOrder: async () => ({ ok: true, orderId: '1', keys: ['key-1'], status: 'completed' }),
+    getOrder: async () => ({ ok: false, orderId: null, keys: [], status: 'unknown' }),
     recordSupplierOrder: async (row) => { dicatat.push(row); return { id: `so-${dicatat.length}`, ...row } },
     ...over,
   }
   return { deps, dicatat }
+}
+
+function httpErr(status, extra = {}) {
+  const e = new Error(`Request failed with status code ${status}`)
+  e.response = { status, ...extra }
+  return e
 }
 
 // ---------------------------------------------------------------------------
@@ -216,7 +223,7 @@ test('Idempotency-Key TIDAK berubah saat urutan penawaran berubah', async () => 
   const { deps: d2 } = buatDeps({
     getOffers: async () => [murah, lama],
     createOrder: async (s, args) => {
-      if (args.externalId === '999') throw new Error('penjual baru sedang error')
+      if (args.externalId === '999') throw httpErr(409)
       return buat(s, args)
     },
   })
@@ -273,26 +280,52 @@ test('supplier nonaktif dilewati', async () => {
 test('turun ke penawaran berikutnya kalau yang termurah gagal', async () => {
   const f = muatFulfillment()
   const dicoba = []
-  const { deps } = buatDeps({
+  const kunci = []
+  const { deps, dicatat } = buatDeps({
     getOffers: async () => [
       offerSupplier({ supplier_id: 'murah', external_id: 'A', harga: 20000 }),
       offerSupplier({ supplier_id: 'mahal', external_id: 'B', harga: 30000 }),
     ],
     createOrder: async (supplier, args) => {
       dicoba.push(supplier.id)
-      if (supplier.id === 'murah') {
-        const e = new Error('Request failed')
-        e.response = { status: 502 }
-        throw e
-      }
+      kunci.push(args.idempotencyKey)
+      if (supplier.id === 'murah') throw httpErr(502)
       return { ok: true, orderId: '2', keys: ['dari-mahal'], status: 'completed' }
     },
   })
 
   const r = await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-6', deps })
+  // 502 tidak membuktikan penjual menolak: retry sekali dengan kunci yang sama,
+  // lalu berhenti. Pindah ke penjual kedua bisa membeli dua kali.
+  assert.equal(r.ok, false)
+  assert.deepEqual(dicoba, ['murah', 'murah'], 'retry ke penjual yang sama, bukan failover')
+  assert.equal(kunci[0], kunci[1], 'retry memakai Idempotency-Key yang sama')
+  assert.equal(r.attempts.length, 1)
+  assert.match(r.error, /rekonsiliasi/)
+  assert.equal(dicatat.length, 1)
+  assert.equal(dicatat[0].status, 'failed')
+  assert.match(dicatat[0].error, /perlu rekonsiliasi manual/)
+})
+
+test('turun ke penawaran berikutnya kalau yang termurah ditolak 4xx', async () => {
+  const f = muatFulfillment()
+  const dicoba = []
+  const { deps } = buatDeps({
+    getOffers: async () => [
+      offerSupplier({ supplier_id: 'murah', external_id: 'A', harga: 20000 }),
+      offerSupplier({ supplier_id: 'mahal', external_id: 'B', harga: 30000 }),
+    ],
+    createOrder: async (supplier) => {
+      dicoba.push(supplier.id)
+      if (supplier.id === 'murah') throw httpErr(402)
+      return { ok: true, orderId: '2', keys: ['dari-mahal'], status: 'completed' }
+    },
+  })
+
+  const r = await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-6B', deps })
   assert.equal(r.ok, true)
   assert.deepEqual(r.lines, ['dari-mahal'])
-  assert.deepEqual(dicoba, ['murah', 'mahal'], 'termurah dicoba lebih dulu, lalu mundur')
+  assert.deepEqual(dicoba, ['murah', 'mahal'], '4xx = ditolak pasti, boleh mundur')
   assert.equal(r.attempts.length, 2)
   assert.equal(r.attempts[0].ok, false)
   assert.equal(r.attempts[1].ok, true)
@@ -314,18 +347,24 @@ test('turun dari stok sendiri yang kosong ke supplier', async () => {
 
 test('gagal bersih kalau SEMUA sumber gagal', async () => {
   const f = muatFulfillment()
-  const { deps } = buatDeps({
+  const dicoba = []
+  const { deps, dicatat } = buatDeps({
     getOffers: async () => [
       offerSupplier({ supplier_id: 'a', harga: 10000 }),
       offerSupplier({ supplier_id: 'b', harga: 20000 }),
     ],
-    createOrder: async () => { throw new Error('ETIMEDOUT') },
+    createOrder: async (supplier) => {
+      dicoba.push(supplier.id)
+      throw new Error('ETIMEDOUT')
+    },
   })
 
   const r = await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-8', deps })
   assert.equal(r.ok, false)
-  assert.equal(r.attempts.length, 2)
-  assert.match(r.error, /ETIMEDOUT/)
+  assert.deepEqual(dicoba, ['a', 'a'], 'timeout = retry sekali, bukan pindah penjual')
+  assert.equal(r.attempts.length, 1)
+  assert.match(r.error, /rekonsiliasi/)
+  assert.match(dicatat[0].error, /ETIMEDOUT/)
 })
 
 test('setiap percobaan dapat kunci idempotensi berbeda', async () => {
@@ -338,7 +377,7 @@ test('setiap percobaan dapat kunci idempotensi berbeda', async () => {
     ],
     createOrder: async (_s, args) => {
       kunci.push(args.idempotencyKey)
-      if (kunci.length === 1) throw new Error('gagal')
+      if (kunci.length === 1) throw httpErr(409)
       return { ok: true, orderId: '1', keys: ['k'], status: 'completed' }
     },
   })
@@ -445,7 +484,7 @@ test('failover TIDAK membeli dari supplier yang lebih mahal dari yang ditagih', 
     ],
     createOrder: async (supplier) => {
       dicoba.push(supplier.id)
-      if (supplier.id === 'murah') throw new Error('stok supplier habis')
+      if (supplier.id === 'murah') throw httpErr(409)
       return { ok: true, orderId: '2', keys: ['jangan'], status: 'completed' }
     },
   })
@@ -475,7 +514,7 @@ test('stok sendiri tetap dicoba meski harganya di atas yang ditagih', async () =
     claimStok: async () => ({ ok: true, rows: [{ id: 'st1', data: 'akun' }] }),
     createOrder: async (supplier) => {
       supplierDipanggil = true
-      if (supplier.id === 'murah') throw new Error('supplier gagal')
+      if (supplier.id === 'murah') throw httpErr(409)
       throw new Error('supplier mahal tidak boleh dipanggil')
     },
   })
@@ -499,7 +538,7 @@ test('supplier dengan harga sama dengan yang ditagih tetap dicoba', async () => 
     ],
     createOrder: async (supplier) => {
       dicoba.push(supplier.id)
-      if (supplier.id === 'a') throw new Error('gagal')
+      if (supplier.id === 'a') throw httpErr(409)
       return { ok: true, orderId: '2', keys: ['ok'], status: 'completed' }
     },
   })
@@ -509,4 +548,78 @@ test('supplier dengan harga sama dengan yang ditagih tetap dicoba', async () => 
   })
   assert.equal(r.ok, true)
   assert.deepEqual(dicoba, ['a', 'b'])
+})
+
+test('502 lalu retry yang berhasil tetap memakai kunci yang sama', async () => {
+  const f = muatFulfillment()
+  const kunci = []
+  let n = 0
+  const { deps, dicatat } = buatDeps({
+    getOffers: async () => [offerSupplier()],
+    createOrder: async (_s, args) => {
+      kunci.push(args.idempotencyKey)
+      n++
+      if (n === 1) throw httpErr(502)
+      return { ok: true, orderId: '9', keys: ['dari-retry'], status: 'completed' }
+    },
+  })
+
+  const r = await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-RETRY', deps })
+  assert.equal(r.ok, true)
+  assert.deepEqual(r.lines, ['dari-retry'])
+  assert.equal(kunci[0], kunci[1])
+  assert.equal(dicatat[0].status, 'ok')
+})
+
+test('502 yang masih gelap diselesaikan lewat getOrder', async () => {
+  const f = muatFulfillment()
+  let getDipanggil = null
+  const { deps, dicatat } = buatDeps({
+    getOffers: async () => [
+      offerSupplier({ supplier_id: 'murah', harga: 20000 }),
+      offerSupplier({ supplier_id: 'mahal', harga: 30000 }),
+    ],
+    createOrder: async () => {
+      throw httpErr(502, { data: { id: 'ord-77' } })
+    },
+    getOrder: async (supplier, args) => {
+      getDipanggil = { supplier: supplier.id, ...args }
+      return { ok: true, orderId: 'ord-77', keys: ['dari-get'], status: 'completed' }
+    },
+  })
+
+  const r = await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-GET', deps })
+  assert.equal(r.ok, true)
+  assert.deepEqual(r.lines, ['dari-get'])
+  assert.equal(getDipanggil.orderId, 'ord-77')
+  assert.equal(getDipanggil.supplier, 'murah')
+  assert.equal(dicatat[0].status, 'ok')
+  assert.equal(dicatat[0].external_order_id, 'ord-77')
+})
+
+test('markRefunded tidak menimpa jejak yang perlu rekonsiliasi', async () => {
+  const f = muatFulfillment()
+  const filter = []
+  const client = {
+    from(tabel) {
+      assert.equal(tabel, 'SupplierOrder')
+      const b = {
+        update() { return b },
+        eq() { return b },
+        not(kolom, op, nilai) {
+          filter.push({ kolom, op, nilai })
+          return b
+        },
+        then(res, rej) {
+          return Promise.resolve({ error: null }).then(res, rej)
+        },
+      }
+      return b
+    },
+  }
+
+  await f.markRefunded('TRX-REKON', { supabase: client })
+  assert.equal(filter.length, 1)
+  assert.equal(filter[0].kolom, 'error')
+  assert.match(String(filter[0].nilai), /perlu rekonsiliasi manual/)
 })

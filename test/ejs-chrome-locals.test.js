@@ -117,6 +117,16 @@ const cases = [
   },
 ]
 
+test('pengaturan reseller menjelaskan harga cadangan menyusul di sync berikutnya', async () => {
+  const html = await ejs.renderFile(
+    path.join(viewRoot, 'supplier-pengaturan.ejs'),
+    { ...baseLocals, currentPage: 'supplier', pageTitle: 'Pengaturan Reseller', settings: SETTINGS_RESELLER, contoh: [{ usd: 1, idr: 18150 }], success: null, error: null },
+    { views: [viewRoot] }
+  )
+  assert.match(html, /sinkronisasi berikutnya/)
+  assert.equal(html.includes('tidak pernah disimpan di database'), false)
+})
+
 test('authenticated views render topbarExtra from EJS locals', async () => {
   for (const testCase of cases) {
     const html = await ejs.renderFile(

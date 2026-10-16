@@ -7309,19 +7309,23 @@ console.log("⏱️  [Pakasir Reconcile] Cron rekonsiliasi pembayaran aktif (set
 //
 // Dua cron di bawah berjalan di PROSES BOT saja, bukan di dashboard, supaya
 // tidak ada dua penulis yang mengejar baris yang sama. Dashboard memicu fungsi
-// yang sama secara langsung lewat tombol "Sync sekarang"; semua tulisannya
-// upsert dan idempoten, jadi tumpang tindih tidak merusak apa pun.
+// yang sama secara langsung lewat tombol "Sync sekarang". Cron punya penjaga
+// in-flight supaya dua jadwal tidak menumpuk; tombol dashboard tidak memakai
+// penjaga itu.
 
 // Sinkronisasi katalog supplier. Intervalnya bisa diatur dari dashboard, tapi
 // node-cron butuh ekspresi tetap saat dijadwalkan, jadi cron-nya jalan tiap
 // menit dan yang mengatur ritme adalah pemeriksaan interval di dalamnya.
 let terakhirSyncSupplier = 0
+let syncSupplierBerjalan = false
 
 cron.schedule('* * * * *', async () => {
+  if (syncSupplierBerjalan) return
   try {
     const menit = Number(runtimeSettings.get('supplier_sync_interval_menit', 5)) || 5
     const jedaMs = Math.max(1, menit) * 60 * 1000
     if (Date.now() - terakhirSyncSupplier < jedaMs) return
+    syncSupplierBerjalan = true
     terakhirSyncSupplier = Date.now()
 
     const hasil = await supplierSync.syncAll()
@@ -7334,6 +7338,8 @@ cron.schedule('* * * * *', async () => {
     }
   } catch (e) {
     console.error('[Supplier Sync] error:', e.message)
+  } finally {
+    syncSupplierBerjalan = false
   }
 })
 console.log('⏱️  [Supplier Sync] Cron sinkronisasi katalog supplier aktif.')
