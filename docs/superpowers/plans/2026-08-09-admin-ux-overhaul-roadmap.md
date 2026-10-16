@@ -28,6 +28,7 @@
 | 11 — Notification inbox (bell panel) | [2026-08-10-notification-inbox.md](./2026-08-10-notification-inbox.md) | **Done** |
 | 12 — Flow builder parity | [2026-08-16-flow-builder-parity.md](./2026-08-16-flow-builder-parity.md) | **Done** |
 | 13 — Multi-supplier reseller sourcing | [../runbooks/phase13-supplier-sourcing.md](../runbooks/phase13-supplier-sourcing.md) | **Done** (third stock source alongside manual add + bulk upload) |
+| 13 — Flow Builder Graph CRUD | [2026-08-24-flow-builder-graph-crud.md](./2026-08-24-flow-builder-graph-crud.md) | **Done** |
 
 ## Why separate plans
 

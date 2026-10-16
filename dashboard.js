@@ -5939,9 +5939,13 @@ const FLOW_ACTIONS = [
 
 async function loadAllCopyByKey() {
   const copyByKey = {}
-  const { data: copies } = await supabase.from('BotCopy').select('key, body')
-  for (const row of copies || []) copyByKey[row.key] = row.body
-  return copyByKey
+  const existingCopies = []
+  const { data: copies } = await supabase.from('BotCopy').select('key, body, kind')
+  for (const row of copies || []) {
+    copyByKey[row.key] = row.body
+    existingCopies.push({ key: row.key, kind: row.kind })
+  }
+  return { copyByKey, existingCopies }
 }
 
 async function loadActiveFlowBundle() {
@@ -5951,15 +5955,15 @@ async function loadActiveFlowBundle() {
     .eq('is_active', true)
     .maybeSingle()
   if (error) throw error
-  if (!flow) return { flow: null, nodes: [], copyByKey: {} }
+  if (!flow) return { flow: null, nodes: [], copyByKey: {}, existingCopies: [] }
   const { data: nodes, error: nErr } = await supabase
     .from('BotFlowNode')
     .select('*')
     .eq('flow_id', flow.id)
     .order('key')
   if (nErr) throw nErr
-  const copyByKey = await loadAllCopyByKey()
-  return { flow, nodes: nodes || [], copyByKey }
+  const { copyByKey, existingCopies } = await loadAllCopyByKey()
+  return { flow, nodes: nodes || [], copyByKey, existingCopies }
 }
 
 app.get('/settings/bot-flow', isAuthenticated, async (req, res) => {
@@ -6011,11 +6015,10 @@ app.get('/api/bot-flow', isAuthenticated, async (req, res) => {
 
 app.post('/api/bot-flow/draft', isAuthenticated, async (req, res) => {
   try {
-    const { flow, nodes } = await loadActiveFlowBundle()
+    const { flow } = await loadActiveFlowBundle()
     if (!flow) throw new Error('No active flow')
-    const publishedKeys = nodes.map((n) => n.key)
     const draft = req.body.draft
-    const v = flowDraft.validateDraft(draft, publishedKeys)
+    const v = flowDraft.validateDraft(draft, { allowedActions: FLOW_ACTIONS })
     if (!v.ok) return res.status(400).json({ success: false, errors: v.errors })
     const { error } = await supabase
       .from('BotFlow')
@@ -6149,42 +6152,20 @@ app.post('/api/bot-flow/preview-step', isAuthenticated, async (req, res) => {
 
 app.post('/api/bot-flow/publish', isAuthenticated, async (req, res) => {
   try {
-    const { flow, nodes } = await loadActiveFlowBundle()
+    const { flow, nodes, existingCopies } = await loadActiveFlowBundle()
     if (!flow) throw new Error('No active flow')
     const publishedKeys = nodes.map((n) => n.key)
     const draft = req.body.draft || flow.draft
     if (!draft) throw new Error('No draft to publish')
-    const v = flowDraft.validateDraft(draft, publishedKeys)
+
+    const v = flowDraft.validateDraft(draft, { allowedActions: FLOW_ACTIONS })
     if (!v.ok) return res.status(400).json({ success: false, errors: v.errors })
-    const plan = flowDraft.publishPlan(draft)
-    for (const patch of plan.nodes) {
-      const { error } = await supabase
-        .from('BotFlowNode')
-        .update({
-          kind: patch.kind,
-          screen_key: patch.screen_key,
-          action: patch.action,
-          description: patch.description,
-          buttons: patch.buttons,
-          pos_x: patch.pos_x,
-          pos_y: patch.pos_y,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('flow_id', flow.id)
-        .eq('key', patch.key)
-      if (error) throw error
-    }
-    for (const c of plan.copies) {
-      const { error } = await supabase
-        .from('BotCopy')
-        .update({ body: c.body, updated_at: new Date().toISOString() })
-        .eq('key', c.key)
-      if (error) throw error
-    }
-    await supabase
-      .from('BotFlow')
-      .update({ draft, draft_updated_at: new Date().toISOString() })
-      .eq('id', flow.id)
+
+    const diff = flowDraft.diffPublishPlan(draft, publishedKeys, existingCopies)
+    const payload = flowDraft.buildPublishRpcPayload(flow.id, draft, diff)
+    const { error } = await supabase.rpc('publish_bot_flow_graph', payload)
+    if (error) throw error
+
     await runtimeSettings.bump()
     res.json({ success: true })
   } catch (e) {
