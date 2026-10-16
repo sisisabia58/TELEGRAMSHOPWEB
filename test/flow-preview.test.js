@@ -120,4 +120,19 @@ test('generateUniqueNodeKey creates non-colliding screen key', () => {
   assert.strictEqual(newKey, 'screen.custom_2')
 })
 
+test('buildScreenView includes media_url and media_type from node', () => {
+  const { buildScreenView } = muatPreview()
+  const view = buildScreenView({
+    key: 'welcome',
+    kind: 'screen',
+    screen_key: 'screen.welcome',
+    body: 'Hi',
+    media_url: 'https://example.com/banner.png',
+    media_type: 'photo',
+    buttons: [],
+  }, {}, { first_name: 'Preview' })
+  assert.equal(view.media_url, 'https://example.com/banner.png')
+  assert.equal(view.media_type, 'photo')
+})
+
 

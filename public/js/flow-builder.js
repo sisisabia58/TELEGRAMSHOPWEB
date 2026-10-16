@@ -204,13 +204,16 @@
     for (const node of state.draft.nodes) {
       const inputs = 1
       const outputs = Math.max(countGoOutputs(node), node.kind === 'action' ? 0 : 0)
+      const entryKey = state.draft.entry_key || 'welcome'
+      let nodeClass = node.kind === 'screen' ? 'flow-node-screen' : 'flow-node-action'
+      if (node.key === entryKey) nodeClass += ' is-entry'
       const id = editor.addNode(
         node.key,
         inputs,
         outputs,
         Number(node.pos_x) || 40,
         Number(node.pos_y) || 40,
-        node.kind === 'screen' ? 'flow-node-screen' : 'flow-node-action',
+        nodeClass,
         { key: node.key },
         nodeHtml(node)
       )
@@ -244,6 +247,8 @@
     if (keepKey && keyToId.has(keepKey)) {
       selectNodeByKey(keepKey)
     }
+
+    renderEntryKeySelect()
   }
 
   function getNode(key) {
@@ -326,6 +331,13 @@
       }
       html += '</div>'
 
+      html += '<div class="field"><label>Media type</label>'
+      html += '<select id="panelMediaType">'
+      ;['photo', 'document'].forEach((t) => {
+        html += '<option value="' + t + '"' + ((node.media_type || 'photo') === t ? ' selected' : '') + '>' + t + '</option>'
+      })
+      html += '</select></div>'
+
       html += '<div class="field"><label>Message text</label>'
       html += '<div class="composer-toolbar">'
       html += '<button type="button" class="btn-fmt" data-fmt="bold" title="Bold (*text*)"><b>B</b></button>'
@@ -350,8 +362,12 @@
       html += '<p class="flow-panel-hint">Use {{first_name}}, {{nama_bot}}, {{saldo}}, etc. Publish writes this to BotCopy.</p>'
       html += '<div class="field"><label>Copy key</label><input type="text" class="readonly" readonly value="' + escapeHtml(node.screen_key || '') + '"></div>'
     } else {
-      html += '<div class="field"><label>Action</label><input type="text" class="readonly" readonly value="' + escapeHtml(node.action || '') + '"></div>'
-      html += '<p class="flow-panel-hint">Action nodes open live catalog tools. Preview them with the Preview button. Kind cannot be changed here.</p>'
+      html += '<div class="field"><label>Action</label><select id="panelAction">'
+      ;(state.actions || []).forEach((a) => {
+        html += '<option value="' + escapeHtml(a) + '"' + (node.action === a ? ' selected' : '') + '>' + escapeHtml(a) + '</option>'
+      })
+      html += '</select></div>'
+      html += '<p class="flow-panel-hint">Action nodes open live catalog tools in the bot.</p>'
     }
 
     html += '<div class="field"><label>Description</label><input type="text" id="panelDescription" value="' + escapeHtml(node.description || '') + '"></div>'
@@ -525,8 +541,13 @@
     if (node.kind === 'screen') {
       const mediaEl = document.getElementById('panelMediaUrl')
       if (mediaEl) node.media_url = mediaEl.value.trim() || null
+      const mediaTypeEl = document.getElementById('panelMediaType')
+      if (mediaTypeEl) node.media_type = mediaTypeEl.value || 'photo'
       const bodyEl = document.getElementById('panelBody')
       if (bodyEl) node.body = bodyEl.value
+    } else {
+      const actionEl = document.getElementById('panelAction')
+      if (actionEl && node.kind === 'action') node.action = actionEl.value
     }
 
     const list = document.getElementById('panelButtonsBody')
@@ -684,10 +705,18 @@
   }
 
   function formatCaptionHtml(caption) {
-    let s = escapeHtml(caption || '')
+    if (!caption) return ''
+    let s = escapeHtml(caption)
     s = s.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
     s = s.replace(/_([^_\n]+)_/g, '<em>$1</em>')
     s = s.replace(/~([^~\n]+)~/g, '<s>$1</s>')
+    s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    s = s.replace(/\[(.*?)\]\((.*?)\)/g, function (_m, label, url) {
+      const trimmed = String(url).trim()
+      const ok = /^https?:\/\//i.test(trimmed) || /^tg:\/\//i.test(trimmed)
+      const href = ok ? encodeURI(trimmed).replace(/"/g, '&quot;') : '#'
+      return '<a href="' + href + '" target="_blank" rel="noopener">' + label + '</a>'
+    })
     return s
   }
 
@@ -772,6 +801,16 @@
     if (title) title.textContent = data.key || data.action || 'Preview'
     const cap = document.getElementById('previewCaption')
     if (cap) cap.innerHTML = formatCaptionHtml(data.caption || '')
+    const mediaEl = document.getElementById('previewMedia')
+    if (mediaEl) {
+      if (data.media_url) {
+        mediaEl.classList.remove('hidden')
+        mediaEl.innerHTML = '<img src="' + escapeHtml(data.media_url) + '" alt="" onerror="this.parentElement.classList.add(\'hidden\')">'
+      } else {
+        mediaEl.classList.add('hidden')
+        mediaEl.innerHTML = ''
+      }
+    }
     buildPreviewKeyboard(data.buttons || [])
   }
 
@@ -934,6 +973,35 @@
     }
   }
 
+  function renderEntryKeySelect() {
+    const sel = document.getElementById('entryKeySelect')
+    if (!sel || !state.draft) return
+    const cur = state.draft.entry_key || 'welcome'
+    sel.innerHTML = ''
+    const nodes = state.draft.nodes || []
+    const effective = nodes.some((n) => n.key === cur) ? cur : (nodes[0] && nodes[0].key)
+    for (const n of nodes) {
+      const opt = document.createElement('option')
+      opt.value = n.key
+      opt.textContent = n.key
+      if (n.key === effective) opt.selected = true
+      sel.appendChild(opt)
+    }
+    if (effective && state.draft.entry_key !== effective) state.draft.entry_key = effective
+  }
+
+  function bindEntryKeySelect() {
+    const sel = document.getElementById('entryKeySelect')
+    if (!sel) return
+    sel.addEventListener('change', function () {
+      if (state.draft) {
+        state.draft.entry_key = sel.value
+        renderCanvas()
+        setStatus('Entry node set to ' + sel.value, 'ok')
+      }
+    })
+  }
+
   function bindToolbar() {
     document.getElementById('btnSaveDraft').addEventListener('click', saveDraft)
     document.getElementById('btnPublish').addEventListener('click', publishDraft)
@@ -1001,11 +1069,13 @@
     editor.start()
     bindEditorEvents()
     bindToolbar()
+    bindEntryKeySelect()
 
     if (!state.draft || !state.draft.nodes || !state.draft.nodes.length) {
       if (!state.draft) state.draft = { nodes: [] }
       if (!state.draft.nodes) state.draft.nodes = []
       setStatus('No flow nodes configured — click + Message Node to start', 'ok')
+      renderEntryKeySelect()
       renderPanel()
       return
     }

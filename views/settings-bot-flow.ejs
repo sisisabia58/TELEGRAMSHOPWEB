@@ -25,6 +25,10 @@
                     <button type="button" id="btnFitView" class="btn btn-sm btn-secondary" title="Reset Zoom">⛶</button>
                 </div>
                 <button type="button" id="btnGlobalStrings" class="btn btn-secondary">Global Strings 🌐</button>
+                <label class="flow-entry-picker">
+                    Entry node
+                    <select id="entryKeySelect" aria-label="Flow entry node"></select>
+                </label>
                 <button type="button" id="btnSaveDraft" class="btn btn-secondary">Save draft</button>
                 <button type="button" id="btnPreview" class="btn">Preview</button>
                 <button type="button" id="btnPublish" class="btn btn-primary">Publish</button>
@@ -51,6 +55,7 @@
                     <span id="previewTitle">Preview</span>
                     <button type="button" id="previewClose" class="phone-close" aria-label="Close preview">×</button>
                 </div>
+                <div id="previewMedia" class="phone-media hidden"></div>
                 <div id="previewCaption" class="phone-caption"></div>
                 <div id="previewKeyboard" class="phone-keyboard"></div>
             </div>

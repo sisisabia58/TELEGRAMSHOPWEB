@@ -26,6 +26,8 @@
 | 9 — Copy err/btn | [2026-08-09-copy-err-btn.md](./2026-08-09-copy-err-btn.md) | **Done** |
 | 10 — Dashboard style polish (Semrush-inspired) | [2026-08-10-dashboard-style-polish.md](./2026-08-10-dashboard-style-polish.md) | **Done** |
 | 11 — Notification inbox (bell panel) | [2026-08-10-notification-inbox.md](./2026-08-10-notification-inbox.md) | **Done** |
+| 12 — Flow Builder Parity | [2026-08-16-flow-builder-parity.md](./2026-08-16-flow-builder-parity.md) | **Done** |
+| 13 — Flow Builder Graph CRUD | [2026-08-24-flow-builder-graph-crud.md](./2026-08-24-flow-builder-graph-crud.md) | **Done** |
 
 ## Why separate plans
 
