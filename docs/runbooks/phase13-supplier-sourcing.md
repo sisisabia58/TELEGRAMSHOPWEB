@@ -1,7 +1,9 @@
 # Phase 13 — Multi-Supplier Reseller Sourcing (runbook)
 
 **Status:** implemented on `phase13-multi-supplier-sourcing`
-**Migration:** `supabase/migrations/20260818000000_supplier_sourcing.sql` (additive; no `DROP`, no data rewrite)
+**Migrations:**
+- `supabase/migrations/20260818000000_supplier_sourcing.sql` (additive; no `DROP`, no data rewrite)
+- `supabase/migrations/20261016000000_restrict_supplier_rls.sql` (locks `Supplier*` to `service_role`; `anon` cannot read `api_key`)
 
 ## What this adds
 
@@ -69,22 +71,26 @@ npm test
 
 Then:
 
-1. Apply the migration (`supabase db push`, or paste the SQL in the Supabase SQL editor).
+1. Set `SUPABASE_KEY` to the **service-role** key (not the publishable/anon key).
+   The RLS migration denies `anon`/`authenticated` on `Supplier`, `SupplierProduct`,
+   and `SupplierOrder`. A publishable key after `db push` makes every supplier page,
+   sync job, and fulfillment query return empty.
+2. Apply the migrations (`supabase db push`, or paste the SQL in the Supabase SQL editor).
    Confirm `Varian.sumber` defaults to `'sendiri'` on all existing rows.
-2. `npm run dashboard` → **Catalog → Supplier → Tambah Supplier**, enter the Bite Store key.
-3. **Test koneksi** — must print the wallet balance, the **raw first product row**, and our
+3. `npm run dashboard` → **Catalog → Supplier → Tambah Supplier**, enter the Bite Store key.
+4. **Test koneksi** — must print the wallet balance, the **raw first product row**, and our
    normalized version of it. The published OpenAPI declares empty response schemas, so this is the
    check that our field mapping matches reality. Adjust `normalizeProductRow` if it doesn't.
-4. **Sync sekarang** → open the supplier's catalog page. Spot-check two rows against the formula above.
-5. Change the margin in **Supplier → Pengaturan** and reload — every IDR price moves at once.
-6. Remap one item, re-sync, confirm `mapping_mode` stayed `manual`.
-7. **Regression:** add stock manually and via bulk upload to a normal variant. Both must behave
+5. **Sync sekarang** → open the supplier's catalog page. Spot-check two rows against the formula above.
+6. Change the margin in **Supplier → Pengaturan** and reload — every IDR price moves at once.
+7. Remap one item, re-sync, confirm `mapping_mode` stayed `manual`.
+8. **Regression:** add stock manually and via bulk upload to a normal variant. Both must behave
    exactly as before, and that variant must still show its own price and its stock-picker screen.
-8. Bot: an auto-created supplier product appears in its category with the computed rupiah price;
+9. Bot: an auto-created supplier product appears in its category with the computed rupiah price;
    the per-row stock picker is replaced by a plain quantity picker.
-9. Mixed variant: displayed price is the cheaper of ours vs the supplier's; dropping our price below
-   theirs flips the winner and the purchase consumes a `Stok` row with no supplier call.
-10. Refund path: point a supplier `base_url` at an unreachable host, buy, and confirm saldo is
+10. Mixed variant: displayed price is the cheaper of ours vs the supplier's; dropping our price below
+    theirs flips the winner and the purchase consumes a `Stok` row with no supplier call.
+11. Refund path: point a supplier `base_url` at an unreachable host, buy, and confirm saldo is
     returned in full, the buyer is told, and the owner channel is notified.
 
 ## Bugs fixed along the way (were blocking every purchase)
