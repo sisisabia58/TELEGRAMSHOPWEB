@@ -6,6 +6,7 @@ const {
   applyWire,
   publishPlan,
   diffPublishPlan,
+  buildPublishRpcPayload,
   DEFAULT_FLOW_ACTIONS,
 } = require('../lib/flow-draft')
 
@@ -97,6 +98,47 @@ test('validateDraft rejects unknown action', () => {
   assert.ok(r.errors.some((e) => /action/i.test(e)))
 })
 
+test('validateDraft rejects duplicate screen_key across screen nodes', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes.push({
+    key: 'screen.custom_1',
+    kind: 'screen',
+    screen_key: 'screen.welcome',
+    body: 'Other',
+    pos_x: 0,
+    pos_y: 0,
+    buttons: [],
+    description: '',
+  })
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => /duplicate screen_key: screen\.welcome/.test(e)))
+})
+
+test('validateDraft accepts distinct screen_key values', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes.push({
+    key: 'screen.custom_1',
+    kind: 'screen',
+    screen_key: 'screen.custom_1',
+    body: 'Custom',
+    pos_x: 0,
+    pos_y: 0,
+    buttons: [],
+    description: '',
+  })
+  const r = validateDraft(d, { allowedActions: DEFAULT_FLOW_ACTIONS })
+  assert.equal(r.ok, true, r.errors.join('; '))
+})
+
+test('validateDraft rejects screen_key outside the screen-copy namespace', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].screen_key = 'msg.menu_cs'
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => /screen_key must start with screen\./.test(e)))
+})
+
 test('diffPublishPlan emits nodeDeletes for removed published keys', () => {
   const d = structuredClone(baseDraft)
   d.nodes = d.nodes.filter((n) => n.key !== 'saldo_menu')
@@ -130,6 +172,57 @@ test('diffPublishPlan emits copyInserts for new screen_key', () => {
 test('diffPublishPlan emits copyUpserts for existing screen keys', () => {
   const diff = diffPublishPlan(baseDraft, KEYS, ['screen.welcome', 'screen.saldo_menu'])
   assert.ok(diff.copyUpserts.some((c) => c.key === 'screen.welcome' && c.body === 'Hi {{first_name}}'))
+})
+
+test('diffPublishPlan does not overwrite message or button copy rows', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].screen_key = 'msg.menu_cs'
+  d.nodes[0].body = 'should not overwrite'
+  const diff = diffPublishPlan(d, KEYS, [
+    { key: 'msg.menu_cs', kind: 'msg' },
+    { key: 'screen.saldo_menu', kind: 'screen' },
+  ])
+  assert.ok(!diff.copyUpserts.some((c) => c.key === 'msg.menu_cs'))
+  assert.ok(!diff.copyInserts.some((c) => c.key === 'msg.menu_cs'))
+  assert.ok(diff.copyUpserts.some((c) => c.key === 'screen.saldo_menu'))
+})
+
+test('publishPlan includes blank screen bodies so new screens still get a BotCopy row', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes.push({
+    key: 'screen.custom_blank',
+    kind: 'screen',
+    screen_key: 'screen.custom_blank',
+    body: '',
+    pos_x: 0,
+    pos_y: 0,
+    buttons: [],
+    description: 'Blank screen',
+  })
+  const plan = publishPlan(d)
+  assert.deepEqual(
+    plan.copies.find((c) => c.key === 'screen.custom_blank'),
+    { key: 'screen.custom_blank', body: '' }
+  )
+  const diff = diffPublishPlan(d, KEYS, ['screen.welcome', 'screen.saldo_menu'])
+  assert.deepEqual(diff.copyInserts.find((c) => c.key === 'screen.custom_blank'), {
+    key: 'screen.custom_blank',
+    body: '',
+    description: 'Blank screen',
+  })
+})
+
+test('buildPublishRpcPayload maps a publish diff into rpc arguments', () => {
+  const d = structuredClone(baseDraft)
+  const diff = diffPublishPlan(d, KEYS, ['screen.welcome', 'screen.saldo_menu'])
+  const payload = buildPublishRpcPayload('flow-1', d, diff)
+  assert.equal(payload.p_flow_id, 'flow-1')
+  assert.equal(payload.p_draft, d)
+  assert.equal(payload.p_entry_key, 'welcome')
+  assert.deepEqual(payload.p_node_deletes, diff.nodeDeletes)
+  assert.equal(payload.p_node_upserts, diff.nodeUpserts)
+  assert.equal(payload.p_copy_inserts, diff.copyInserts)
+  assert.equal(payload.p_copy_upserts, diff.copyUpserts)
 })
 
 test('diffPublishPlan sets entryKey from draft', () => {

@@ -5901,9 +5901,13 @@ const FLOW_ACTIONS = [
 
 async function loadAllCopyByKey() {
   const copyByKey = {}
-  const { data: copies } = await supabase.from('BotCopy').select('key, body')
-  for (const row of copies || []) copyByKey[row.key] = row.body
-  return copyByKey
+  const existingCopies = []
+  const { data: copies } = await supabase.from('BotCopy').select('key, body, kind')
+  for (const row of copies || []) {
+    copyByKey[row.key] = row.body
+    existingCopies.push({ key: row.key, kind: row.kind })
+  }
+  return { copyByKey, existingCopies }
 }
 
 async function loadActiveFlowBundle() {
@@ -5913,15 +5917,15 @@ async function loadActiveFlowBundle() {
     .eq('is_active', true)
     .maybeSingle()
   if (error) throw error
-  if (!flow) return { flow: null, nodes: [], copyByKey: {} }
+  if (!flow) return { flow: null, nodes: [], copyByKey: {}, existingCopies: [] }
   const { data: nodes, error: nErr } = await supabase
     .from('BotFlowNode')
     .select('*')
     .eq('flow_id', flow.id)
     .order('key')
   if (nErr) throw nErr
-  const copyByKey = await loadAllCopyByKey()
-  return { flow, nodes: nodes || [], copyByKey }
+  const { copyByKey, existingCopies } = await loadAllCopyByKey()
+  return { flow, nodes: nodes || [], copyByKey, existingCopies }
 }
 
 app.get('/settings/bot-flow', isAuthenticated, async (req, res) => {
@@ -6110,7 +6114,7 @@ app.post('/api/bot-flow/preview-step', isAuthenticated, async (req, res) => {
 
 app.post('/api/bot-flow/publish', isAuthenticated, async (req, res) => {
   try {
-    const { flow, nodes, copyByKey } = await loadActiveFlowBundle()
+    const { flow, nodes, existingCopies } = await loadActiveFlowBundle()
     if (!flow) throw new Error('No active flow')
     const publishedKeys = nodes.map((n) => n.key)
     const draft = req.body.draft || flow.draft
@@ -6119,74 +6123,10 @@ app.post('/api/bot-flow/publish', isAuthenticated, async (req, res) => {
     const v = flowDraft.validateDraft(draft, { allowedActions: FLOW_ACTIONS })
     if (!v.ok) return res.status(400).json({ success: false, errors: v.errors })
 
-    const diff = flowDraft.diffPublishPlan(draft, publishedKeys, Object.keys(copyByKey))
-
-    if (diff.nodeDeletes.length) {
-      const { error } = await supabase
-        .from('BotFlowNode')
-        .delete()
-        .eq('flow_id', flow.id)
-        .in('key', diff.nodeDeletes)
-      if (error) throw error
-    }
-
-    for (const patch of diff.nodeUpserts) {
-      const row = {
-        flow_id: flow.id,
-        key: patch.key,
-        kind: patch.kind,
-        screen_key: patch.screen_key,
-        action: patch.action,
-        description: patch.description,
-        buttons: patch.buttons,
-        pos_x: patch.pos_x,
-        pos_y: patch.pos_y,
-        media_url: patch.media_url,
-        media_type: patch.media_type,
-        updated_at: new Date().toISOString(),
-      }
-      const isNew = !publishedKeys.includes(patch.key)
-      if (isNew) {
-        const { error } = await supabase.from('BotFlowNode').insert(row)
-        if (error) throw error
-      } else {
-        const { error } = await supabase
-          .from('BotFlowNode')
-          .update(row)
-          .eq('flow_id', flow.id)
-          .eq('key', patch.key)
-        if (error) throw error
-      }
-    }
-
-    for (const c of diff.copyInserts) {
-      const { error } = await supabase.from('BotCopy').insert({
-        key: c.key,
-        kind: 'screen',
-        body: c.body,
-        description: c.description || '',
-        variables: '[]',
-      })
-      if (error) throw error
-    }
-
-    for (const c of diff.copyUpserts) {
-      const { error } = await supabase
-        .from('BotCopy')
-        .update({ body: c.body, updated_at: new Date().toISOString() })
-        .eq('key', c.key)
-      if (error) throw error
-    }
-
-    const { error: flowUpdateError } = await supabase
-      .from('BotFlow')
-      .update({
-        draft,
-        draft_updated_at: new Date().toISOString(),
-        entry_key: diff.entryKey,
-      })
-      .eq('id', flow.id)
-    if (flowUpdateError) throw flowUpdateError
+    const diff = flowDraft.diffPublishPlan(draft, publishedKeys, existingCopies)
+    const payload = flowDraft.buildPublishRpcPayload(flow.id, draft, diff)
+    const { error } = await supabase.rpc('publish_bot_flow_graph', payload)
+    if (error) throw error
 
     await runtimeSettings.bump()
     res.json({ success: true })

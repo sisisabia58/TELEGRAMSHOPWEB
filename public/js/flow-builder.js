@@ -978,13 +978,16 @@
     if (!sel || !state.draft) return
     const cur = state.draft.entry_key || 'welcome'
     sel.innerHTML = ''
-    for (const n of state.draft.nodes || []) {
+    const nodes = state.draft.nodes || []
+    const effective = nodes.some((n) => n.key === cur) ? cur : (nodes[0] && nodes[0].key)
+    for (const n of nodes) {
       const opt = document.createElement('option')
       opt.value = n.key
       opt.textContent = n.key
-      if (n.key === cur) opt.selected = true
+      if (n.key === effective) opt.selected = true
       sel.appendChild(opt)
     }
+    if (effective && state.draft.entry_key !== effective) state.draft.entry_key = effective
   }
 
   function bindEntryKeySelect() {
