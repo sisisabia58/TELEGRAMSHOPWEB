@@ -46,21 +46,52 @@ function isTelegramFatal(err) {
     || msg.includes('EFATAL')
 }
 
+function onHarnessUnhandledRejection(err) {
+  if (isTelegramFatal(err)) return
+  console.error('unhandledRejection:', err && err.message ? err.message : err)
+  process.exitCode = 1
+}
+
+function onHarnessUncaughtException(err) {
+  if (isTelegramFatal(err)) return
+  // node:test already handled this exception. Rethrowing here exits the
+  // child with code 7 and skips the remaining files.
+  console.error('uncaughtException:', err && err.message ? err.message : err)
+  process.exitCode = 1
+}
+
 function attachHarnessRejectionGuard() {
   if (attachHarnessRejectionGuard.installed) return
   attachHarnessRejectionGuard.installed = true
-  process.on('unhandledRejection', (err) => {
-    if (isTelegramFatal(err)) return
-    console.error('unhandledRejection:', err && err.message ? err.message : err)
-    process.exitCode = 1
-  })
-  process.on('uncaughtException', (err) => {
-    if (isTelegramFatal(err)) return
-    // node:test already handled this exception. Rethrowing here exits the
-    // child with code 7 and skips the remaining files.
-    console.error('uncaughtException:', err && err.message ? err.message : err)
-    process.exitCode = 1
-  })
+  process.on('unhandledRejection', onHarnessUnhandledRejection)
+  process.on('uncaughtException', onHarnessUncaughtException)
+}
+
+function detachHarnessRejectionGuard() {
+  if (!attachHarnessRejectionGuard.installed) return
+  process.removeListener('unhandledRejection', onHarnessUnhandledRejection)
+  process.removeListener('uncaughtException', onHarnessUncaughtException)
+  attachHarnessRejectionGuard.installed = false
+}
+
+function captureFlowEngineEnv() {
+  return Object.prototype.hasOwnProperty.call(process.env, 'FLOW_ENGINE_ENABLED')
+    ? process.env.FLOW_ENGINE_ENABLED
+    : undefined
+}
+
+function restoreFlowEngineEnv(previous) {
+  if (previous === undefined) delete process.env.FLOW_ENGINE_ENABLED
+  else process.env.FLOW_ENGINE_ENABLED = previous
+}
+
+function releaseHarnessSideEffects(previousFlowEngine) {
+  delete process.env.BOT_TEST_FORCE_SETTINGS_POLL
+  delete process.env.BOT_TEST_SKIP_TELEGRAM_POLL
+  // applyTestEnv leaves an explicit true/false in place, so a start that set
+  // FLOW_ENGINE_ENABLED=true would otherwise leak into the next default start.
+  restoreFlowEngineEnv(previousFlowEngine)
+  detachHarnessRejectionGuard()
 }
 
 function applyTestEnv(apiBaseUrl) {
@@ -139,6 +170,7 @@ async function startBotHarness(options = {}) {
   let botModule = null
   let releaseInitialRefresh = () => {}
   const baseUrl = await api.listen()
+  const previousFlowEngine = captureFlowEngineEnv()
   try {
     applyTestEnv(baseUrl)
     attachHarnessRejectionGuard()
@@ -215,20 +247,24 @@ async function startBotHarness(options = {}) {
           await stopHarnessBot(botModule)
           releaseInitialRefresh()
         } finally {
-          delete process.env.BOT_TEST_FORCE_SETTINGS_POLL
-          delete process.env.BOT_TEST_SKIP_TELEGRAM_POLL
-          await api.close()
-          if (activeHarness === harness) activeHarness = null
+          try {
+            await api.close()
+          } finally {
+            releaseHarnessSideEffects(previousFlowEngine)
+            if (activeHarness === harness) activeHarness = null
+          }
         }
       },
     }
     activeHarness = harness
     return harness
   } catch (err) {
-    try { releaseInitialRefresh() } catch (_) { /* ignore */ }
-    delete process.env.BOT_TEST_FORCE_SETTINGS_POLL
-    delete process.env.BOT_TEST_SKIP_TELEGRAM_POLL
-    await cleanupFailedStart(botModule, api)
+    try {
+      try { releaseInitialRefresh() } catch (_) { /* ignore */ }
+      await cleanupFailedStart(botModule, api)
+    } finally {
+      releaseHarnessSideEffects(previousFlowEngine)
+    }
     throw err
   }
 }

@@ -5,31 +5,48 @@ const assert = require('node:assert/strict')
 const { startBotHarness, waitUntil } = require('./helpers/bot-harness')
 
 test('failed readiness wait closes the fake Telegram server', { timeout: 15000 }, async () => {
+  const flowBefore = process.env.FLOW_ENGINE_ENABLED
+  const uncaughtBefore = process.listenerCount('uncaughtException')
+  const rejectionBefore = process.listenerCount('unhandledRejection')
+
   await assert.rejects(
-    () => startBotHarness({ startupTimeoutMs: 0 }),
+    () => startBotHarness({ flowEnabled: true, startupTimeoutMs: 0 }),
     /timeout waiting for/
   )
+  assert.equal(process.env.FLOW_ENGINE_ENABLED, flowBefore)
+  assert.equal(process.listenerCount('uncaughtException'), uncaughtBefore)
+  assert.equal(process.listenerCount('unhandledRejection'), rejectionBefore)
 
   const harness = await startBotHarness({ flowEnabled: false, startupTimeoutMs: 8000 })
   try {
+    assert.equal(process.listenerCount('uncaughtException'), uncaughtBefore + 1)
+    assert.equal(process.listenerCount('unhandledRejection'), rejectionBefore + 1)
     assert.equal(typeof harness.bot, 'object')
     assert.ok(harness.api.server.listening)
   } finally {
     await harness.stop()
   }
   assert.equal(harness.api.server.listening, false)
+  assert.equal(process.env.FLOW_ENGINE_ENABLED, flowBefore)
+  assert.equal(process.listenerCount('uncaughtException'), uncaughtBefore)
+  assert.equal(process.listenerCount('unhandledRejection'), rejectionBefore)
 })
 
 test('startBotHarness after stop binds a new bot to a new fake API server', { timeout: 20000 }, async () => {
-  const first = await startBotHarness({ flowEnabled: false })
-  const firstPort = first.api.server.address().port
+  const flowBefore = process.env.FLOW_ENGINE_ENABLED
+  const first = await startBotHarness({ flowEnabled: true })
+  const firstServer = first.api.server
+  const firstBot = first.bot
   await first.stop()
-  assert.equal(first.api.server.listening, false)
+  assert.equal(firstServer.listening, false)
+  assert.equal(process.env.FLOW_ENGINE_ENABLED, flowBefore)
 
-  const second = await startBotHarness({ flowEnabled: false })
+  const second = await startBotHarness()
   try {
-    const secondPort = second.api.server.address().port
-    assert.notEqual(secondPort, firstPort)
+    const expectedFlow = flowBefore === 'true' || flowBefore === 'false' ? flowBefore : 'false'
+    assert.equal(process.env.FLOW_ENGINE_ENABLED, expectedFlow)
+    assert.notStrictEqual(second.api.server, firstServer)
+    assert.notStrictEqual(second.bot, firstBot)
     assert.ok(second.api.server.listening)
     second.api.pushMessage('/start')
     const photo = await second.api.waitForOutgoing((c) => c.method === 'sendPhoto')
