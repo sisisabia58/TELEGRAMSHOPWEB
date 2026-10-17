@@ -54,6 +54,14 @@ test('sapuan ketersediaan dilewati untuk katalog kosong, terpotong, atau anjlok'
   assert.equal(sync.bolehSapuKetersediaan({ fetched: 0, previousAvailable: 0, truncated: false }).ok, false)
 })
 
+test('sapuan ketersediaan dilewati kalau jumlah katalog lama tidak diketahui', () => {
+  const sync = muatSync()
+  const sapu = sync.bolehSapuKetersediaan({ fetched: 10, previousAvailable: null, truncated: false })
+  assert.equal(sapu.ok, false)
+  assert.match(sapu.alasan, /tidak diketahui/)
+  assert.equal(sync.bolehSapuKetersediaan({ fetched: 10, previousAvailable: 0, truncated: false }).ok, true)
+})
+
 test('fetchAllRows mengambil semua halaman berurutan berdasarkan id', async () => {
   const sync = muatSync()
   const halaman = [
