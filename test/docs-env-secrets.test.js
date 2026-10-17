@@ -1,7 +1,9 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 
 const AKAR = path.join(__dirname, '..')
 const LEWATI_DIR = new Set(['node_modules', '.git', '.supabase', 'Database'])
@@ -16,10 +18,10 @@ const EKSTENSI = new Set([
   '.txt',
   '.sh',
 ])
-// Leading horizontal whitespace; optional horizontal whitespace after '=';
-// a non-whitespace value on the same line (dotenv trims unquoted values).
-const POLA_ASSIGN_ADMIN_USERNAME = /^[ \t]*ADMIN_USERNAME=[ \t]*\S/m
-const POLA_ASSIGN_ADMIN_PASSWORD = /^[ \t]*ADMIN_PASSWORD=[ \t]*\S/m
+// Dotenv: optional `export `, horizontal whitespace around '='.
+// A non-whitespace value on the same line counts (unquoted values are trimmed).
+const POLA_ASSIGN_ADMIN_USERNAME = /^[ \t]*(?:export[ \t]+)?ADMIN_USERNAME[ \t]*=[ \t]*\S/m
+const POLA_ASSIGN_ADMIN_PASSWORD = /^[ \t]*(?:export[ \t]+)?ADMIN_PASSWORD[ \t]*=[ \t]*\S/m
 const POLA_PLACEHOLDER_CONTOH = /^(?:[-–—])?$/
 
 function baca(...bagian) {
@@ -84,6 +86,10 @@ test('ADMIN_* assignment regex matches single-character and indented values', ()
   assert.match('ADMIN_PASSWORD= dummy-pass', POLA_ASSIGN_ADMIN_PASSWORD)
   assert.match('ADMIN_USERNAME=\tnot-a-real-user', POLA_ASSIGN_ADMIN_USERNAME)
   assert.match('ADMIN_PASSWORD=  fake-pass-xyz', POLA_ASSIGN_ADMIN_PASSWORD)
+  assert.match('ADMIN_PASSWORD = secret', POLA_ASSIGN_ADMIN_PASSWORD)
+  assert.match('ADMIN_USERNAME = secret', POLA_ASSIGN_ADMIN_USERNAME)
+  assert.match('export ADMIN_PASSWORD = secret', POLA_ASSIGN_ADMIN_PASSWORD)
+  assert.match('export ADMIN_USERNAME=secret', POLA_ASSIGN_ADMIN_USERNAME)
   assert.doesNotMatch('ADMIN_USERNAME=', POLA_ASSIGN_ADMIN_USERNAME)
   assert.doesNotMatch('ADMIN_PASSWORD=', POLA_ASSIGN_ADMIN_PASSWORD)
   assert.doesNotMatch('ADMIN_USERNAME=  ', POLA_ASSIGN_ADMIN_USERNAME)
@@ -101,20 +107,31 @@ test('docs and examples do not show a default username/password pair', () => {
   }
 })
 
+function assertTidakAdaAssignAdmin(berkas, teks) {
+  assert.doesNotMatch(
+    teks,
+    POLA_ASSIGN_ADMIN_USERNAME,
+    `${berkas} must not ship a concrete ADMIN_USERNAME`
+  )
+  assert.doesNotMatch(
+    teks,
+    POLA_ASSIGN_ADMIN_PASSWORD,
+    `${berkas} must not ship a concrete ADMIN_PASSWORD`
+  )
+}
+
 test('docs do not assign a concrete ADMIN_USERNAME or ADMIN_PASSWORD value', () => {
   for (const berkas of daftarSumber()) {
-    const teks = baca(berkas)
-    assert.doesNotMatch(
-      teks,
-      POLA_ASSIGN_ADMIN_USERNAME,
-      `${berkas} must not ship a concrete ADMIN_USERNAME`
-    )
-    assert.doesNotMatch(
-      teks,
-      POLA_ASSIGN_ADMIN_PASSWORD,
-      `${berkas} must not ship a concrete ADMIN_PASSWORD`
-    )
+    assertTidakAdaAssignAdmin(berkas, baca(berkas))
   }
+})
+
+test('documentation scan rejects ADMIN_PASSWORD with space before equals', () => {
+  const fixture = 'ADMIN_PASSWORD = secret'
+  assert.throws(
+    () => assertTidakAdaAssignAdmin('fixture', fixture),
+    /must not ship a concrete ADMIN_PASSWORD/
+  )
 })
 
 test('README example-cell checker rejects a concrete credential example', () => {
@@ -151,7 +168,10 @@ test('README ADMIN_USERNAME and ADMIN_PASSWORD example cells are placeholders', 
 test('source files have no quoted ADMIN_* env fallback', () => {
   // #47 removed the dashboard.js hardcoded env fallback. Empty credentials
   // now fail closed in lib/http-security.js resolveEnvAdminCredentials.
+  // The page-render smoke test defaults ADMIN_* when unset so it can log in
+  // locally. That is test setup, not the login fallback.
   for (const berkas of daftarSumber()) {
+    if (berkas === 'test/dashboard-page-render.test.js') continue
     const teks = baca(berkas)
     assert.doesNotMatch(
       teks,
@@ -181,6 +201,37 @@ test('settings.js secret env vars default to empty rather than a key', () => {
 
 test('dashboard.js refuses to boot in production without SESSION_SECRET', () => {
   const teks = baca('dashboard.js')
-  assert.match(teks, /SESSION_SECRET is required in production/)
-  assert.match(teks, /!sessionSecret && process\.env\.NODE_ENV === 'production'/)
+  const guard = teks.match(
+    /if \(!sessionSecret && process\.env\.NODE_ENV === 'production'\) \{[^}]*\}/
+  )
+  assert.ok(guard, 'production SESSION_SECRET guard must exist')
+  assert.match(guard[0], /SESSION_SECRET is required in production/)
+  assert.match(guard[0], /process\.exit\(1\)/)
+
+  // Require dashboard as a library from an empty directory. dotenv then finds
+  // no .env, require.main is not dashboard.js (no listen, no cron), and
+  // index.js (the Telegram poller) is never started.
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'dash-nosecret-'))
+  try {
+    const env = { ...process.env }
+    env.NODE_ENV = 'production'
+    env.SUPABASE_URL = 'http://127.0.0.1:54321'
+    env.SUPABASE_KEY = 'dummy'
+    delete env.SESSION_SECRET
+    delete env.TOKEN_BOT
+    delete env.ADMIN_USERNAME
+    delete env.ADMIN_PASSWORD
+    delete env.PAKASIR_API_KEY
+    delete env.PAKASIR_PROJECT
+    const hasil = spawnSync(
+      process.execPath,
+      ['-e', 'require(process.argv[1])', path.join(AKAR, 'dashboard.js')],
+      { cwd, env, encoding: 'utf8', timeout: 20000 }
+    )
+    assert.equal(hasil.status, 1, hasil.stderr || hasil.stdout || String(hasil.error))
+    assert.match(hasil.stderr || '', /SESSION_SECRET is required in production/)
+    assert.doesNotMatch(hasil.stdout || '', /Dashboard berjalan/)
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true })
+  }
 })
