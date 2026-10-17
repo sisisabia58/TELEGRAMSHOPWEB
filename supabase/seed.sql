@@ -1,26 +1,28 @@
 -- Local development seed for the Supabase CLI stack.
 --
--- Hosted Supabase auto-grants SELECT/INSERT/UPDATE/DELETE on new public tables
--- to the anon/authenticated/service_role roles via default privileges. The local
--- postgres image used by `supabase start` does not, so tables created by the
--- migrations end up with only Dxtm privileges and the app hits
--- "permission denied for table ...". These GRANTs make the local database behave
--- like a hosted Supabase project. This file only affects the local dev stack.
+-- The local postgres image does not auto-grant table rights the way hosted
+-- Supabase used to. The app talks to Postgres as service_role (lib/supabase.js),
+-- so local grants match 20261017000200: service_role only. Do not grant tables
+-- back to anon/authenticated — that would undo the lockdown after `supabase start`.
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 
-GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
-GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
+GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO service_role;
 
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO service_role;
 
--- The blanket GRANT ALL above matches hosted Supabase default privileges, but
--- Supplier.api_key is a third-party credential. Re-lock these tables after the
--- GRANT so the local stack matches the dedicated RLS migration: only
--- service_role (the Node dashboard/bot, which is the Express admin path) can
--- read or write them. Do not grant them back to anon/authenticated.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon, authenticated;
+
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated;
+
+-- Defense in depth for Supplier.api_key (already locked by 20261016000000).
 REVOKE ALL ON TABLE "Supplier", "SupplierProduct", "SupplierOrder" FROM anon, authenticated, PUBLIC;
 REVOKE SELECT (api_key) ON TABLE "Supplier" FROM anon, authenticated, PUBLIC;
 GRANT ALL ON TABLE "Supplier", "SupplierProduct", "SupplierOrder" TO service_role;
