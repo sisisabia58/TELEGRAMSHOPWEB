@@ -91,6 +91,7 @@
                             <%= vars.length ? vars.join(', ') : '—' %>
                         </p>
                         <form method="POST" action="/settings/bot-copy/<%= encodeURIComponent(row.key) %>">
+                            <%- include('partials/csrf') %>
                             <textarea name="body" class="form-textarea" rows="8" required><%= row.body %></textarea>
                             <button type="submit" class="btn btn-primary" style="margin-top: 10px;">Simpan</button>
                         </form>

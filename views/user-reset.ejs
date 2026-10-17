@@ -95,6 +95,7 @@
             </div>
 
             <form method="POST" action="/user/<%= user.id %>/reset">
+                <%- include('partials/csrf') %>
             <div class="checkbox-group">
             <label>
             <input type="checkbox" name="reset_saldo">

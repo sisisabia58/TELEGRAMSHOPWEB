@@ -171,6 +171,7 @@
                                                         menolong dan nama seperti x');alert(1);// bisa dieksekusi. Disimpan di
                                                         data-* lalu dibaca oleh handler yang tidak menginterpolasi data. %>
                                                     <form method="POST" action="/supplier/<%= s.id %>/hapus" class="form-hapus-supplier" style="display:inline" data-nama="<%= s.nama %>">
+                                                        <%- include('partials/csrf') %>
                                                         <button type="submit" class="btn-icon" title="Hapus"><svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg></button>
                                                     </form>
                                                 </div>

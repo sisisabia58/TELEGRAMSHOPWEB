@@ -33,6 +33,7 @@
             <div class="card">
                 <div class="card-body">
                     <form method="POST" action="/supplier/simpan">
+                        <%- include('partials/csrf') %>
                         <% if (supplier && supplier.id) { %>
                             <input type="hidden" name="id" value="<%= supplier.id %>">
                         <% } %>

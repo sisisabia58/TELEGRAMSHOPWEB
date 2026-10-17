@@ -46,7 +46,10 @@ Sistem toko digital berbasis **Telegram Bot** dengan **Dashboard Web** untuk men
 ### Keamanan
 - Login dengan session, bcrypt password
 - Role-based access (admin vs user dashboard)
-- Rate limiting login
+- Rate limiting login keyed on `req.ip` (trust proxy = 1)
+- CSRF token pada form session dan `fetch` POST
+- Helmet headers + `X-Powered-By` dimatikan
+- `/api/*` tanpa session → 401 JSON
 - Audit log & login history
 - Session secret konfigurasi via env
 
@@ -101,14 +104,14 @@ Salin `.env.example` ke `.env` dan isi nilai berikut:
 | `SUPABASE_KEY` | Service-role key Supabase (bukan anon/public) | `eyJhbGc...` |
 | `ARIEPULSA_APIKEY` | (Opsional) API key AriePulsa | - |
 | `JAM_BACKUP` | Jam jadwal backup (0–23) | `5` |
-| `ADMIN_USERNAME` | Username login dashboard (fallback) | `admin` |
-| `ADMIN_PASSWORD` | Password login dashboard (fallback) | `admin123` |
-| `SESSION_SECRET` | Secret untuk session (ganti di production) | string acak panjang |
+| `ADMIN_USERNAME` | Username login dashboard (env fallback; wajib jika belum ada row Admin) | — |
+| `ADMIN_PASSWORD` | Password login dashboard (env fallback; wajib jika belum ada row Admin) | — |
+| `SESSION_SECRET` | Secret untuk session (wajib di production) | — |
 | `PORT` | Port dashboard web | `3000` |
 | `TELEGRAM_API_URL` | (Opsional) Override API Telegram | default: `https://api.telegram.org` |
 
 **Penting:**
-- Jika sudah ada admin di tabel `Admin` (Supabase), login pakai data itu; kalau belum, sistem pakai `ADMIN_USERNAME` dan `ADMIN_PASSWORD` dari `.env`.
+- Login dashboard memakai tabel `Admin` (Supabase) terlebih dahulu. Jika tidak ada row yang cocok, fallback ke `ADMIN_USERNAME` dan `ADMIN_PASSWORD`. Kedua variabel itu **tidak punya default**; jika tidak di-set, fallback ditolak (fail closed) dan server menulis log error.
 - Di production wajib set `SESSION_SECRET` yang kuat dan jangan commit `.env`.
 - `SUPABASE_KEY` wajib **service-role** key. `POST /api/bot-flow/publish` memanggil RPC `publish_bot_flow_graph`, dan `EXECUTE` fungsi itu hanya di-GRANT ke `service_role`. Key anon/public membuat publish gagal. Ketentuan yang sama ada di `docs/runbooks/phase13-supplier-sourcing.md`.
 
@@ -195,7 +198,7 @@ TELEGRAMSHOPWEB/
 1. Buka browser: `http://localhost:3000`
 2. Login dengan:
    - **Admin dari database**: username & password yang sudah didaftarkan di tabel `Admin`.
-   - **Fallback**: `ADMIN_USERNAME` dan `ADMIN_PASSWORD` dari `.env` (default `admin` / `admin123`).
+   - **Fallback**: `ADMIN_USERNAME` dan `ADMIN_PASSWORD` dari environment (wajib di-set; tidak ada default).
 
 ### Menu utama
 
@@ -245,7 +248,7 @@ Setelah migrasi, buat admin pertama lewat **Dashboard** (jika ada fitur tambah a
 | Masalah | Solusi |
 |--------|--------|
 | Bot tidak merespons | Cek `TOKEN_BOT`, koneksi internet, dan log di konsol (`index.js`). |
-| Dashboard tidak bisa login | Pastikan migrasi Supabase sudah dijalankan; gunakan `ADMIN_USERNAME`/`ADMIN_PASSWORD` dari `.env` jika belum ada row di `Admin`. |
+| Dashboard tidak bisa login | Pastikan migrasi Supabase sudah dijalankan dan ada row di `Admin`, atau set `ADMIN_USERNAME` dan `ADMIN_PASSWORD`. Tidak ada kredensial default. |
 | Error Supabase / "relation does not exist" | Jalankan ulang file migrasi `20250207000000_complete_teleshop_schema.sql` di SQL Editor. |
 | Port 3000 sudah dipakai | Set `PORT=3001` (atau lain) di `.env`. |
 | Session hilang / logout terus | Set `SESSION_SECRET` di `.env`; di production pastikan nilainya unik dan rahasia. |

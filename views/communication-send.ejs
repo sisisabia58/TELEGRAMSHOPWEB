@@ -26,6 +26,7 @@
             <h2 style="margin-bottom: 20px;">Kirim Pesan ke User Tertentu</h2>
 
             <form method="POST" action="/communication/send">
+                <%- include('partials/csrf') %>
             <div style="margin-bottom: 20px;">
             <label style="display: block; margin-bottom: 8px; font-weight: bold;">User ID <span style="color: red;">*</span></label>
             <div style="display: flex; gap: 10px;">

@@ -1092,7 +1092,7 @@
     setStatus('Saving draft…')
     const res = await fetch('/api/bot-flow/draft', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ draft: state.draft }),
     })
     const data = await res.json()
@@ -1116,7 +1116,7 @@
     setStatus('Publishing…')
     const res = await fetch('/api/bot-flow/publish', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ draft: state.draft }),
     })
     const data = await res.json()
@@ -1217,7 +1217,7 @@
     const body = Object.assign({ draft: state.draft }, payload || {})
     const res = await fetch('/api/bot-flow/preview-step', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
     })
     const data = await res.json()
@@ -1297,10 +1297,10 @@
     }
     const res = await fetch('/settings/bot-flow/toggle', {
       method: 'POST',
-      headers: {
+      headers: csrfHeaders({
         'Content-Type': 'application/json',
         Accept: 'application/json',
-      },
+      }),
       body: JSON.stringify({ enabled: checked }),
     })
     const data = await res.json()
@@ -1648,7 +1648,7 @@
     try {
       const res = await fetch('/api/bot-copy', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ copy: updates }),
       })
       const data = await res.json()

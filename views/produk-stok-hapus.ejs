@@ -63,6 +63,7 @@
                     </div>
 
                     <form method="POST" action="<%= stokBase %>/hapus/<%= stokItem.id %>">
+                        <%- include('partials/csrf') %>
                         <div class="form-actions" style="display: flex; gap: 12px; margin-top: 30px;">
                             <button type="submit" class="btn btn-danger" style="flex: 1;">
                                 🗑️ Ya, Hapus Stok

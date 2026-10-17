@@ -8,7 +8,10 @@
 6. **Session env vars** (Railway → dashboard service → Variables):
    - `SESSION_SECRET` — required in production; app exits on boot if missing when `NODE_ENV=production`. Use a long random string (e.g. `openssl rand -hex 32`).
    - `SECURE_COOKIES` — optional override; set to `true` to force `Secure` cookies outside production. In production, secure cookies are enabled automatically (`NODE_ENV=production`).
-   - **Trust proxy:** `dashboard.js` sets `app.set('trust proxy', 1)` so Express treats Railway’s HTTPS reverse proxy as secure when setting `Secure` session cookies. If login fails after deploy, verify `SESSION_SECRET` is set, secure cookies are enabled, and the proxy trust setting is present.
+   - `ADMIN_USERNAME` / `ADMIN_PASSWORD` — required for env-fallback dashboard login when no matching `Admin` row exists. There are no hardcoded defaults; unset vars refuse fallback login.
+   - **Trust proxy:** `dashboard.js` sets `trust proxy` to 1 (one Railway hop) so `req.ip` and Secure cookies are correct. Login rate limiting keys on `req.ip` (not the raw `X-Forwarded-For` header). If login fails after deploy, verify `SESSION_SECRET` is set, secure cookies are enabled, and the proxy trust setting is present.
+
+See also: `docs/runbooks/dashboard-http-security.md`.
 
 See plan: `docs/superpowers/plans/2026-08-09-dashboard-ia-mobile.md`.
 

@@ -109,6 +109,7 @@
                                                         <span class="you-badge">(Anda)</span>
                                                     <% } else { %>
                                                         <form method="POST" action="/admin/users/hapus/<%= admin.id %>" style="display: inline;" onsubmit="return confirm('Yakin ingin menghapus admin ini?');">
+                                                            <%- include('partials/csrf') %>
                                                             <button type="submit" class="btn-icon" title="Hapus" style="background: none; border: none; cursor: pointer; padding: 0; font-size: inherit;">🗑️</button>
                                                         </form>
                                                     <% } %>

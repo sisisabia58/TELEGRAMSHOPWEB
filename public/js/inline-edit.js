@@ -2,7 +2,7 @@
 async function patchAndSwap(url, body, rowSelector) {
   const res = await fetch(url, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', Accept: 'text/html' },
+    headers: csrfHeaders({ 'Content-Type': 'application/json', Accept: 'text/html' }),
     body: JSON.stringify(body),
   })
   if (!res.ok) {

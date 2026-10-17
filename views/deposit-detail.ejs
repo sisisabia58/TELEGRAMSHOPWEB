@@ -196,11 +196,13 @@
                     <div class="detail-actions">
                         <% if (deposit.status === 'pending') { %>
                             <form method="POST" action="/deposit/<%= deposit.id %>/approve" style="display: inline;">
+                                <%- include('partials/csrf') %>
                                 <button type="submit" class="btn btn-success" onclick="return confirm('Yakin approve deposit ini? Saldo user akan ditambahkan.')">
                                     ✅ Approve
                                 </button>
                             </form>
                             <form method="POST" action="/deposit/<%= deposit.id %>/reject" style="display: inline;">
+                                <%- include('partials/csrf') %>
                                 <button type="submit" class="btn btn-danger" onclick="return confirm('Yakin tolak deposit ini?')">
                                     ❌ Tolak
                                 </button>
