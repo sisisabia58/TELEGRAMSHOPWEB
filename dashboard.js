@@ -23,6 +23,8 @@ const supplierAdapters = require('./lib/suppliers')
 const ejs = require('ejs')
 const { formatrupiah, formatTanggal } = require('./lib/format')
 const { buildOverviewModel, summarizeStock } = require('./lib/dashboard-overview')
+const { redactSecrets, secretUpdateRow, selectSupabaseTestKey, supabaseOriginChangeError } = require('./lib/secret-mask')
+const { requireRole, requireWriteAccess } = require('./lib/dashboard-auth')
 
 const app = express()
 
@@ -356,21 +358,6 @@ async function logActivity(req, action, entityType = null, entityId = null, deta
   }
 }
 
-// Middleware: Role-based access control
-const requireRole = (...roles) => {
-  return (req, res, next) => {
-    if (!req.session || !req.session.isLoggedIn) {
-      return res.redirect('/login')
-    }
-    
-    if (!req.session.role || !roles.includes(req.session.role)) {
-      return res.status(403).send('Akses ditolak. Anda tidak memiliki permission untuk halaman ini.')
-    }
-    
-    next()
-  }
-}
-
 // Middleware: Rate limiting sederhana
 const rateLimitMap = new Map()
 const rateLimit = (maxRequests = 5, windowMs = 15 * 60 * 1000) => {
@@ -528,6 +515,11 @@ app.post('/login', redirectIfAuthenticated, rateLimit(5, 15 * 60 * 1000), async 
     res.redirect('/login?error=server')
   }
 })
+
+// Block viewer (read-only) from every subsequent POST/PUT/PATCH/DELETE.
+// Login and the Pakasir webhook are registered above so they stay reachable.
+// Staff keeps operational writes; requireRole('admin') still gates admin-user routes.
+app.use(requireWriteAccess)
 
 // Route: Logout
 app.get('/logout', (req, res) => {
@@ -6215,7 +6207,7 @@ app.get('/settings/payment-gateway', isAuthenticated, async (req, res) => {
       username: req.session.username,
       currentPage: 'settings-payment-gateway',
       pageTitle: 'Payment Gateway Settings',
-      settings: settings,
+      settings: redactSecrets(settings, ['apiKey']),
       req: req
     })
   } catch (error) {
@@ -6236,7 +6228,7 @@ app.post('/api/settings/payment-gateway', isAuthenticated, async (req, res) => {
       qrisEnabled,
       saldoEnabled
     } = req.body
-    
+
     const updates = []
     
     // Payment gateway enabled
@@ -6245,11 +6237,9 @@ app.post('/api/settings/payment-gateway', isAuthenticated, async (req, res) => {
       setting_value: { value: enabled === 'true' || enabled === true }
     })
     
-    // API Key
-    updates.push({
-      setting_key: 'payment_gateway_api_key',
-      setting_value: { value: apiKey || '' }
-    })
+    // API Key — blank or masked omits the row so the stored secret is unchanged
+    const apiKeyUpdate = secretUpdateRow('payment_gateway_api_key', apiKey)
+    if (apiKeyUpdate) updates.push(apiKeyUpdate)
     
     // Project Slug
     updates.push({
@@ -6325,7 +6315,7 @@ app.get('/settings/supabase', isAuthenticated, async (req, res) => {
       username: req.session.username,
       currentPage: 'settings-supabase',
       pageTitle: 'Supabase Database Settings',
-      settings: settings,
+      settings: redactSecrets(settings, ['key', 'serviceKey']),
       req: req
     })
   } catch (error) {
@@ -6344,9 +6334,26 @@ app.post('/api/settings/supabase', isAuthenticated, async (req, res) => {
       enabled,
       connectionTimeout,
       retryAttempts,
-      retryDelay
+      retryDelay,
+      clearServiceKey: clearServiceKeyRaw,
     } = req.body
-    
+    const clearServiceKey = clearServiceKeyRaw === true || clearServiceKeyRaw === 'true'
+
+    // Compare origins only. Do not copy the fetched anon or service-role
+    // values into the upsert — they may be .env fallbacks.
+    const current = await getSupabaseSettings()
+    const originError = supabaseOriginChangeError({
+      submittedUrl: url,
+      storedUrl: current.url,
+      submittedKey: key,
+      submittedServiceKey: serviceKey,
+      clearServiceKey,
+      storedServiceKey: current.serviceKey,
+    })
+    if (originError) {
+      return res.status(400).json({ success: false, error: originError })
+    }
+
     const updates = []
     
     // Supabase URL
@@ -6355,17 +6362,14 @@ app.post('/api/settings/supabase', isAuthenticated, async (req, res) => {
       setting_value: { value: url || '' }
     })
     
-    // Supabase Key
-    updates.push({
-      setting_key: 'supabase_key',
-      setting_value: { value: key || '' }
-    })
+    // Supabase Key — blank or masked omits the row so the stored secret is unchanged
+    const keyUpdate = secretUpdateRow('supabase_key', key)
+    if (keyUpdate) updates.push(keyUpdate)
     
-    // Supabase Service Key (opsional)
-    updates.push({
-      setting_key: 'supabase_service_key',
-      setting_value: { value: serviceKey || '' }
-    })
+    // Service role key — blank or masked omits the row unless the admin
+    // explicitly clears it (clearServiceKey). A new typed key still wins.
+    const serviceKeyUpdate = secretUpdateRow('supabase_service_key', serviceKey, { clear: clearServiceKey })
+    if (serviceKeyUpdate) updates.push(serviceKeyUpdate)
     
     // Supabase Enabled
     updates.push({
@@ -6423,18 +6427,27 @@ app.post('/api/settings/supabase', isAuthenticated, async (req, res) => {
 // Route: Test Supabase Connection
 app.post('/api/settings/supabase/test', isAuthenticated, async (req, res) => {
   try {
-    const { url, key } = req.body
+    const stored = await getSupabaseSettings()
+    const url = req.body.url
+    // stored.key may be the SUPABASE_KEY env fallback. Reuse it only for the
+    // configured origin; never attach it to a request-supplied host.
+    const selection = selectSupabaseTestKey({
+      requestedUrl: url,
+      submittedKey: req.body.key,
+      storedUrl: stored.url,
+      storedKey: stored.key,
+    })
     
-    if (!url || !key) {
+    if (!url || !selection.key) {
       return res.status(400).json({ 
         success: false, 
-        error: 'URL dan API Key harus diisi' 
+        error: selection.error || 'URL dan API Key harus diisi' 
       })
     }
     
     // Create temporary Supabase client untuk test
     const { createClient } = require('@supabase/supabase-js')
-    const testClient = createClient(url, key)
+    const testClient = createClient(url, selection.key)
     
     // Test connection dengan query sederhana
     const { data, error } = await testClient

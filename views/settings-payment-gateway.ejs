@@ -177,11 +177,15 @@
                         
                         <div class="setting-item">
                             <label class="setting-label">API Key</label>
-                            <div class="setting-description">API Key dari halaman detail Proyek Pakasir.</div>
+                            <div class="setting-description">
+                                API Key dari halaman detail Proyek Pakasir.
+                                <% if (settings.apiKeySet) { %>Tersimpan (hanya petunjuk 4 karakter terakhir). Kosongkan atau biarkan nilai tertutup untuk tidak mengubah.<% } else { %>Belum diatur.<% } %>
+                            </div>
                             <div class="api-key-wrapper">
                                 <input type="password" name="apiKey" id="apiKeyInput" class="setting-input" 
                                     value="<%= settings.apiKey || '' %>" 
-                                    placeholder="Masukkan API Key Pakasir">
+                                    placeholder="<%= settings.apiKeySet ? 'Biarkan tertutup untuk tidak mengubah' : 'Masukkan API Key Pakasir' %>"
+                                    autocomplete="off">
                                 <button type="button" class="api-key-toggle" onclick="toggleApiKey()" aria-label="Toggle API Key visibility">
                                     👁️
                                 </button>
