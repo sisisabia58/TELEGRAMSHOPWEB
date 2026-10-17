@@ -16,12 +16,25 @@ const EKSTENSI = new Set([
   '.txt',
   '.sh',
 ])
-// Leading horizontal whitespace; a single non-whitespace value on the same line.
-const POLA_ASSIGN_ADMIN_USERNAME = /^[ \t]*ADMIN_USERNAME=\S/m
-const POLA_ASSIGN_ADMIN_PASSWORD = /^[ \t]*ADMIN_PASSWORD=\S/m
+// Leading horizontal whitespace; optional horizontal whitespace after '=';
+// a non-whitespace value on the same line (dotenv trims unquoted values).
+const POLA_ASSIGN_ADMIN_USERNAME = /^[ \t]*ADMIN_USERNAME=[ \t]*\S/m
+const POLA_ASSIGN_ADMIN_PASSWORD = /^[ \t]*ADMIN_PASSWORD=[ \t]*\S/m
+const POLA_PLACEHOLDER_CONTOH = /^(?:[-–—])?$/
 
 function baca(...bagian) {
   return fs.readFileSync(path.join(AKAR, ...bagian), 'utf8')
+}
+
+function selContohTabelEnv(markdown, namaVar) {
+  const baris = markdown.split(/\r?\n/).find((l) => {
+    const sel = l.split('|').map((s) => s.trim())
+    return sel[1] === `\`${namaVar}\``
+  })
+  assert.ok(baris, `missing markdown table row for ${namaVar}`)
+  const sel = baris.split('|').map((s) => s.trim())
+  assert.ok(sel.length >= 4, `table row for ${namaVar} must have an example cell`)
+  return sel[3]
 }
 
 function daftarSumber(dir = AKAR, acc = []) {
@@ -63,6 +76,10 @@ test('ADMIN_* assignment regex matches single-character and indented values', ()
   assert.match('  ADMIN_USERNAME=foo', POLA_ASSIGN_ADMIN_USERNAME)
   assert.match('\tADMIN_PASSWORD=bar', POLA_ASSIGN_ADMIN_PASSWORD)
   assert.match(' \tADMIN_USERNAME=z', POLA_ASSIGN_ADMIN_USERNAME)
+  // dotenv trims unquoted values, so a space after '=' is still a concrete assignment.
+  assert.match('ADMIN_PASSWORD= dummy-pass', POLA_ASSIGN_ADMIN_PASSWORD)
+  assert.match('ADMIN_USERNAME=\tnot-a-real-user', POLA_ASSIGN_ADMIN_USERNAME)
+  assert.match('ADMIN_PASSWORD=  fake-pass-xyz', POLA_ASSIGN_ADMIN_PASSWORD)
   assert.doesNotMatch('ADMIN_USERNAME=', POLA_ASSIGN_ADMIN_USERNAME)
   assert.doesNotMatch('ADMIN_PASSWORD=', POLA_ASSIGN_ADMIN_PASSWORD)
   assert.doesNotMatch('ADMIN_USERNAME=  ', POLA_ASSIGN_ADMIN_USERNAME)
@@ -94,6 +111,37 @@ test('docs do not assign a concrete ADMIN_USERNAME or ADMIN_PASSWORD value', () 
       `${berkas} must not ship a concrete ADMIN_PASSWORD`
     )
   }
+})
+
+test('README example-cell checker rejects a concrete credential example', () => {
+  const fixture = [
+    '| Variabel | Deskripsi | Contoh |',
+    '|----------|-----------|--------|',
+    '| `ADMIN_USERNAME` | Username login dashboard | `not-a-real-user` |',
+    '| `ADMIN_PASSWORD` | Password login dashboard | `fake-pass-xyz` |',
+  ].join('\n')
+  assert.doesNotMatch(
+    selContohTabelEnv(fixture, 'ADMIN_USERNAME'),
+    POLA_PLACEHOLDER_CONTOH
+  )
+  assert.doesNotMatch(
+    selContohTabelEnv(fixture, 'ADMIN_PASSWORD'),
+    POLA_PLACEHOLDER_CONTOH
+  )
+})
+
+test('README ADMIN_USERNAME and ADMIN_PASSWORD example cells are placeholders', () => {
+  const readme = baca('README.md')
+  assert.match(
+    selContohTabelEnv(readme, 'ADMIN_USERNAME'),
+    POLA_PLACEHOLDER_CONTOH,
+    'README ADMIN_USERNAME example cell must be a placeholder'
+  )
+  assert.match(
+    selContohTabelEnv(readme, 'ADMIN_PASSWORD'),
+    POLA_PLACEHOLDER_CONTOH,
+    'README ADMIN_PASSWORD example cell must be a placeholder'
+  )
 })
 
 test('files other than dashboard.js have no quoted ADMIN_* env fallback', () => {
