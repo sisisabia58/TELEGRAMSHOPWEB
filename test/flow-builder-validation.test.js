@@ -664,3 +664,82 @@ test('flow-builder JS highlights nodes, gates Save/Publish, and centres on list 
   assert.match(sync, /patchChangesNode\(node, patch\)/)
   assert.ok(sync.indexOf('patchChangesNode') < sync.lastIndexOf('applyPanelToDraft()'))
 })
+
+function endOfBalanced(source, openIndex) {
+  let depth = 0
+  let quote = null
+  for (let i = openIndex; i < source.length; i++) {
+    const ch = source[i]
+    if (quote) {
+      if (ch === '\\') {
+        i++
+        continue
+      }
+      if (ch === quote) quote = null
+      continue
+    }
+    if (ch === '"' || ch === '\'' || ch === '`') {
+      quote = ch
+      continue
+    }
+    if (ch === '/' && source[i + 1] === '/') {
+      const nl = source.indexOf('\n', i)
+      if (nl < 0) return source.length
+      i = nl
+      continue
+    }
+    if (ch === '/' && source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2)
+      if (end < 0) throw new Error('unterminated comment')
+      i = end + 1
+      continue
+    }
+    if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) return i + 1
+    }
+  }
+  throw new Error('unbalanced brace')
+}
+
+function extractFunction(source, name) {
+  const marker = 'function ' + name + '('
+  const start = source.indexOf(marker)
+  if (start < 0) throw new Error('missing function ' + name)
+  const open = source.indexOf('{', start)
+  return source.slice(start, endOfBalanced(source, open))
+}
+
+function focusHarness(selectedKey) {
+  const calls = []
+  const state = { selectedKey }
+  const focusValidationIssue = new Function('state', 'calls', [
+    'function syncPanelIntoDraft() { calls.push("sync") }',
+    'function selectNodeByKey(key) { calls.push("select:" + key) }',
+    'function centerOnNode(key) { calls.push("center:" + key) }',
+    'function closeValidationList() { calls.push("close") }',
+    extractFunction(fs.readFileSync(jsFile, 'utf8'), 'focusValidationIssue'),
+    'return focusValidationIssue',
+  ].join('\n'))(state, calls)
+  return { calls, focusValidationIssue }
+}
+
+test('focusValidationIssue syncs inspector edits before selecting a different node', () => {
+  const { calls, focusValidationIssue } = focusHarness('welcome')
+  focusValidationIssue({ nodeKey: 'product_list' })
+  assert.deepEqual(calls, ['sync', 'select:product_list', 'center:product_list', 'close'])
+})
+
+test('focusValidationIssue skips selectNodeByKey when the issue node is already selected', () => {
+  const { calls, focusValidationIssue } = focusHarness('welcome')
+  focusValidationIssue({ nodeKey: 'welcome' })
+  assert.deepEqual(calls, ['center:welcome', 'close'])
+})
+
+test('focusValidationIssue still closes the list when the issue has no node', () => {
+  const { calls, focusValidationIssue } = focusHarness('welcome')
+  focusValidationIssue({ message: 'entry_key required' })
+  focusValidationIssue(null)
+  assert.deepEqual(calls, ['close', 'close'])
+})

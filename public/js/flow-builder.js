@@ -587,7 +587,10 @@
 
   function focusValidationIssue(item) {
     if (item && item.nodeKey) {
-      selectNodeByKey(item.nodeKey)
+      if (item.nodeKey !== state.selectedKey) {
+        syncPanelIntoDraft()
+        selectNodeByKey(item.nodeKey)
+      }
       centerOnNode(item.nodeKey)
     }
     closeValidationList()
