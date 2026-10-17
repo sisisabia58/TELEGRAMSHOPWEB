@@ -279,8 +279,11 @@ test('unauthenticated /api/* requests return 401 JSON instead of a login redirec
 
 test('login form, head partial, and frontend fetch helpers include the CSRF token', () => {
   const login = fs.readFileSync(path.join(__dirname, '..', 'views', 'login.ejs'), 'utf8')
-  assert.match(login, /name="_csrf"/)
+  assert.match(login, /include\('partials\/csrf'\)|name="_csrf"/)
   assert.match(login, /csrf-token/)
+
+  const csrfPartial = fs.readFileSync(path.join(__dirname, '..', 'views', 'partials', 'csrf.ejs'), 'utf8')
+  assert.match(csrfPartial, /name="_csrf"/)
 
   const head = fs.readFileSync(path.join(__dirname, '..', 'views', 'partials', 'head.ejs'), 'utf8')
   assert.match(head, /name="csrf-token"/)
