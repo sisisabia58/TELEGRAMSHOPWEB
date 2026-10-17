@@ -57,17 +57,21 @@ test('.env.example leaves ADMIN_USERNAME and ADMIN_PASSWORD empty', () => {
   const teks = baca('.env.example')
   assert.match(teks, /^ADMIN_USERNAME=\s*$/m)
   assert.match(teks, /^ADMIN_PASSWORD=\s*$/m)
-  assert.match(teks, /Always set ADMIN_USERNAME and ADMIN_PASSWORD, or create an Admin row/)
-  assert.match(teks, /hardening PR #47/)
+  assert.match(teks, /No defaults: leaving these empty disables env fallback \(fail closed\)/)
+  assert.doesNotMatch(teks, /hardening PR #47/)
 })
 
-test('README and AGENTS.md tell operators to set env credentials until #47', () => {
+test('README and AGENTS.md describe fail-closed env-fallback login', () => {
   const readme = baca('README.md')
   const agents = baca('AGENTS.md')
-  assert.match(readme, /Selalu set kedua variabel itu, atau buat row Admin/)
-  assert.match(readme, /hardening PR #47/)
-  assert.match(agents, /Always set those env vars, or create an Admin row/)
-  assert.match(agents, /hardening PR #47/)
+  assert.match(readme, /tidak punya default/i)
+  assert.match(readme, /fallback ditolak \(fail closed\)/)
+  assert.match(readme, /wajib di-set; tidak ada default/)
+  assert.match(readme, /Tidak ada kredensial default/)
+  assert.match(agents, /no hardcoded default/i)
+  assert.match(agents, /env-fallback login is refused/)
+  assert.doesNotMatch(readme, /hardening PR #47|tiba di PR #47/)
+  assert.doesNotMatch(agents, /hardening PR #47/)
 })
 
 test('ADMIN_* assignment regex matches single-character and indented values', () => {
@@ -144,10 +148,10 @@ test('README ADMIN_USERNAME and ADMIN_PASSWORD example cells are placeholders', 
   )
 })
 
-test('files other than dashboard.js have no quoted ADMIN_* env fallback', () => {
-  // dashboard.js env-fallback strings are removed in PR #47; this PR does not touch that file.
+test('source files have no quoted ADMIN_* env fallback', () => {
+  // #47 removed the dashboard.js hardcoded env fallback. Empty credentials
+  // now fail closed in lib/http-security.js resolveEnvAdminCredentials.
   for (const berkas of daftarSumber()) {
-    if (berkas === 'dashboard.js') continue
     const teks = baca(berkas)
     assert.doesNotMatch(
       teks,
@@ -155,6 +159,16 @@ test('files other than dashboard.js have no quoted ADMIN_* env fallback', () => 
       `${berkas} must not hardcode an ADMIN_* fallback`
     )
   }
+})
+
+test('dashboard login refuses env fallback when credentials are empty', () => {
+  const dash = baca('dashboard.js')
+  const security = baca('lib/http-security.js')
+  assert.match(dash, /resolveEnvAdminCredentials\(\)/)
+  assert.match(dash, /if \(!envAdmin\)/)
+  assert.match(security, /function resolveEnvAdminCredentials/)
+  assert.match(security, /if \(!username \|\| !password\)/)
+  assert.match(security, /refusing env fallback login \(fail closed, no defaults\)/)
 })
 
 test('settings.js secret env vars default to empty rather than a key', () => {
