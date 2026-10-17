@@ -262,6 +262,8 @@ function createFakeTelegram(options = {}) {
         }
         await new Promise((r) => setTimeout(r, 20))
       }
+      const summary = this.outgoing().map((c) => `${c.method}:${textOf(c.params).slice(0, 40)}`).join(' | ')
+      throw new Error(`timeout waiting for Telegram idle. pending=${pending.length} seen: ${summary || '(none)'}`)
     },
   }
 }
