@@ -66,6 +66,10 @@
     if (redoBtn) redoBtn.disabled = !editorState.canRedo()
   }
 
+  function effectiveEntryKey() {
+    return FlowBuilderState.effectiveEntryKey(state.draft)
+  }
+
   function restoreSelectionAfterHistory() {
     if (state.selectedKey && getNode(state.selectedKey)) return
     const draft = state.draft
@@ -73,8 +77,7 @@
       state.selectedKey = null
       return
     }
-    const entry = draft.entry_key
-    state.selectedKey = getNode(entry) ? entry : draft.nodes[0].key
+    state.selectedKey = effectiveEntryKey()
   }
 
   function restoreFromHistory(next) {
@@ -148,7 +151,7 @@
   function nodeHtml(node) {
     const kindClass = node.kind === 'screen' ? 'screen' : 'action'
     const kindLabel = node.kind === 'screen' ? 'Message' : 'Action'
-    const entryKey = (state.draft && state.draft.entry_key) || 'welcome'
+    const entryKey = effectiveEntryKey()
     let html = '<div class="sp-card ' + kindClass + '" data-node-key="' + escapeHtml(node.key) + '">'
     if (node.key === entryKey) {
       html += '<span class="sp-start-pill">Start</span>'
@@ -228,10 +231,10 @@
     idToKey.clear()
     goOutputFlatIndices.clear()
 
+    const entryKey = effectiveEntryKey()
     for (const node of state.draft.nodes) {
       const inputs = 1
       const outputs = Math.max(countGoOutputs(node), node.kind === 'action' ? 0 : 0)
-      const entryKey = state.draft.entry_key || 'welcome'
       let nodeClass = node.kind === 'screen' ? 'flow-node-screen' : 'flow-node-action'
       if (node.key === entryKey) nodeClass += ' is-entry'
       const id = editor.addNode(
@@ -346,7 +349,7 @@
     const kindClass = node.kind === 'action' ? 'action' : ''
     const kindLabel = node.kind === 'screen' ? 'Message' : 'Action'
 
-    const isStart = !!(state.draft && state.draft.entry_key === node.key)
+    const isStart = effectiveEntryKey() === node.key
 
     let html = '<div class="flow-panel-head">'
     html += '<p class="flow-panel-kicker">Inspector</p>'
@@ -566,7 +569,7 @@
       btnDeleteNode.addEventListener('click', function () {
         const nodeKey = state.selectedKey
         if (!nodeKey) return
-        if (state.draft.entry_key === nodeKey) {
+        if (effectiveEntryKey() === nodeKey) {
           alert('Cannot delete the entry node ("' + nodeKey + '"). Change the entry node before deleting.')
           return
         }
@@ -878,7 +881,7 @@
     syncPositionsFromEditor()
     const modal = document.getElementById('previewModal')
     if (modal) modal.classList.remove('hidden')
-    previewGoto(state.draft.entry_key || 'welcome')
+    previewGoto(effectiveEntryKey() || 'welcome')
   }
 
   function closePreview() {
@@ -1032,10 +1035,9 @@
   function renderEntryKeySelect() {
     const sel = document.getElementById('entryKeySelect')
     if (!sel || !state.draft) return
-    const cur = state.draft.entry_key || 'welcome'
     sel.innerHTML = ''
     const nodes = state.draft.nodes || []
-    const effective = nodes.some((n) => n.key === cur) ? cur : (nodes[0] && nodes[0].key)
+    const effective = effectiveEntryKey()
     for (const n of nodes) {
       const opt = document.createElement('option')
       opt.value = n.key
@@ -1196,8 +1198,7 @@
 
     renderCanvas()
 
-    const entry = state.draft.entry_key || 'welcome'
-    selectNodeByKey(keyToId.has(entry) ? entry : state.draft.nodes[0].key)
+    selectNodeByKey(effectiveEntryKey())
     setStatus('Click a card to edit · Apply · Save draft · Preview', 'ok')
   }
 

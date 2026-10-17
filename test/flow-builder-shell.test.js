@@ -77,6 +77,7 @@ test('flow-builder CSS styles the dark top bar, palette, dotted canvas, Start pi
 test('flow-builder JS puts a Start pill on entry_key and refuses deleting that node (M7)', () => {
   const js = fs.readFileSync(jsFile, 'utf8')
   assert.match(js, /sp-start-pill/)
+  assert.match(js, /effectiveEntryKey/)
   assert.match(js, /node\.key === entryKey/)
   assert.match(js, /Cannot delete the entry node/)
   assert.match(js, /The Start node cannot be deleted/)
