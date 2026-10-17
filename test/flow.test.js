@@ -148,6 +148,53 @@ test('isEnabled reads runtime setting', () => {
   assert.equal(off.isEnabled(), false)
 })
 
+function recordingBot({ editCaptionThrows = false } = {}) {
+  const calls = []
+  return {
+    calls,
+    sendPhoto: async (chatId, photo, opts) => {
+      calls.push({ method: 'sendPhoto', chatId, media: photo, opts })
+    },
+    sendDocument: async (chatId, document, opts) => {
+      calls.push({ method: 'sendDocument', chatId, media: document, opts })
+    },
+    sendVideo: async (chatId, video, opts) => {
+      calls.push({ method: 'sendVideo', chatId, media: video, opts })
+    },
+    sendMessage: async (chatId, text, opts) => {
+      calls.push({ method: 'sendMessage', chatId, text, opts })
+    },
+    editMessageCaption: async (caption, opts) => {
+      if (editCaptionThrows) throw new Error('cannot edit caption')
+      calls.push({ method: 'editMessageCaption', caption, opts })
+    },
+    editMessageText: async (text, opts) => {
+      calls.push({ method: 'editMessageText', text, opts })
+    },
+  }
+}
+
+function mediaNode(media_type, media_url) {
+  return {
+    key: 'welcome',
+    kind: 'screen',
+    screen_key: 'screen.welcome',
+    media_url,
+    media_type,
+    buttons: [[{ label: 'Next', go: 'saldo_menu' }]],
+  }
+}
+
+function assertMediaSend(bot, method, mediaUrl, caption) {
+  assert.strictEqual(bot.calls.length, 1)
+  assert.strictEqual(bot.calls[0].method, method)
+  assert.strictEqual(bot.calls[0].chatId, 12345)
+  assert.strictEqual(bot.calls[0].media, mediaUrl)
+  assert.strictEqual(bot.calls[0].opts.caption, caption)
+  assert.strictEqual(bot.calls[0].opts.parse_mode, 'Markdown')
+  assert.equal(bot.calls[0].opts.reply_markup.inline_keyboard[0][0].callback_data, 'f:saldo_menu')
+}
+
 test('dispatchFlowScreen selects sendPhoto when media_url is present', async () => {
   const flow = muatFlow({ nodes: sampleNodes })
   let dispatchedMethod = null
@@ -162,7 +209,7 @@ test('dispatchFlowScreen selects sendPhoto when media_url is present', async () 
       dispatchedPayload = { chatId, text, opts }
     },
   }
-  const mediaNode = {
+  const photoNode = {
     key: 'welcome',
     kind: 'screen',
     screen_key: 'screen.welcome',
@@ -171,9 +218,83 @@ test('dispatchFlowScreen selects sendPhoto when media_url is present', async () 
     buttons: [],
   }
 
-  await flow.dispatchFlowScreen(mockBot, 12345, mediaNode, null, 'Welcome Text')
+  await flow.dispatchFlowScreen(mockBot, 12345, photoNode, null, 'Welcome Text')
   assert.strictEqual(dispatchedMethod, 'sendPhoto')
   assert.strictEqual(dispatchedPayload.photo, 'https://example.com/logo.jpg')
   assert.strictEqual(dispatchedPayload.opts.caption, 'Welcome Text')
+})
+
+test('dispatchFlowScreen selects sendDocument for document media and does not sendPhoto', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot()
+  const node = mediaNode('document', 'https://example.com/catalog.pdf')
+
+  await flow.dispatchFlowScreen(bot, 12345, node, null, 'Catalog PDF')
+
+  assertMediaSend(bot, 'sendDocument', 'https://example.com/catalog.pdf', 'Catalog PDF')
+  assert.equal(bot.calls.some((c) => c.method === 'sendPhoto'), false)
+})
+
+test('dispatchFlowScreen selects sendVideo for video media and does not sendPhoto', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot()
+  const node = mediaNode('video', 'https://example.com/intro.mp4')
+
+  await flow.dispatchFlowScreen(bot, 12345, node, null, 'Intro video')
+
+  assertMediaSend(bot, 'sendVideo', 'https://example.com/intro.mp4', 'Intro video')
+  assert.equal(bot.calls.some((c) => c.method === 'sendPhoto'), false)
+})
+
+test('dispatchFlowScreen photo node still uses sendPhoto', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot()
+  const node = mediaNode('photo', 'https://example.com/logo.jpg')
+
+  await flow.dispatchFlowScreen(bot, 12345, node, null, 'Welcome Text')
+
+  assertMediaSend(bot, 'sendPhoto', 'https://example.com/logo.jpg', 'Welcome Text')
+})
+
+test('dispatchFlowScreen inherited-name media_type falls back to sendPhoto', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot()
+  const node = mediaNode('constructor', 'https://example.com/logo.jpg')
+
+  await flow.dispatchFlowScreen(bot, 12345, node, null, 'Welcome Text')
+
+  assertMediaSend(bot, 'sendPhoto', 'https://example.com/logo.jpg', 'Welcome Text')
+})
+
+test('dispatchFlowScreen edit-fallback uses sendDocument for document media', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot({ editCaptionThrows: true })
+  const node = mediaNode('document', 'https://example.com/catalog.pdf')
+
+  await flow.dispatchFlowScreen(bot, 12345, node, 88, 'Catalog PDF')
+
+  assertMediaSend(bot, 'sendDocument', 'https://example.com/catalog.pdf', 'Catalog PDF')
+  assert.equal(bot.calls.some((c) => c.method === 'sendPhoto'), false)
+})
+
+test('dispatchFlowScreen edit-fallback uses sendVideo for video media', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot({ editCaptionThrows: true })
+  const node = mediaNode('video', 'https://example.com/intro.mp4')
+
+  await flow.dispatchFlowScreen(bot, 12345, node, 88, 'Intro video')
+
+  assertMediaSend(bot, 'sendVideo', 'https://example.com/intro.mp4', 'Intro video')
+  assert.equal(bot.calls.some((c) => c.method === 'sendPhoto'), false)
+})
+
+test('dispatchFlowScreen edit-fallback uses sendPhoto for photo media', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot({ editCaptionThrows: true })
+  const node = mediaNode('photo', 'https://example.com/logo.jpg')
+
+  await flow.dispatchFlowScreen(bot, 12345, node, 88, 'Welcome Text')
+
+  assertMediaSend(bot, 'sendPhoto', 'https://example.com/logo.jpg', 'Welcome Text')
 })
 
