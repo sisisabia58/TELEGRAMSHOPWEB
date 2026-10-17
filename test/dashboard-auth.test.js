@@ -64,6 +64,10 @@ function mountStubRoutes(app) {
   app.post('/api/bot-flow/preview-step', ok)
   app.post('/api/bot-flow/publish', ok)
   app.post('/settings/bot-flow/toggle', ok)
+  app.get('/api/bot-copy', ok)
+  app.get('/api/notifications/inbox', ok)
+  app.get('/api/notifications/counts', ok)
+  app.get('/api/notifications/stream', ok)
 
   app.get('/produk', okHtml)
   app.post('/produk/tambah', ok)
@@ -111,6 +115,11 @@ function mountStubRoutes(app) {
   app.post('/api/notifications/:id/read', ok)
   app.get('/logout', (_req, res) => res.status(200).send('logged-out'))
   app.get('/css/dashboard.css', (_req, res) => res.status(200).send('body{}'))
+  app.get('/js/nav.js', (_req, res) => res.status(200).send('/* js */'))
+  app.get('/favicon.ico', (_req, res) => res.status(200).send('ico'))
+  app.get('/produk.js', okHtml)
+  app.get('/admin/users.css', okHtml)
+  app.get('/settings/payment-gateway.png', okHtml)
 }
 
 function withSession(role, extras = {}) {
@@ -183,6 +192,26 @@ test('qa allowlist is deny-by-default and ignores trailing slashes and path tric
   assert.equal(isQaAllowed('POST', '/api/notifications/read-all'), true)
   assert.equal(isQaAllowed('POST', '/api/notifications/abc/read'), true)
   assert.equal(isQaAllowed('GET', '/css/dashboard.css'), true)
+  assert.equal(isQaAllowed('GET', '/js/nav.js'), true)
+  assert.equal(isQaAllowed('HEAD', '/css/dashboard.css'), true)
+  assert.equal(isQaAllowed('GET', '/favicon.ico'), true)
+  assert.equal(isQaAllowed('GET', '/api/notifications/inbox'), true)
+  assert.equal(isQaAllowed('GET', '/api/notifications/counts'), true)
+  assert.equal(isQaAllowed('GET', '/api/notifications/stream'), true)
+  assert.equal(isQaAllowed('GET', '/api/bot-copy'), true)
+
+  assert.equal(isQaAllowed('POST', '/api/bot-copy'), false)
+  assert.equal(isQaAllowed('GET', '/produk.js'), false)
+  assert.equal(isQaAllowed('GET', '/admin/users.css'), false)
+  assert.equal(isQaAllowed('GET', '/settings/payment-gateway.png'), false)
+  assert.equal(isQaAllowed('GET', '/api/bot-flow.js'), false)
+  assert.equal(isQaAllowed('POST', '/css/dashboard.css'), false)
+  assert.equal(isQaAllowed('POST', '/api/bot-flow/publish%3F/extra'), false)
+  assert.equal(isQaAllowed('GET', '/settings/bot-flow%3Ffoo'), false)
+  assert.equal(isQaAllowed('GET', '/api/bot-flow%23fragment'), false)
+  assert.equal(isQaAllowed('GET', '/settings/bot-flow?kind=all'), false)
+  assert.equal(isQaAllowed('GET', '/css/dashboard.css%3Fv=1'), false)
+  assert.equal(isQaAllowed('GET', '/settings//bot-flow'), true)
 
   assert.equal(isQaAllowed('GET', '/settings/bot-flow/toggle'), false)
   assert.equal(isQaAllowed('POST', '/settings/bot-flow/toggle'), false)
@@ -266,6 +295,12 @@ test('qa is allowed on home, flow builder, publish, and #45 self-service routes'
     assert.equal((await postJson(port, '/api/notifications/n1/read')).status, 200)
     assert.equal((await request(port, '/logout')).status, 200)
     assert.equal((await request(port, '/css/dashboard.css')).status, 200)
+    assert.equal((await request(port, '/js/nav.js')).status, 200)
+    assert.equal((await request(port, '/favicon.ico')).status, 200)
+    assert.equal((await request(port, '/api/notifications/inbox')).status, 200)
+    assert.equal((await request(port, '/api/notifications/counts')).status, 200)
+    assert.equal((await request(port, '/api/notifications/stream')).status, 200)
+    assert.equal((await request(port, '/api/bot-copy')).status, 200)
   } finally {
     await new Promise((resolve) => server.close(resolve))
   }
@@ -297,6 +332,13 @@ test('qa is forbidden on catalog, money, settings, comms, and admin-management r
     ['POST', '/admin/users/tambah'],
     ['POST', '/settings/bot-flow/toggle'],
     ['GET', '/settings/bot-flow/toggle'],
+    ['POST', '/api/bot-copy'],
+    ['GET', '/produk.js'],
+    ['GET', '/admin/users.css'],
+    ['GET', '/settings/payment-gateway.png'],
+    ['POST', '/api/bot-flow/publish%3F/extra'],
+    ['GET', '/settings/bot-flow%3Ffoo'],
+    ['GET', '/api/bot-flow%23fragment'],
   ]
   try {
     for (const [method, path] of forbidden) {
