@@ -422,6 +422,24 @@ test('SIS-55: kategori_menu, stok and riwayat also run from /start message conte
   }
 })
 
+test('SIS-55: empty kategori_menu from /start sends err.no_products as a message', () => {
+  const indexSrc = fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8')
+  const start = indexSrc.indexOf('async function openKategoriMenu')
+  const end = indexSrc.indexOf('\nasync function openStokBuyer', start)
+  const fn = indexSrc.slice(start, end)
+  assert.ok(start >= 0, 'openKategoriMenu is present')
+  const emptyStart = fn.indexOf('if (!Produk || Produk.length === 0)')
+  const emptyEnd = fn.indexOf('\n  const kategoriCount', emptyStart)
+  const empty = fn.slice(emptyStart, emptyEnd)
+  assert.ok(emptyStart >= 0 && emptyEnd > emptyStart, 'empty-product branch is present')
+
+  assert.match(empty, /if \(query\.id\)/)
+  assert.match(empty, /answerCallbackQuery\(query\.id/)
+  assert.match(empty, /err\.no_products/)
+  assert.match(empty, /else \{/)
+  assert.match(empty, /sendMessage\(query\.from\.id,\s*copy\.get\('err\.no_products'\)/)
+})
+
 test('SIS-55: product_card as /start entry falls back to legacy welcome', () => {
   const flow = muatFlow({ nodes: sampleNodes })
   const result = flow.resolveFlowAction('product_card', { msg: startMsg() })

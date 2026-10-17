@@ -2353,6 +2353,8 @@ async function openKategoriMenu(query) {
   if (!Produk || Produk.length === 0) {
     if (query.id) {
       await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_products'), show_alert: true })
+    } else {
+      await sendMessage(query.from.id, copy.get('err.no_products'))
     }
     return
   }
