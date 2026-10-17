@@ -408,6 +408,7 @@
 
   function validationDraft() {
     if (!state.draft) return { nodes: [], entry_key: '' }
+    if (!panelDirty) return state.draft
     const node = state.selectedKey ? getNode(state.selectedKey) : null
     if (!node || !document.getElementById('panelApply')) return state.draft
     const patch = readPanelPatch(node)

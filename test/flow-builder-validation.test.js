@@ -368,6 +368,9 @@ test('syncPanelIntoDraft applies the inspector only after a real edit', () => {
   const bind = js.slice(js.indexOf('const flowPanel = document.getElementById(\'flowPanel\')'), js.indexOf('document.getElementById(\'btnPreview\')'))
   assert.match(bind, /addEventListener\(\s*'input'[\s\S]*panelDirty = true/)
   assert.match(bind, /addEventListener\(\s*'change'[\s\S]*panelDirty = true/)
+  const validation = js.slice(js.indexOf('function validationDraft'), js.indexOf('function applyNodeHighlights'))
+  assert.match(validation, /if\s*\(\s*!panelDirty\s*\)\s*return state\.draft/)
+  assert.ok(validation.indexOf('!panelDirty') < validation.indexOf('readPanelPatch'))
 })
 
 test('flow-builder JS highlights nodes, gates Save/Publish, and centres on list click (M6)', () => {
