@@ -211,7 +211,8 @@ const adminRow = {
   password_hash: bcrypt.hashSync(password, 4),
 }
 const activeFlow = {
-  id: 'flow-1',
+  // publish_bot_flow_graph(p_flow_id uuid) rejects non-uuids before the RPC.
+  id: 'a0000000-0000-4000-8000-000000000001',
   name: 'Main',
   is_active: true,
   entry_key: 'welcome',
