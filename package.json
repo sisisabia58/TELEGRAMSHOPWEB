@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node --test",
+    "test": "node --experimental-test-isolation=process --test",
     "start": "concurrently \"node index.js\" \"node dashboard.js\"",
     "dashboard": "node dashboard.js",
     "dev": "concurrently \"node index.js\" \"node dashboard.js\"",
