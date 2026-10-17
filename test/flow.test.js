@@ -256,6 +256,16 @@ test('dispatchFlowScreen photo node still uses sendPhoto', async () => {
   assertMediaSend(bot, 'sendPhoto', 'https://example.com/logo.jpg', 'Welcome Text')
 })
 
+test('dispatchFlowScreen inherited-name media_type falls back to sendPhoto', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot()
+  const node = mediaNode('constructor', 'https://example.com/logo.jpg')
+
+  await flow.dispatchFlowScreen(bot, 12345, node, null, 'Welcome Text')
+
+  assertMediaSend(bot, 'sendPhoto', 'https://example.com/logo.jpg', 'Welcome Text')
+})
+
 test('dispatchFlowScreen edit-fallback uses sendDocument for document media', async () => {
   const flow = muatFlow({ nodes: sampleNodes })
   const bot = recordingBot({ editCaptionThrows: true })
