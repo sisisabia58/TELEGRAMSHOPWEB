@@ -1,9 +1,11 @@
 <% const activePage = typeof currentPage !== 'undefined' ? currentPage : '' %>
+<% const qaNav = typeof req !== 'undefined' && req.session && req.session.role === 'qa' %>
 <nav class="mobile-tabs" aria-label="Mobile primary">
   <a href="/" class="mobile-tab <%= activePage === 'dashboard' ? 'active' : '' %>">
     <svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg>
     <span>Overview</span>
   </a>
+  <% if (!qaNav) { %>
   <a href="/produk" class="mobile-tab <%= ['produk','stok','supplier','pricing','bulk'].includes(activePage) ? 'active' : '' %>">
     <svg class="icon" aria-hidden="true"><use href="#i-box"></use></svg>
     <span>Catalog</span>
@@ -12,6 +14,7 @@
     <svg class="icon" aria-hidden="true"><use href="#i-users"></use></svg>
     <span>Customers</span>
   </a>
+  <% } %>
   <a href="#" onclick="toggleSidebar(); return false;" class="mobile-tab <%= ['dashboard','produk','stok','supplier','pricing','bulk','user','deposit','transaksi','voucher'].includes(activePage) ? '' : 'active' %>">
     <svg class="icon" aria-hidden="true"><use href="#i-more-horizontal"></use></svg>
     <span>More</span>

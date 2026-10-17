@@ -88,6 +88,8 @@
                                                     <span class="status-badge status-success">Admin</span>
                                                 <% } else if (admin.role === 'staff') { %>
                                                     <span class="status-badge status-warning">Staff</span>
+                                                <% } else if (admin.role === 'qa') { %>
+                                                    <span class="status-badge status-info">QA</span>
                                                 <% } else { %>
                                                     <span class="status-badge status-info">Viewer</span>
                                                 <% } %>
