@@ -618,7 +618,7 @@
     textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end)
     textarea.focus()
     textarea.setSelectionRange(start + before.length, end + before.length)
-    textarea.dispatchEvent(new Event('input'))
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
   function insertVariable(varName) {
@@ -629,7 +629,7 @@
     textarea.value = textarea.value.substring(0, start) + varName + textarea.value.substring(end)
     textarea.focus()
     textarea.setSelectionRange(start + varName.length, start + varName.length)
-    textarea.dispatchEvent(new Event('input'))
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
   function renderPanel() {
