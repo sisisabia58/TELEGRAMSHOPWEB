@@ -47,6 +47,13 @@
   flex-wrap: wrap;
 }
 
+.flow-entry-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+}
+
 .zoom-controls {
   display: inline-flex;
   gap: 2px;
@@ -368,6 +375,10 @@
   z-index: 5;
 }
 
+.drawflow-node.is-entry .drawflow_content_node {
+  outline: 2px solid var(--teal-600, #0F766E);
+}
+
 .drawflow .drawflow-node .drawflow_content_node {
   width: auto !important;
   min-width: 240px;
@@ -583,6 +594,9 @@
 .phone-caption strong {
   font-weight: 700;
 }
+
+.phone-media img { width: 100%; max-height: 200px; object-fit: cover; border-radius: 8px 8px 0 0; }
+.phone-media.hidden { display: none; }
 
 .phone-keyboard {
   padding: 8px;

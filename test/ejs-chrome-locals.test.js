@@ -16,6 +16,18 @@ const baseLocals = {
   formatTanggal: (value) => new Date(value).toISOString(),
 }
 
+const SETTINGS_RESELLER = {
+  marginPersen: 10,
+  rounding: 500,
+  fxMode: 'auto',
+  fxRate: 16500,
+  fxBufferPersen: 2,
+  fxUpdatedAt: null,
+  syncIntervalMenit: 5,
+  kategoriDefault: 'reseller',
+  walletMinUsd: 5,
+}
+
 const cases = [
   {
     view: 'voucher.ejs',
@@ -54,7 +66,66 @@ const cases = [
       totalPengeluaran: 0,
     },
   },
+  // Fase 13 — halaman sumber stok ketiga, di grup nav Catalog.
+  {
+    view: 'supplier.ejs',
+    locals: {
+      currentPage: 'supplier',
+      pageTitle: 'Supplier Test',
+      suppliers: [],
+      statistik: {},
+      settings: SETTINGS_RESELLER,
+      adapters: [{ key: 'bitestore', label: 'Bite Store', defaultBaseUrl: 'https://contoh.test' }],
+      success: null,
+      error: null,
+    },
+  },
+  {
+    view: 'supplier-form.ejs',
+    locals: {
+      currentPage: 'supplier',
+      pageTitle: 'Tambah Supplier',
+      supplier: null,
+      adapters: [{ key: 'bitestore', label: 'Bite Store', defaultBaseUrl: 'https://contoh.test' }],
+      error: null,
+    },
+  },
+  {
+    view: 'supplier-produk.ejs',
+    locals: {
+      currentPage: 'supplier',
+      pageTitle: 'Katalog Supplier',
+      supplier: { id: 's1', nama: 'Seller A' },
+      produk: [],
+      varianList: [],
+      filter: 'all',
+      settings: SETTINGS_RESELLER,
+      success: null,
+      error: null,
+    },
+  },
+  {
+    view: 'supplier-pengaturan.ejs',
+    locals: {
+      currentPage: 'supplier',
+      pageTitle: 'Pengaturan Reseller',
+      settings: SETTINGS_RESELLER,
+      contoh: [{ usd: 1, idr: 18150 }],
+      success: null,
+      error: null,
+    },
+  },
 ]
+
+test('pengaturan reseller menjelaskan harga cadangan menyusul di sync berikutnya', async () => {
+  const html = await ejs.renderFile(
+    path.join(viewRoot, 'supplier-pengaturan.ejs'),
+    { ...baseLocals, currentPage: 'supplier', pageTitle: 'Pengaturan Reseller', settings: SETTINGS_RESELLER, contoh: [{ usd: 1, idr: 18150 }], success: null, error: null },
+    { views: [viewRoot] }
+  )
+  assert.match(html, /sinkronisasi berikutnya/)
+  assert.equal(html.includes('tidak pernah disimpan di database'), false)
+})
 
 test('authenticated views render topbarExtra from EJS locals', async () => {
   for (const testCase of cases) {
@@ -66,4 +137,93 @@ test('authenticated views render topbarExtra from EJS locals', async () => {
 
     assert.match(html, /href="\/sentinel-action"/, `${testCase.view} should render topbarExtra`)
   }
+})
+
+test('halaman supplier tidak pernah menuliskan api_key ke HTML', async () => {
+  const rahasia = 'bsk_RAHASIA_JANGAN_BOCOR_9f3a'
+  const supplier = {
+    id: 's1',
+    nama: 'Seller A',
+    adapter: 'bitestore',
+    base_url: 'https://bite-store-bot-production.up.railway.app',
+    api_key: rahasia,
+    prioritas: 0,
+    is_active: true,
+  }
+
+  const halaman = [
+    {
+      view: 'supplier.ejs',
+      locals: {
+        currentPage: 'supplier',
+        suppliers: [supplier],
+        statistik: { s1: { total: 1, terpetakan: 1 } },
+        settings: SETTINGS_RESELLER,
+        adapters: [{ key: 'bitestore', label: 'Bite Store', defaultBaseUrl: supplier.base_url }],
+        success: null,
+        error: null,
+      },
+    },
+    {
+      view: 'supplier-form.ejs',
+      locals: {
+        currentPage: 'supplier',
+        supplier,
+        adapters: [{ key: 'bitestore', label: 'Bite Store', defaultBaseUrl: supplier.base_url }],
+        error: null,
+      },
+    },
+    {
+      view: 'supplier-produk.ejs',
+      locals: {
+        currentPage: 'supplier',
+        supplier,
+        produk: [],
+        varianList: [],
+        filter: 'all',
+        settings: SETTINGS_RESELLER,
+        success: null,
+        error: null,
+      },
+    },
+  ]
+
+  for (const testCase of halaman) {
+    const html = await ejs.renderFile(
+      path.join(viewRoot, testCase.view),
+      { ...baseLocals, ...testCase.locals },
+      { views: [viewRoot] }
+    )
+    assert.equal(
+      html.includes(rahasia),
+      false,
+      `${testCase.view} tidak boleh memuat api_key`
+    )
+  }
+})
+
+test('laporan test koneksi dan sync memakai newline JS, dan menjaga d.balance', async () => {
+  const html = await ejs.renderFile(
+    path.join(viewRoot, 'supplier.ejs'),
+    {
+      ...baseLocals,
+      currentPage: 'supplier',
+      pageTitle: 'Supplier Test',
+      suppliers: [],
+      statistik: {},
+      settings: SETTINGS_RESELLER,
+      adapters: [{ key: 'bitestore', label: 'Bite Store', defaultBaseUrl: 'https://contoh.test' }],
+      success: null,
+      error: null,
+    },
+    { views: [viewRoot] }
+  )
+
+  // Di sumber JS yang sampai ke browser, '\n' (satu backslash) adalah newline.
+  // '\\n' (dua backslash) tampil sebagai teks "\n" di dalam <pre>.
+  assert.match(html, /Koneksi berhasil\\n/)
+  assert.equal(html.includes('Koneksi berhasil\\\\n'), false)
+  assert.match(html, /Diambil: ' \+ l\.fetched \+ '\\n'/)
+  assert.match(html, /tidak tersedia/)
+  assert.match(html, /d\.balance\s*\?/)
 })

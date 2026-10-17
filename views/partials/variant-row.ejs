@@ -6,12 +6,33 @@
         <code><input type="text" class="form-input variant-field" data-field="kode" value="<%= variant.kode %>" pattern="[a-z0-9-]+" style="min-width:120px;font-family:monospace;"></code>
     </td>
     <td data-label="Harga">
-        <input type="number" class="form-input variant-field" data-field="harga" value="<%= variant.harga %>" min="0" style="width:100px;">
+        <% const dariSync = variant.sumber === 'supplier'; %>
+        <input type="number" class="form-input variant-field" data-field="harga" value="<%= variant.harga %>" min="0" style="width:100px;"
+               <%= dariSync ? 'readonly title="Harga varian ini dikelola sinkronisasi supplier (modal + margin + kurs). Ubah margin di Catalog → Supplier → Pengaturan."' : '' %>>
+        <% if (variant.punya_supplier && variant.harga_efektif !== null && variant.harga_efektif !== undefined && variant.harga_efektif !== variant.harga) { %>
+            <div style="font-size:12px;color:var(--color-muted);margin-top:4px;" title="Penawaran termurah yang tersedia saat ini">
+                jual: <%= typeof formatrupiah === 'function' ? formatrupiah(variant.harga_efektif) : variant.harga_efektif %>
+            </div>
+        <% } %>
+    </td>
+    <td data-label="Sumber">
+        <% if (dariSync) { %>
+            <span class="badge badge-warning" title="Produk ini dibuat otomatis oleh sinkronisasi supplier">supplier</span>
+        <% } else if (variant.punya_supplier) { %>
+            <span class="badge badge-success" title="Stok sendiri, ditambah penawaran dari supplier">sendiri + supplier</span>
+        <% } else { %>
+            <span class="badge badge-secondary">sendiri</span>
+        <% } %>
     </td>
     <td data-label="Stok">
         <% const stok = variant.stok_count !== undefined ? variant.stok_count : 0; %>
         <% const badgeClass = stok === 0 ? 'badge-danger' : (stok < 10 ? 'badge-warning' : 'badge-success'); %>
         <span class="badge <%= badgeClass %>"><%= stok %></span>
+        <% if (variant.punya_supplier && variant.stok_sendiri !== undefined) { %>
+            <div style="font-size:12px;color:var(--color-muted);margin-top:4px;">
+                <%= variant.stok_sendiri %> sendiri
+            </div>
+        <% } %>
     </td>
     <td data-label="Terjual"><%= variant.terjual || 0 %></td>
     <td data-label="Aktif">

@@ -15,3 +15,12 @@ GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
+
+-- The blanket GRANT ALL above matches hosted Supabase default privileges, but
+-- Supplier.api_key is a third-party credential. Re-lock these tables after the
+-- GRANT so the local stack matches the dedicated RLS migration: only
+-- service_role (the Node dashboard/bot, which is the Express admin path) can
+-- read or write them. Do not grant them back to anon/authenticated.
+REVOKE ALL ON TABLE "Supplier", "SupplierProduct", "SupplierOrder" FROM anon, authenticated, PUBLIC;
+REVOKE SELECT (api_key) ON TABLE "Supplier" FROM anon, authenticated, PUBLIC;
+GRANT ALL ON TABLE "Supplier", "SupplierProduct", "SupplierOrder" TO service_role;

@@ -1,0 +1,205 @@
+<%
+    breadcrumbs = [
+        { label: 'Home', href: '/' },
+        { label: 'Catalog', href: '/produk' },
+        { label: 'Supplier', href: '/supplier' },
+        { label: supplier.nama }
+    ];
+%>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <%- include('partials/head') %>
+    <style>
+        .table-card .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .catalog-meta { color: var(--color-muted); font-size: 14px; }
+        .price-cell { font-weight: 600; color: var(--color-text); }
+        .price-asal { color: var(--color-muted); font-size: 13px; }
+        .metric-tile .value.accent { color: var(--color-accent); }
+        .metric-tile .value.muted { color: var(--color-muted); }
+        .filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
+        .map-select { min-width: 240px; max-width: 320px; }
+        .sumber-note {
+            background: var(--color-surface-alt, rgba(0,0,0,.03));
+            border-left: 3px solid var(--color-accent);
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: var(--color-muted);
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <%- include('partials/sidebar') %>
+
+    <main class="main-content" id="main-content">
+        <%- include('partials/topbar') %>
+
+        <div class="container">
+            <%- include('partials/page-header', { breadcrumbs: breadcrumbs, pageHeaderActions: '' }) %>
+
+            <div class="sumber-note">
+                <strong>Pemetaan.</strong>
+                Sync mencocokkan nama produk supplier ke varian milik kita secara otomatis; kalau tidak ada padanan persis,
+                ia membuat produk baru supaya barangnya tetap langsung tayang.
+                Memilih varian di kolom <em>Petakan ke</em> menjadikannya <strong>manual</strong> — sejak itu sync tidak akan pernah menimpanya lagi.
+            </div>
+
+            <%
+                const tersedia = produk.filter(p => p.is_available);
+                const terpetakan = tersedia.filter(p => p.varian_id);
+                const manual = tersedia.filter(p => p.mapping_mode === 'manual');
+            %>
+            <div class="metric-strip">
+                <div class="metric-tile">
+                    <div class="label">Produk Tersedia</div>
+                    <div class="value"><%= tersedia.length %></div>
+                </div>
+                <div class="metric-tile">
+                    <div class="label">Terpetakan</div>
+                    <div class="value accent"><%= terpetakan.length %></div>
+                </div>
+                <div class="metric-tile">
+                    <div class="label">Pemetaan Manual</div>
+                    <div class="value"><%= manual.length %></div>
+                </div>
+                <div class="metric-tile">
+                    <div class="label">Margin + Buffer</div>
+                    <div class="value muted"><%= settings.marginPersen %>% + <%= settings.fxBufferPersen %>%</div>
+                </div>
+            </div>
+
+            <div class="card table-card">
+                <div class="card-header">
+                    <h2 class="card-title">Katalog <%= supplier.nama %></h2>
+                    <div class="filter-row">
+                        <a href="/supplier/<%= supplier.id %>/produk" class="btn <%= filter === 'all' ? 'btn-primary' : 'btn-secondary' %>">Semua</a>
+                        <a href="/supplier/<%= supplier.id %>/produk?filter=available" class="btn <%= filter === 'available' ? 'btn-primary' : 'btn-secondary' %>">Tersedia</a>
+                        <a href="/supplier/<%= supplier.id %>/produk?filter=unmapped" class="btn <%= filter === 'unmapped' ? 'btn-primary' : 'btn-secondary' %>">Belum dipetakan</a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Nama di Supplier</th>
+                                    <th>ID Eksternal</th>
+                                    <th>Modal</th>
+                                    <th>Harga Jual</th>
+                                    <th>Stok</th>
+                                    <th>Petakan ke</th>
+                                    <th>Mode</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (produk.length === 0) { %>
+                                    <tr>
+                                        <td colspan="7">
+                                            <div class="empty-state">
+                                                <div class="empty-state-icon">📦</div>
+                                                <div class="empty-state-title">Katalog masih kosong</div>
+                                                <div class="empty-state-description">Jalankan "Sync sekarang" di halaman Supplier untuk menarik katalog</div>
+                                                <a href="/supplier" class="empty-state-action">← Ke daftar supplier</a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% } else { %>
+                                    <% produk.forEach(p => { %>
+                                        <tr<%= p.is_available ? '' : ' style="opacity:.5"' %>>
+                                            <td>
+                                                <strong><%= p.nama %></strong>
+                                                <% if (!p.is_available) { %>
+                                                    <span class="badge badge-secondary" title="Tidak lagi muncul di katalog supplier">hilang</span>
+                                                <% } %>
+                                            </td>
+                                            <td><code><%= p.external_id %></code></td>
+                                            <td class="price-asal"><%= p.currency %> <%= p.harga_asal %></td>
+                                            <td class="price-cell">
+                                                <% if (p.harga_idr === null) { %>
+                                                    <span class="badge badge-danger" title="Kurs atau harga tidak valid — penawaran ini tidak akan pernah ditampilkan">gagal hitung</span>
+                                                <% } else { %>
+                                                    <%= formatrupiah(p.harga_idr) %>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <% if (p.in_stock && p.stok > 0) { %>
+                                                    <span class="badge badge-success"><%= p.stok %></span>
+                                                <% } else { %>
+                                                    <span class="badge badge-danger">habis</span>
+                                                <% } %>
+                                            </td>
+                                            <td>
+                                                <select class="form-control map-select" onchange="petakan('<%= p.id %>', this.value, this)">
+                                                    <option value="">— belum dipetakan —</option>
+                                                    <% if (p.varian_id && p.varian && p.varian.sumber === 'supplier') { %>
+                                                        <option value="<%= p.varian_id %>" selected>[dibuat sync] <%= p.varian_nama %></option>
+                                                    <% } %>
+                                                    <% varianList.forEach(v => { %>
+                                                        <option value="<%= v.id %>" <%= p.varian_id === v.id ? 'selected' : '' %>><%= v.label %></option>
+                                                    <% }) %>
+                                                </select>
+                                            </td>
+                                            <td>
+                                                <% if (p.mapping_mode === 'manual') { %>
+                                                    <span class="badge badge-success" title="Sync tidak akan menimpa pemetaan ini">manual</span>
+                                                <% } else if (p.mapping_mode === 'auto') { %>
+                                                    <span class="badge badge-secondary">auto</span>
+                                                <% } else { %>
+                                                    <span class="badge badge-warning">belum</span>
+                                                <% } %>
+                                            </td>
+                                        </tr>
+                                    <% }) %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <%- include('partials/mobile-tabs') %>
+
+    <script>
+        async function petakan(id, varianId, el) {
+            el.disabled = true;
+            try {
+                const r = await fetch('/api/supplier/produk/' + id + '/petakan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ varian_id: varianId || null })
+                });
+                const d = await r.json();
+                if (d.success) {
+                    if (window.toast) toast.success('Pemetaan disimpan sebagai manual', 'Berhasil');
+                    setTimeout(() => window.location.reload(), 800);
+                } else {
+                    if (window.toast) toast.error(d.message || 'Gagal memetakan', 'Error');
+                    el.disabled = false;
+                }
+            } catch (e) {
+                if (window.toast) toast.error(e.message, 'Error');
+                el.disabled = false;
+            }
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('open');
+        }
+    </script>
+</body>
+</html>
