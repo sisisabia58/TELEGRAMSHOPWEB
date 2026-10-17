@@ -351,9 +351,10 @@
     const scale = Number.isFinite(z) && z !== 0 ? z : 1
     const midX = Number(nodeRect.x) + Number(nodeRect.width || 0) / 2
     const midY = Number(nodeRect.y) + Number(nodeRect.height || 0) / 2
+    // Drawflow scales around the precanvas centre (default transform-origin).
     return {
-      canvas_x: Number(viewport.width) / 2 - midX * scale,
-      canvas_y: Number(viewport.height) / 2 - midY * scale,
+      canvas_x: (Number(viewport.width) / 2 - midX) * scale,
+      canvas_y: (Number(viewport.height) / 2 - midY) * scale,
     }
   }
 

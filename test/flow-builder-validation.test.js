@@ -280,14 +280,32 @@ test('clicking an issue exposes nodeKey so the editor can centre that node (M6)'
   assert.equal(pan.canvas_y, 600 / 2 - (80 + 120 / 2))
 })
 
-test('canvasPanToCenter accounts for zoom', () => {
+test('canvasPanToCenter scales the viewport-to-node offset for a centred origin', () => {
   const pan = canvasPanToCenter(
     { width: 1000, height: 800 },
     { x: 50, y: 50, width: 200, height: 100 },
     2
   )
-  assert.equal(pan.canvas_x, 500 - (50 + 100) * 2)
-  assert.equal(pan.canvas_y, 400 - (50 + 50) * 2)
+  const midX = 50 + 200 / 2
+  const midY = 50 + 100 / 2
+  assert.equal(pan.canvas_x, (1000 / 2 - midX) * 2)
+  assert.equal(pan.canvas_y, (800 / 2 - midY) * 2)
+
+  const zoomedOut = canvasPanToCenter(
+    { width: 1000, height: 800 },
+    { x: 50, y: 50, width: 200, height: 100 },
+    0.5
+  )
+  assert.equal(zoomedOut.canvas_x, (1000 / 2 - midX) * 0.5)
+  assert.equal(zoomedOut.canvas_y, (800 / 2 - midY) * 0.5)
+
+  const fallback = canvasPanToCenter(
+    { width: 1000, height: 800 },
+    { x: 50, y: 50, width: 200, height: 100 },
+    0
+  )
+  assert.equal(fallback.canvas_x, 1000 / 2 - midX)
+  assert.equal(fallback.canvas_y, 800 / 2 - midY)
 })
 
 test('isHttpUrl accepts http and https only', () => {
