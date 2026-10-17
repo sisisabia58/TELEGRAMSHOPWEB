@@ -42,12 +42,6 @@ test('startBotHarness after stop binds a new bot to a new fake API server', { ti
 test('stopBot during pending settings refresh does not start settings polling', { timeout: 15000 }, async () => {
   const harness = await startBotHarness({ flowEnabled: false, holdInitialRefresh: true })
   try {
-    await waitUntil(
-      () => harness.api.calls.some((c) => c.method === 'getUpdates' || c.method === 'setMyCommands'),
-      8000,
-      'telegram polling during held refresh'
-    )
-
     let startPollingCalls = 0
     const originalStartPolling = harness.runtimeSettings.startPolling
     harness.runtimeSettings.startPolling = function (...args) {

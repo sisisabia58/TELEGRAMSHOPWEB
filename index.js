@@ -83,6 +83,9 @@ runtimeSettings.refresh(true)
     await copy.refresh()
     await flow.refresh()
     if (bootSettingsPollGeneration !== settingsPollGeneration) return
+    // Harness skips polling unless a lifecycle test explicitly opts in so it
+    // can observe startPolling after a held boot refresh.
+    if (isBotTestHarness && process.env.BOT_TEST_FORCE_SETTINGS_POLL !== '1') return
     runtimeSettings.startPolling(10000, () => {
       copy.refresh().catch(() => {})
       flow.refresh().catch(() => {})
@@ -127,7 +130,7 @@ bot.setMyCommands([
 ]).then(() => {
   console.log('✅ Telegram bot commands set successfully')
 }).catch((err) => {
-  console.error('❌ Failed to set Telegram bot commands:', err)
+  console.error('❌ Failed to set Telegram bot commands:', err && err.message ? err.message : err)
 })
 // Enhanced error handling for polling errors
 bot.on("polling_error", (error) => {
@@ -140,7 +143,7 @@ bot.on("polling_error", (error) => {
   } else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET') {
     console.error("Connection timeout/reset - Akan retry otomatis...");
   } else {
-    console.error("Unknown polling error:", error);
+    console.error("Unknown polling error:", error && error.message ? error.message : error);
   }
 });
 

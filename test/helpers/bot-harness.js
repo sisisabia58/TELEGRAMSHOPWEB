@@ -36,6 +36,25 @@ function evictHarnessModules() {
   }
 }
 
+function isTelegramFatal(err) {
+  const code = err && err.code
+  const name = err && err.name
+  const msg = String((err && err.message) || err || '')
+  return code === 'EFATAL' || code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'ECONNRESET'
+    || name === 'RequestError'
+    || msg.includes('ECONNREFUSED')
+    || msg.includes('EFATAL')
+}
+
+function attachHarnessRejectionGuard() {
+  if (attachHarnessRejectionGuard.installed) return
+  attachHarnessRejectionGuard.installed = true
+  process.on('unhandledRejection', (err) => {
+    if (isTelegramFatal(err)) return
+    throw err
+  })
+}
+
 function applyTestEnv(apiBaseUrl) {
   process.env.BOT_TEST_HARNESS = '1'
   process.env.TOKEN_BOT = process.env.TOKEN_BOT || '123456:TESTTOKEN'
@@ -114,8 +133,11 @@ async function startBotHarness(options = {}) {
   const baseUrl = await api.listen()
   try {
     applyTestEnv(baseUrl)
+    attachHarnessRejectionGuard()
     if (options.flowEnabled === true) process.env.FLOW_ENGINE_ENABLED = 'true'
     if (options.flowEnabled === false) process.env.FLOW_ENGINE_ENABLED = 'false'
+    if (options.holdInitialRefresh) process.env.BOT_TEST_FORCE_SETTINGS_POLL = '1'
+    else delete process.env.BOT_TEST_FORCE_SETTINGS_POLL
 
     const supabase = createMemorySupabase(options.fixtures || defaultBotFixtures())
     evictHarnessModules()
@@ -173,6 +195,7 @@ async function startBotHarness(options = {}) {
           await stopHarnessBot(botModule)
           releaseInitialRefresh()
         } finally {
+          delete process.env.BOT_TEST_FORCE_SETTINGS_POLL
           await api.close()
           if (activeHarness === harness) activeHarness = null
         }
@@ -182,6 +205,7 @@ async function startBotHarness(options = {}) {
     return harness
   } catch (err) {
     try { releaseInitialRefresh() } catch (_) { /* ignore */ }
+    delete process.env.BOT_TEST_FORCE_SETTINGS_POLL
     await cleanupFailedStart(botModule, api)
     throw err
   }
