@@ -13,6 +13,15 @@ function sqlSetelahBaseline() {
     .join('\n\n')
 }
 
+// service_role harus jadi SATU-SATUNYA peran di klausa TO, bukan salah satu
+// di daftar. `TO service_role, anon` tetap mengandung kata service_role.
+function kebijakanServiceRoleSaja(tabel) {
+  return new RegExp(
+    `CREATE POLICY[^;]*ON "${tabel}"[^;]*\\bTO\\s+service_role\\b(?!\\s*,)[^;]*;`,
+    'i'
+  )
+}
+
 test('migrasi lanjutan mengunci RLS Supplier* ke service_role', () => {
   const sql = sqlSetelahBaseline()
   assert.ok(sql.trim().length > 0, 'harus ada migrasi baru setelah 20260818000000')
@@ -20,8 +29,8 @@ test('migrasi lanjutan mengunci RLS Supplier* ke service_role', () => {
   for (const tabel of ['Supplier', 'SupplierProduct', 'SupplierOrder']) {
     assert.match(
       sql,
-      new RegExp(`CREATE POLICY[^;]*ON "${tabel}"[^;]*TO service_role\\b[^;]*;`, 'i'),
-      `${tabel} harus punya kebijakan TO service_role`
+      kebijakanServiceRoleSaja(tabel),
+      `${tabel} harus punya kebijakan TO service_role saja`
     )
     assert.match(
       sql,
@@ -35,8 +44,18 @@ test('REVOKE SELECT(api_key) bukan pagar tahan lama; kebijakan RLS TO service_ro
   const sql = sqlSetelahBaseline()
   assert.match(
     sql,
-    /CREATE POLICY[^;]*ON "Supplier"[^;]*TO service_role\b[^;]*;/i,
+    kebijakanServiceRoleSaja('Supplier'),
     'perlindungan yang tahan GRANT SELECT ON TABLE adalah kebijakan RLS TO service_role, bukan REVOKE kolom'
+  )
+  assert.doesNotMatch(
+    `CREATE POLICY "campur" ON "Supplier" FOR ALL TO service_role, anon USING (true);`,
+    kebijakanServiceRoleSaja('Supplier'),
+    'TO service_role, anon bukan daftar peran yang hanya service_role'
+  )
+  assert.doesNotMatch(
+    `CREATE POLICY "campur" ON "Supplier" FOR ALL TO anon, service_role USING (true);`,
+    kebijakanServiceRoleSaja('Supplier'),
+    'service_role di belakang peran lain juga bukan daftar yang lengkap'
   )
   const sqlPalsu = `
 CREATE POLICY "Allow all for service role" ON "Supplier"
@@ -47,7 +66,7 @@ CREATE POLICY "Allow all for service role" ON "SupplierProduct"
 `
   assert.doesNotMatch(
     sqlPalsu,
-    /CREATE POLICY[^;]*ON "Supplier"[^;]*TO service_role\b[^;]*;/i,
+    kebijakanServiceRoleSaja('Supplier'),
     'TO service_role pada pernyataan SupplierProduct berikutnya tidak boleh memenuhi asersi Supplier'
   )
   const runbook = fs.readFileSync(
