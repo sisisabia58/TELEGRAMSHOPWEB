@@ -56,7 +56,10 @@ function attachHarnessRejectionGuard() {
   })
   process.on('uncaughtException', (err) => {
     if (isTelegramFatal(err)) return
-    throw err
+    // node:test already handled this exception. Rethrowing here exits the
+    // child with code 7 and skips the remaining files.
+    console.error('uncaughtException:', err && err.message ? err.message : err)
+    process.exitCode = 1
   })
 }
 
