@@ -109,7 +109,14 @@ test('dashboard GET settings handlers redact secrets before render, and saves ke
   assert.match(supabaseSave, /secretUpdateRow\(\s*'supabase_service_key'\s*,\s*serviceKey\s*,/)
   assert.match(supabaseSave, /clear:\s*clearServiceKey/)
   assert.doesNotMatch(supabaseSave, /resolveSecretInput/)
-  assert.doesNotMatch(supabaseSave, /getSupabaseSettings/)
+  // Origin comparison reads the stored URL. It must not write the fetched key back.
+  assert.match(supabaseSave, /getSupabaseSettings\s*\(/)
+  assert.match(supabaseSave, /supabaseOriginChangeError\s*\(/)
+  assert.doesNotMatch(supabaseSave, /current\.key/)
+  const guardAt = supabaseSave.indexOf('supabaseOriginChangeError')
+  const upsertAt = supabaseSave.indexOf('for (const update of updates)')
+  assert.ok(guardAt >= 0 && upsertAt > guardAt, 'origin check must run before the settings upsert')
+  assert.match(supabaseSave.slice(guardAt, upsertAt), /status\(400\)/)
 
   assert.match(supabaseTest, /selectSupabaseTestKey\s*\(/)
   assert.match(supabaseTest, /storedUrl:\s*stored\.url/)

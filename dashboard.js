@@ -22,7 +22,7 @@ const supplierAdapters = require('./lib/suppliers')
 const ejs = require('ejs')
 const { formatrupiah, formatTanggal } = require('./lib/format')
 const { buildOverviewModel, summarizeStock } = require('./lib/dashboard-overview')
-const { redactSecrets, secretUpdateRow, selectSupabaseTestKey } = require('./lib/secret-mask')
+const { redactSecrets, secretUpdateRow, selectSupabaseTestKey, supabaseOriginChangeError } = require('./lib/secret-mask')
 const { requireRole, requireWriteAccess } = require('./lib/dashboard-auth')
 
 const app = express()
@@ -6335,6 +6335,21 @@ app.post('/api/settings/supabase', isAuthenticated, async (req, res) => {
       clearServiceKey: clearServiceKeyRaw,
     } = req.body
     const clearServiceKey = clearServiceKeyRaw === true || clearServiceKeyRaw === 'true'
+
+    // Compare origins only. Do not copy the fetched anon or service-role
+    // values into the upsert — they may be .env fallbacks.
+    const current = await getSupabaseSettings()
+    const originError = supabaseOriginChangeError({
+      submittedUrl: url,
+      storedUrl: current.url,
+      submittedKey: key,
+      submittedServiceKey: serviceKey,
+      clearServiceKey,
+      storedServiceKey: current.serviceKey,
+    })
+    if (originError) {
+      return res.status(400).json({ success: false, error: originError })
+    }
 
     const updates = []
     

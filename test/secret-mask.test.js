@@ -7,6 +7,7 @@ const {
   resolveSecretInput,
   secretUpdateRow,
   selectSupabaseTestKey,
+  supabaseOriginChangeError,
 } = require('../lib/secret-mask')
 
 const PAKASIR = 'pakasir-live-SUPERSECRETVALUE-9xK2'
@@ -237,4 +238,136 @@ test('a stored Supabase key is reused only when the requested origin matches', (
   assert.equal(otherExplicit.reused, false)
   assert.equal(otherExplicit.key, explicit)
   assert.equal(otherExplicit.key.includes(storedKey), false)
+})
+
+test('a Supabase URL origin change rejects a blank or masked key that would be kept', () => {
+  const storedUrl = 'https://project-ref.supabase.co'
+  const maskedAnon = maskSecret(SUPABASE_ANON).masked
+  const maskedService = maskSecret(SERVICE_ROLE).masked
+  const typedAnon = 'typed-anon-key-dummy'
+  const typedService = 'typed-service-role-dummy'
+
+  for (const submittedKey of ['', '   ', null, undefined, maskedAnon]) {
+    const error = supabaseOriginChangeError({
+      submittedUrl: 'https://other.supabase.co',
+      storedUrl,
+      submittedKey,
+      submittedServiceKey: typedService,
+      clearServiceKey: false,
+      storedServiceKey: SERVICE_ROLE,
+    })
+    assert.equal(error, 'API Key harus diisi ulang saat origin URL Supabase diubah')
+    assert.equal(String(error).includes(SUPABASE_ANON), false)
+    assert.equal(String(error).includes(SERVICE_ROLE), false)
+  }
+
+  // Same origin, including path, slash, query, and surrounding space, keeps
+  // the existing "omit the secret row" behaviour.
+  for (const submittedUrl of [
+    storedUrl,
+    `${storedUrl}/`,
+    `${storedUrl}/rest/v1`,
+    `${storedUrl}?x=1`,
+    `  ${storedUrl}  `,
+  ]) {
+    assert.equal(supabaseOriginChangeError({
+      submittedUrl,
+      storedUrl,
+      submittedKey: '',
+      submittedServiceKey: '',
+      storedServiceKey: SERVICE_ROLE,
+    }), null, submittedUrl)
+    assert.equal(supabaseOriginChangeError({
+      submittedUrl,
+      storedUrl,
+      submittedKey: maskedAnon,
+      submittedServiceKey: maskedService,
+      storedServiceKey: SERVICE_ROLE,
+    }), null, submittedUrl)
+  }
+
+  const serviceMessage = 'Service Role Key harus diisi ulang atau dihapus saat origin URL Supabase diubah'
+  for (const submittedServiceKey of ['', '   ', null, maskedService]) {
+    assert.equal(supabaseOriginChangeError({
+      submittedUrl: 'https://other.supabase.co',
+      storedUrl,
+      submittedKey: typedAnon,
+      submittedServiceKey,
+      clearServiceKey: false,
+      storedServiceKey: SERVICE_ROLE,
+    }), serviceMessage)
+  }
+
+  // clearServiceKey or a newly typed service key may proceed. clearServiceKey
+  // does not waive a missing anon key.
+  assert.equal(supabaseOriginChangeError({
+    submittedUrl: 'https://other.supabase.co',
+    storedUrl,
+    submittedKey: typedAnon,
+    submittedServiceKey: '',
+    clearServiceKey: true,
+    storedServiceKey: SERVICE_ROLE,
+  }), null)
+  assert.equal(supabaseOriginChangeError({
+    submittedUrl: 'https://other.supabase.co',
+    storedUrl,
+    submittedKey: typedAnon,
+    submittedServiceKey: maskedService,
+    clearServiceKey: 'true',
+    storedServiceKey: SERVICE_ROLE,
+  }), null)
+  assert.equal(supabaseOriginChangeError({
+    submittedUrl: 'https://other.supabase.co',
+    storedUrl,
+    submittedKey: typedAnon,
+    submittedServiceKey: typedService,
+    clearServiceKey: false,
+    storedServiceKey: SERVICE_ROLE,
+  }), null)
+  assert.equal(supabaseOriginChangeError({
+    submittedUrl: 'https://other.supabase.co',
+    storedUrl,
+    submittedKey: '',
+    submittedServiceKey: '',
+    clearServiceKey: true,
+    storedServiceKey: SERVICE_ROLE,
+  }), 'API Key harus diisi ulang saat origin URL Supabase diubah')
+
+  // No stored service-role key means a blank field retains nothing.
+  for (const storedServiceKey of ['', '   ', null, undefined]) {
+    assert.equal(supabaseOriginChangeError({
+      submittedUrl: 'https://other.supabase.co',
+      storedUrl,
+      submittedKey: typedAnon,
+      submittedServiceKey: '',
+      clearServiceKey: false,
+      storedServiceKey,
+    }), null)
+  }
+
+  const both = supabaseOriginChangeError({
+    submittedUrl: 'https://attacker.example',
+    storedUrl,
+    submittedKey: maskedAnon,
+    submittedServiceKey: '',
+    storedServiceKey: SERVICE_ROLE,
+  })
+  assert.match(both, /API Key harus diisi ulang/)
+  assert.match(both, /Service Role Key harus diisi ulang atau dihapus/)
+  assert.equal(both.includes(SUPABASE_ANON), false)
+  assert.equal(both.includes(SERVICE_ROLE), false)
+
+  for (const submittedUrl of [
+    'http://project-ref.supabase.co',
+    'https://project-ref.supabase.co.evil.example',
+    'https://project-ref.supabase.co:8443',
+  ]) {
+    assert.equal(supabaseOriginChangeError({
+      submittedUrl,
+      storedUrl,
+      submittedKey: maskedAnon,
+      submittedServiceKey: typedService,
+      storedServiceKey: SERVICE_ROLE,
+    }), 'API Key harus diisi ulang saat origin URL Supabase diubah', submittedUrl)
+  }
 })

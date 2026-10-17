@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const http = require('node:http')
 const test = require('node:test')
 const express = require('express')
-const { requireRole, requireWriteAccess, canWrite, WRITE_METHODS } = require('../lib/dashboard-auth')
+const { requireRole, requireWriteAccess, canWrite, WRITE_METHODS, isExemptWrite } = require('../lib/dashboard-auth')
 
 function withSession(role) {
   const app = express()
@@ -93,12 +93,47 @@ test('staff may write operational routes but not admin-user management', async (
   }
 })
 
+test('isExemptWrite accepts case and trailing-slash variants and stays fail-closed', () => {
+  assert.equal(isExemptWrite('post', '/login/'), true)
+  assert.equal(isExemptWrite('POST', '/Admin/Change-Password'), true)
+  assert.equal(isExemptWrite('POST', '/webhook/pakasir/'), true)
+  assert.equal(isExemptWrite('POST', '/api/notifications/read-all/'), true)
+  assert.equal(isExemptWrite('POST', '/api/notifications/42/read'), true)
+  assert.equal(isExemptWrite('POST', '/API/Notifications/AbC/Read/'), true)
+  // The route template is covered by the notification regex, not a literal ":id" entry.
+  assert.equal(isExemptWrite('POST', '/api/notifications/:id/read'), true)
+
+  assert.equal(isExemptWrite('POST', '/api/settings/supabase'), false)
+  assert.equal(isExemptWrite('POST', '/api/settings/supabase/'), false)
+  assert.equal(isExemptWrite('POST', '/login/extra'), false)
+  assert.equal(isExemptWrite('GET', '/login'), false)
+  assert.equal(isExemptWrite('POST', ''), false)
+  assert.equal(isExemptWrite('POST', '/'), false)
+  assert.equal(isExemptWrite('POST', '/api/notifications//read'), false)
+})
+
 test('change-password remains available to a logged-in viewer (self-service)', async () => {
   const app = withSession('viewer')
   const { server, port } = await listen(app)
   try {
     const changed = await postJson(port, '/admin/change-password')
     assert.equal(changed.status, 200)
+    const slash = await postJson(port, '/admin/change-password/')
+    assert.equal(slash.status, 200)
+    const mixed = await postJson(port, '/Admin/Change-Password')
+    assert.equal(mixed.status, 200)
+  } finally {
+    await new Promise((resolve) => server.close(resolve))
+  }
+})
+
+test('a trailing slash does not exempt a viewer from a normal write route', async () => {
+  const app = withSession('viewer')
+  const { server, port } = await listen(app)
+  try {
+    const published = await postJson(port, '/api/bot-flow/publish/')
+    assert.equal(published.status, 403)
+    assert.equal(published.json.success, false)
   } finally {
     await new Promise((resolve) => server.close(resolve))
   }
