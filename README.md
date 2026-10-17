@@ -98,7 +98,7 @@ Salin `.env.example` ke `.env` dan isi nilai berikut:
 | `CHANNEL_STORE` | Link channel toko | `https://t.me/your_channel` |
 | `CS` | Link/username Customer Service | `https://t.me/your_cs` |
 | `SUPABASE_URL` | URL project Supabase | `https://xxx.supabase.co` |
-| `SUPABASE_KEY` | Anon/Service key Supabase | `eyJhbGc...` |
+| `SUPABASE_KEY` | Service-role key Supabase (bukan anon/public) | `eyJhbGc...` |
 | `ARIEPULSA_APIKEY` | (Opsional) API key AriePulsa | - |
 | `JAM_BACKUP` | Jam jadwal backup (0–23) | `5` |
 | `ADMIN_USERNAME` | Username login dashboard (fallback) | `admin` |
@@ -110,6 +110,7 @@ Salin `.env.example` ke `.env` dan isi nilai berikut:
 **Penting:**
 - Jika sudah ada admin di tabel `Admin` (Supabase), login pakai data itu; kalau belum, sistem pakai `ADMIN_USERNAME` dan `ADMIN_PASSWORD` dari `.env`.
 - Di production wajib set `SESSION_SECRET` yang kuat dan jangan commit `.env`.
+- `SUPABASE_KEY` wajib **service-role** key. `POST /api/bot-flow/publish` memanggil RPC `publish_bot_flow_graph`, dan `EXECUTE` fungsi itu hanya di-GRANT ke `service_role`. Key anon/public membuat publish gagal. Ketentuan yang sama ada di `docs/runbooks/phase13-supplier-sourcing.md`.
 
 ---
 
@@ -227,7 +228,7 @@ TELEGRAMSHOPWEB/
 ## 🗄️ Database (Supabase)
 
 1. Buat project di [Supabase](https://supabase.com).
-2. Di **Project Settings → API** ambil **Project URL** dan **anon/public** atau **service_role** key → isi `SUPABASE_URL` dan `SUPABASE_KEY` di `.env`.
+2. Di **Project Settings → API** ambil **Project URL** dan **service_role** key (bukan anon/public) → isi `SUPABASE_URL` dan `SUPABASE_KEY` di `.env`. Publish bot flow membutuhkan key ini karena RPC `publish_bot_flow_graph` tidak bisa dijalankan dengan key anon.
 3. Jalankan schema database:
    - Buka **SQL Editor** di dashboard Supabase.
    - Salin isi `supabase/migrations/20250207000000_complete_teleshop_schema.sql`.
