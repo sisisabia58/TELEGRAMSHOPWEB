@@ -42,3 +42,27 @@ test('flowEngineFlagState returns effective enabled plus a safe override flag', 
   const leaked = JSON.stringify(flowEngineFlagState(true, 'secret-value'))
   assert.equal(leaked.includes('secret-value'), false)
 })
+
+test('flowEngineFlagState without rawEnv reads process.env.FLOW_ENGINE_ENABLED', () => {
+  const prev = process.env.FLOW_ENGINE_ENABLED
+  try {
+    process.env.FLOW_ENGINE_ENABLED = 'false'
+    assert.deepEqual(flowEngineFlagState(true), {
+      enabled: false,
+      envOverride: 'forced off',
+    })
+    process.env.FLOW_ENGINE_ENABLED = 'true'
+    assert.deepEqual(flowEngineFlagState(false), {
+      enabled: true,
+      envOverride: 'forced on',
+    })
+    delete process.env.FLOW_ENGINE_ENABLED
+    assert.deepEqual(flowEngineFlagState(true), {
+      enabled: true,
+      envOverride: false,
+    })
+  } finally {
+    if (prev === undefined) delete process.env.FLOW_ENGINE_ENABLED
+    else process.env.FLOW_ENGINE_ENABLED = prev
+  }
+})

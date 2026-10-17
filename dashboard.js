@@ -5995,7 +5995,7 @@ app.get('/api/bot-flow', isAuthenticated, async (req, res) => {
       .eq('setting_key', 'flow_engine_enabled')
       .maybeSingle()
     const dbEnabled = !!(flag?.setting_value && flag.setting_value.value === true)
-    const { enabled, envOverride } = flowEngineFlagState(dbEnabled, process.env.FLOW_ENGINE_ENABLED)
+    const { enabled, envOverride } = flowEngineFlagState(dbEnabled)
     res.json({
       success: true,
       flow: flow ? {
