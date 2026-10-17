@@ -12,7 +12,7 @@
 | Topic | Decision |
 |-------|----------|
 | Validation | Graph integrity (unique keys, valid kinds, `entry_key` exists, `go` targets exist, actions in allowlist) plus screen `body` checks: non-empty, Telegram length (1024 caption / 4096 text), legacy Markdown |
-| Publish | Atomic `publish_bot_flow_graph` RPC. JS validates payload shape before `rpc()`; SQL re-checks types. 400 `{ errors: [{ key, reason }] }` on validation failure. |
+| Publish | Atomic `publish_bot_flow_graph` RPC. JS validates payload shape before `rpc()`; SQL re-checks types. Draft failures return 400 `{ errors: string[] }`. Payload-shape failures return 400 `{ errors: [{ key, reason }] }`. |
 | Publish diff | `diffPublishPlan` → nodeDeletes, nodeUpserts, copyInserts, copyUpserts, entryKey |
 | New screen nodes | INSERT `BotCopy` row (`kind: 'screen'`) on publish |
 | Deleted nodes | DELETE `BotFlowNode`; leave orphan `BotCopy` rows |

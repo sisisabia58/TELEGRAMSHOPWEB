@@ -32,7 +32,7 @@
 | `docs/superpowers/specs/2026-08-24-flow-builder-graph-crud-design.md` | Locked decisions + non-goals |
 | `lib/flow-draft.js` | Graph `validateDraft`, screen-text checks, `diffPublishPlan`, `buildPublishRpcPayload`, `validatePublishRpcPayload`, `DEFAULT_FLOW_ACTIONS` |
 | `test/flow-draft.test.js` | Unit tests for validation + diff + RPC payload shape |
-| `dashboard.js` | Draft/publish routes validate then call `publish_bot_flow_graph`; 400 JSON `{ errors: [{ key, reason }] }` |
+| `dashboard.js` | Draft/publish routes validate then call `publish_bot_flow_graph`. Draft failures return 400 `{ errors: string[] }` (same messages as `collectDraftIssues`). Payload-shape failures return 400 `{ errors: [{ key, reason }] }` |
 | `supabase/migrations/20260818000001_publish_bot_flow_graph.sql` | Atomic publish RPC (media columns + function) |
 | `supabase/migrations/20261017000100_validate_publish_bot_flow_graph.sql` | `CREATE OR REPLACE` with cheap payload-shape checks |
 | `public/js/flow-builder.js` | Action select, media type, entry picker, preview media |
@@ -299,7 +299,7 @@ git commit -m "feat(phase13): graph validateDraft and diffPublishPlan for flow C
 
 **Interfaces:**
 - Consumes: `flowDraft.validateDraft(draft, { allowedActions: FLOW_ACTIONS })`, `flowDraft.diffPublishPlan(draft, publishedKeys, existingCopies)`, `flowDraft.buildPublishRpcPayload(flow.id, draft, diff)`, `flowDraft.validatePublishRpcPayload(payload)`
-- Produces: working `POST /api/bot-flow/draft` and `POST /api/bot-flow/publish`. Publish applies the graph **atomically** via `publish_bot_flow_graph`. Validation failures return **400** `{ success: false, errors: [{ key, reason }] }`. Call `runtimeSettings.bump()` only after the RPC succeeds.
+- Produces: working `POST /api/bot-flow/draft` and `POST /api/bot-flow/publish`. Publish applies the graph **atomically** via `publish_bot_flow_graph`. `validateDraft` failures return **400** `{ success: false, errors: string[] }` (Phase 14 message strings, including screen-text reasons). `validatePublishRpcPayload` failures return **400** `{ success: false, errors: [{ key, reason }] }`. Call `runtimeSettings.bump()` only after the RPC succeeds.
 
 Shipped publish path (do **not** reintroduce per-row supabase-js writes):
 
@@ -335,7 +335,7 @@ app.post('/api/bot-flow/publish', isAuthenticated, async (req, res) => {
 })
 ```
 
-`validateDraft` now also rejects screen nodes whose `body` is empty, exceeds Telegram's 1024-character **caption** limit when `media_url` is set (4096 for plain text with no media), or is invalid legacy Markdown (`parse_mode: 'Markdown'`). The draft route uses the same `validateDraft` call and the same 400 JSON shape.
+`validateDraft` now also rejects screen nodes whose `body` is empty, exceeds Telegram's 1024-character **caption** limit when `media_url` is set (4096 for plain text with no media), or is invalid legacy Markdown (`parse_mode: 'Markdown'`). Those checks live in `collectDraftIssues`, so the canvas and the 400 response share one message list. The draft route returns that string list. Payload-shape failures stay `{ key, reason }` objects.
 
 Draft save (`POST /api/bot-flow/draft`) runs the same `validateDraft` and returns the same 400 shape; it does not bump runtime settings.
 
