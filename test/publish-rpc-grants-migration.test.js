@@ -20,6 +20,14 @@ const SIG = String.raw`public\.publish_bot_flow_graph${ARGS}`
 const CLIENT_ROLES = ['public', 'anon', 'authenticated']
 const LOCK_MIGRATION = '20261017145821_lock_publish_bot_flow_graph.sql'
 const GRANT_MIGRATION = '20260818000001_publish_bot_flow_graph.sql'
+// Postgres grants EXECUTE to PUBLIC on a new function. Supabase default
+// privileges also grant it to anon, authenticated, and service_role.
+const FRESH_FUNCTION_EXECUTE = {
+  public: true,
+  anon: true,
+  authenticated: true,
+  service_role: true,
+}
 
 function migrationFiles() {
   return fs.readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()
@@ -94,10 +102,15 @@ function resolvePublishExecute(orderedSql) {
         continue
       }
       if (event.kind === 'create') {
-        // New functions receive EXECUTE for PUBLIC. CREATE OR REPLACE keeps
-        // the privileges already recorded. A create after DROP is a new function.
+        // A new function starts with EXECUTE for PUBLIC, anon, authenticated,
+        // and service_role. CREATE OR REPLACE of a function that already
+        // exists keeps the privileges already recorded. CREATE after DROP is
+        // a new function.
         if (!created) {
           execute.public = true
+          execute.anon = true
+          execute.authenticated = true
+          execute.service_role = true
           created = true
         }
         continue
@@ -189,21 +202,20 @@ test('a schema-wide EXECUTE grant while publish_bot_flow_graph is dropped does n
     name: '20990101000000_grant_while_publish_function_dropped.sql',
     sql: [
       'DROP FUNCTION IF EXISTS public.publish_bot_flow_graph(uuid, jsonb, text, text[], jsonb, jsonb, jsonb) CASCADE;',
-      'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon;',
+      'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon, migration_auditor;',
       'CREATE FUNCTION public.publish_bot_flow_graph(uuid, jsonb, text, text[], jsonb, jsonb, jsonb)',
       'RETURNS void LANGUAGE sql AS $$ SELECT 1 $$;',
     ].join('\n'),
   }])
   const execute = resolvePublishExecute(sql)
-  assert.deepStrictEqual(execute, {
-    public: true,
-    anon: false,
-    authenticated: false,
-    service_role: false,
-  })
+  // anon is true because CREATE applies Supabase defaults, not because the
+  // schema-wide GRANT ran while the function was missing. migration_auditor
+  // is not a default grantee, so a stuck schema-wide grant would show up here.
+  assert.deepStrictEqual(execute, FRESH_FUNCTION_EXECUTE)
+  assert.strictEqual(execute.migration_auditor, undefined)
 })
 
-test('DROP FUNCTION then CREATE restores default PUBLIC EXECUTE and is not locked', () => {
+test('DROP FUNCTION then CREATE restores default EXECUTE and is not locked', () => {
   const sql = migrationSqlInFilenameOrder([{
     name: '20990101000000_drop_recreate_publish_bot_flow_graph.sql',
     sql: [
@@ -213,14 +225,43 @@ test('DROP FUNCTION then CREATE restores default PUBLIC EXECUTE and is not locke
     ].join('\n'),
   }])
   const execute = resolvePublishExecute(sql)
-  assert.deepStrictEqual(execute, {
-    public: true,
-    anon: false,
-    authenticated: false,
-    service_role: false,
-  })
+  assert.deepStrictEqual(execute, FRESH_FUNCTION_EXECUTE)
   assert.throws(
     () => assertPublishExecuteLocked(execute),
     { message: /public must not keep EXECUTE on publish_bot_flow_graph/ }
   )
+})
+
+test('revoking only PUBLIC after recreate leaves client roles and fails the publish lock', () => {
+  const sql = migrationSqlInFilenameOrder([{
+    name: '20990101000000_revoke_only_public_on_publish.sql',
+    sql: [
+      'DROP FUNCTION public.publish_bot_flow_graph(uuid, jsonb, text, text[], jsonb, jsonb, jsonb);',
+      'CREATE FUNCTION public.publish_bot_flow_graph(uuid, jsonb, text, text[], jsonb, jsonb, jsonb)',
+      'RETURNS void LANGUAGE sql AS $$ SELECT 1 $$;',
+      'REVOKE EXECUTE ON FUNCTION public.publish_bot_flow_graph(uuid, jsonb, text, text[], jsonb, jsonb, jsonb) FROM PUBLIC;',
+    ].join('\n'),
+  }])
+  const execute = resolvePublishExecute(sql)
+  assert.deepStrictEqual(execute, {
+    public: false,
+    anon: true,
+    authenticated: true,
+    service_role: true,
+  })
+  assert.throws(
+    () => assertPublishExecuteLocked(execute),
+    { message: /anon must not keep EXECUTE on publish_bot_flow_graph/ }
+  )
+})
+
+test('CREATE OR REPLACE keeps the existing publish lock', () => {
+  const sql = migrationSqlInFilenameOrder([{
+    name: '20990101000000_replace_publish_bot_flow_graph.sql',
+    sql: [
+      'CREATE OR REPLACE FUNCTION public.publish_bot_flow_graph(uuid, jsonb, text, text[], jsonb, jsonb, jsonb)',
+      'RETURNS void LANGUAGE sql AS $$ SELECT 1 $$;',
+    ].join('\n'),
+  }])
+  assertPublishExecuteLocked(resolvePublishExecute(sql))
 })
