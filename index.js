@@ -2580,7 +2580,7 @@ async function openDepositMenu(query) {
   })
 }
 
-async function handleFlowResult(userId, result, { msgId = null, query = null, msg = null } = {}) {
+async function handleFlowResult(userId, result, { msgId = null, query = null, msg = null, currentMediaUrl, currentMediaType } = {}) {
   if (!result || result.type === 'error') {
     console.error('[flow]', result && result.message)
     return false
@@ -2589,6 +2589,8 @@ async function handleFlowResult(userId, result, { msgId = null, query = null, ms
     if (result.node && result.node.media_url) {
       await flow.dispatchFlowScreen(bot, userId, result.node, msgId, result.caption, {
         urlResolver: flowUrlResolver,
+        currentMediaUrl,
+        currentMediaType,
       })
     } else if (msgId) {
       await editOrSendBannerMessage(userId, msgId, result.caption, { reply_markup: result.reply_markup })
@@ -2650,12 +2652,14 @@ async function dispatchFlow(userId, nodeKey, { msgId = null, push, firstName, qu
         nama_bot: NamaBot,
         saldo: formatrupiah(await cekSaldo(userId)),
       }
+  const previous = await session.getNav(userId)
+  const currentMedia = flow.mediaOptsForScreen(previous.screen_key)
   const result = await flow.goto(userId, nodeKey, {
     vars,
     push: push !== undefined ? push : nodeKey !== entry,
     urlResolver: flowUrlResolver,
   })
-  return handleFlowResult(userId, result, { msgId, query, msg })
+  return handleFlowResult(userId, result, { msgId, query, msg, ...currentMedia })
 }
 
 bot.on("callback_query", async (query) => {
@@ -2727,9 +2731,7 @@ Silakan ketik \`/deposit <jumlah>\` untuk melakukan top up saldo dengan nominal 
     const flowKey = flow.parseFlowCallback(cmd) || flow.legacyToKey(cmd)
     if (flowKey) {
       const node = flow.getNode(flowKey)
-      const needsCustomAnswer = node && node.kind === 'action'
-        && (node.action === 'product_card' || node.action === 'noop')
-      if (!needsCustomAnswer) {
+      if (!flow.flowCallbackNeedsCustomAnswer(node)) {
         await bot.answerCallbackQuery(query.id).catch(() => {})
       }
       await dispatchFlow(query.from.id, flowKey, {

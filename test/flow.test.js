@@ -487,3 +487,114 @@ test('SIS-59: editor picker omits product_card but runtime allowlist still accep
   assert.match(indexSrc, /if \(!ok\) \{/)
 })
 
+function actionNode(key, action) {
+  return {
+    key,
+    kind: 'action',
+    screen_key: null,
+    action,
+    buttons: [],
+  }
+}
+
+test('flowCallbackNeedsCustomAnswer is true for handlers that answer the query themselves', async () => {
+  const flow = muatFlow({
+    nodes: [
+      ...sampleNodes,
+      actionNode('deposit_menu', 'deposit_menu'),
+      actionNode('noop', 'noop'),
+      actionNode('product_card', 'product_card'),
+    ],
+  })
+  await flow.refresh()
+
+  assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('deposit_menu')), true)
+  assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('noop')), true)
+  assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('product_card')), true)
+  assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('product_list')), false)
+  assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('welcome')), false)
+  assert.equal(flow.flowCallbackNeedsCustomAnswer(null), false)
+})
+
+test('flow callback wrapper skips the first answer for deposit_menu', () => {
+  const indexSrc = fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8')
+  const handlerStart = indexSrc.indexOf('if (flow.isEnabled())')
+  const handlerEnd = indexSrc.indexOf('if (cmd.startsWith(\'bulan_\')', handlerStart)
+  const handlerSrc = indexSrc.slice(handlerStart, handlerEnd)
+  assert.match(handlerSrc, /flow\.flowCallbackNeedsCustomAnswer\(node\)/)
+  assert.doesNotMatch(handlerSrc, /node\.action === 'deposit_menu'/)
+})
+
+test('mediaOptsForScreen returns previous screen media identity', async () => {
+  const flow = muatFlow({
+    nodes: [
+      {
+        key: 'welcome',
+        kind: 'screen',
+        screen_key: 'screen.welcome',
+        action: null,
+        media_url: 'https://example.com/logo.jpg',
+        media_type: 'photo',
+        buttons: [],
+      },
+      {
+        key: 'catalog',
+        kind: 'screen',
+        screen_key: 'screen.catalog',
+        action: null,
+        media_url: 'https://example.com/catalog.pdf',
+        media_type: 'document',
+        buttons: [],
+      },
+      actionNode('product_list', 'product_list'),
+    ],
+  })
+  await flow.refresh()
+
+  assert.deepEqual(flow.mediaOptsForScreen('welcome'), {
+    currentMediaUrl: 'https://example.com/logo.jpg',
+    currentMediaType: 'photo',
+  })
+  assert.deepEqual(flow.mediaOptsForScreen('catalog'), {
+    currentMediaUrl: 'https://example.com/catalog.pdf',
+    currentMediaType: 'document',
+  })
+  assert.deepEqual(flow.mediaOptsForScreen('product_list'), {})
+  assert.deepEqual(flow.mediaOptsForScreen('welcome_missing'), {})
+  assert.deepEqual(flow.mediaOptsForScreen(null), {})
+})
+
+test('dispatchFlow captures previous screen media before goto overwrites it', () => {
+  const indexSrc = fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8')
+  const dispatchStart = indexSrc.indexOf('async function dispatchFlow')
+  const dispatchEnd = indexSrc.indexOf('\nbot.on("callback_query"', dispatchStart)
+  const dispatchSrc = indexSrc.slice(dispatchStart, dispatchEnd)
+  assert.ok(dispatchStart >= 0, 'dispatchFlow is present')
+  assert.match(dispatchSrc, /session\.getNav\(/)
+  assert.match(dispatchSrc, /flow\.mediaOptsForScreen\(/)
+  assert.ok(
+    dispatchSrc.indexOf('session.getNav') < dispatchSrc.indexOf('flow.goto'),
+    'previous screen must be read before flow.goto overwrites screen_key',
+  )
+
+  const handleStart = indexSrc.indexOf('async function handleFlowResult')
+  const handleSrc = indexSrc.slice(handleStart, dispatchStart)
+  assert.match(handleSrc, /dispatchFlowScreen\(/)
+  assert.match(handleSrc, /currentMediaUrl/)
+  assert.match(handleSrc, /currentMediaType/)
+})
+
+test('SIS-58: different current media still uses editMessageMedia', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot()
+  const node = mediaNode('photo', 'https://example.com/promo.jpg')
+
+  await flow.dispatchFlowScreen(bot, 12345, node, 88, 'Promo', {
+    currentMediaUrl: 'https://example.com/old.jpg',
+    currentMediaType: 'photo',
+  })
+
+  assertEditMedia(bot, 'photo', 'https://example.com/promo.jpg', 'Promo')
+  assert.equal(bot.calls.some((c) => c.method === 'editMessageCaption'), false)
+})
+
