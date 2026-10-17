@@ -574,7 +574,7 @@ Pembayaran untuk *${item?.nama || 'produk ini'}* sudah kami terima, tapi konfirm
 Admin sedang meninjau. Mohon tunggu atau hubungi CS dengan Trx ID di atas — jangan pesan ulang dulu.`
 
   try {
-    await bot.sendMessage(userId, pesanPembeli, { parse_mode: 'Markdown' })
+    await sendMessage(userId, pesanPembeli, { parse_mode: 'Markdown' })
   } catch (e) {
     console.error('[Rekon] gagal memberi tahu pembeli:', e)
   }
