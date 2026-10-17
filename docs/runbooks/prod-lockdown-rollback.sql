@@ -1,15 +1,19 @@
 -- ROLLBACK for 20261017000200_prod_lockdown_rls.sql
--- Restores the production state observed 2026-10-17 (read-only check):
+-- Restores the production state observed 2026-10-17 (read-only check),
+-- except Supplier* table grants stay locked (see below):
 --   * "Allow all for service role" on the 22 tables attached to PUBLIC
---   * GRANT ALL on all public tables/sequences/functions to anon, authenticated
+--   * GRANT ALL on public tables/sequences/functions to anon, authenticated
+--     except Supplier / SupplierProduct / SupplierOrder
 --   * EXECUTE on publish_bot_flow_graph for anon, authenticated, service_role
 --     (PUBLIC stays revoked, matching 20260818000001)
 --   * update_updated_at_column search_path reset to the prior unset state
+--   * global PUBLIC EXECUTE default for future functions restored
 --
 -- Does NOT rewrite Supplier / SupplierProduct / SupplierOrder policies
 -- (those were already TO service_role before the lockdown).
--- GRANT ALL ON ALL TABLES does restore anon/authenticated table grants on
--- Supplier* as well, which was the prior grant state (RLS still blocked them).
+-- GRANT ALL ON ALL TABLES would also restore TRUNCATE on Supplier*. RLS
+-- does not apply to TRUNCATE, so those grants are revoked again immediately
+-- (same as 20261016000000). Column REVOKE on Supplier.api_key is restored too.
 --
 -- READ/WRITE. Apply only if the lockdown must be undone. Not applied by CI.
 
@@ -21,6 +25,14 @@ GRANT EXECUTE ON FUNCTION public.publish_bot_flow_graph(uuid, jsonb, text, text[
   TO anon, authenticated, service_role;
 
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+-- Keep the earlier Supplier* lockdown (20261016000000). GRANT ALL includes
+-- TRUNCATE, and RLS policies do not apply to TRUNCATE.
+REVOKE ALL ON TABLE "Supplier", "SupplierProduct", "SupplierOrder"
+  FROM PUBLIC, anon, authenticated;
+REVOKE SELECT (api_key) ON TABLE "Supplier"
+  FROM PUBLIC, anon, authenticated;
+GRANT ALL ON TABLE "Supplier", "SupplierProduct", "SupplierOrder" TO service_role;
+
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
 
@@ -30,6 +42,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT ALL ON SEQUENCES TO anon, authenticated;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT ALL ON FUNCTIONS TO anon, authenticated;
+-- Undo the lockdown's global PUBLIC EXECUTE revoke (per-schema GRANT cannot
+-- restore a global default).
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres
+  GRANT EXECUTE ON FUNCTIONS TO PUBLIC;
 
 -- ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin requires membership.
 -- Check existence first so pg_has_role never resolves a missing role.
@@ -40,6 +56,7 @@ BEGIN
       EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated';
       EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated';
       EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated';
+      EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin GRANT EXECUTE ON FUNCTIONS TO PUBLIC';
     END IF;
   END IF;
 END $$;
