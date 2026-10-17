@@ -112,6 +112,25 @@ test('mention guard ignores @mentions when getMe fails, then accepts this bot', 
   assert.deepEqual(ran, ['/getid', '/getid@ShopBot'])
 })
 
+test('mention guard logs a rejecting callback and fulfills the wrapper', async () => {
+  const bot = fakeBot()
+  installCommandMentionGuard(bot, async () => 'ShopBot')
+  bot.onText(/^\/getid(?:@\w+)?(?:\s|$)/, () => Promise.reject(new Error('handler blew up')))
+  const logged = []
+  const orig = console.error
+  console.error = (...args) => logged.push(args)
+  try {
+    const listener = bot.listeners[0]
+    const text = '/getid'
+    const match = listener.regexp.exec(text)
+    await listener.callback({ text }, match)
+  } finally {
+    console.error = orig
+  }
+  assert.equal(logged.length, 1)
+  assert.match(logged[0].map(String).join(' '), /handler blew up/)
+})
+
 test('index.js installs the shared mention guard before any onText handler', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8')
   const guardAt = src.indexOf('installCommandMentionGuard(')
