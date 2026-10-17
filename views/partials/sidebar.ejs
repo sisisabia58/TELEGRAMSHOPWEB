@@ -1,5 +1,7 @@
 <%- include('icons') %>
 <% const activePage = typeof currentPage !== 'undefined' ? currentPage : '' %>
+<% const sessionRole = (typeof req !== 'undefined' && req.session && req.session.role) ? req.session.role : '' %>
+<% const qaNav = sessionRole === 'qa' %>
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-header">
     <h2><%= typeof namaBot !== 'undefined' ? namaBot : 'Dashboard' %></h2>
@@ -18,6 +20,7 @@
     </div>
   </div>
 
+  <% if (!qaNav) { %>
   <div class="nav-group open" data-section="catalog">
     <button type="button" class="nav-group-toggle">Catalog</button>
     <div class="nav-group-items">
@@ -43,6 +46,7 @@
       </a>
     </div>
   </div>
+  <% } %>
 
   <div class="nav-group open" data-section="bot">
     <button type="button" class="nav-group-toggle">Bot</button>
@@ -51,6 +55,7 @@
         <svg class="icon" aria-hidden="true"><use href="#i-git-branch"></use></svg>
         <span>Flow &amp; Copy Builder</span>
       </a>
+      <% if (!qaNav) { %>
       <a href="/settings/bot-copy" class="nav-item <%= activePage === 'settings-bot-copy' ? 'active' : '' %>">
         <svg class="icon" aria-hidden="true"><use href="#i-file-text"></use></svg>
         <span>Global Copy List</span>
@@ -63,9 +68,11 @@
         <svg class="icon" aria-hidden="true"><use href="#i-file-text"></use></svg>
         <span>Templates</span>
       </a>
+      <% } %>
     </div>
   </div>
 
+  <% if (!qaNav) { %>
   <div class="nav-group open" data-section="customers">
     <button type="button" class="nav-group-toggle">Customers</button>
     <div class="nav-group-items">
@@ -127,6 +134,7 @@
       </a>
     </div>
   </div>
+  <% } %>
 
   <% if (typeof req !== 'undefined' && req.session && req.session.role === 'admin') { %>
   <div class="nav-group open" data-section="admin">

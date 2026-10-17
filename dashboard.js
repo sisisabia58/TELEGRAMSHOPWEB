@@ -23,7 +23,8 @@ const ejs = require('ejs')
 const { formatrupiah, formatTanggal } = require('./lib/format')
 const { buildOverviewModel, summarizeStock } = require('./lib/dashboard-overview')
 const { redactSecrets, resolveSecretInput, secretUpdateRow } = require('./lib/secret-mask')
-const { requireRole, requireWriteAccess } = require('./lib/dashboard-auth')
+const { requireRole, requireWriteAccess, requireQaAccess, createRefreshSessionAdmin } = require('./lib/dashboard-auth')
+const refreshSessionAdmin = createRefreshSessionAdmin(supabase)
 
 const app = express()
 
@@ -515,9 +516,13 @@ app.post('/login', redirectIfAuthenticated, rateLimit(5, 15 * 60 * 1000), async 
   }
 })
 
-// Block viewer (read-only) from every subsequent POST/PUT/PATCH/DELETE.
+// Re-load Admin.role / is_active for database-backed sessions (skips env-var
+// fallback logins that have no adminId). Then apply the qa deny-by-default
+// allowlist. Then block viewer (read-only) from POST/PUT/PATCH/DELETE.
 // Login and the Pakasir webhook are registered above so they stay reachable.
 // Staff keeps operational writes; requireRole('admin') still gates admin-user routes.
+app.use(refreshSessionAdmin)
+app.use(requireQaAccess)
 app.use(requireWriteAccess)
 
 // Route: Logout

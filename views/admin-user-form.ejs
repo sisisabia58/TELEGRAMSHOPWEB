@@ -98,8 +98,9 @@
                                     <option value="admin" <%= admin && admin.role === 'admin' ? 'selected' : '' %>>Admin (Full Access)</option>
                                     <option value="staff" <%= admin && admin.role === 'staff' ? 'selected' : '' %>>Staff (Limited Access)</option>
                                     <option value="viewer" <%= admin && admin.role === 'viewer' ? 'selected' : '' %>>Viewer (Read Only)</option>
+                                    <option value="qa" <%= admin && admin.role === 'qa' ? 'selected' : '' %>>QA (Flow Builder only)</option>
                                 </select>
-                                <div class="form-help">Admin: akses penuh. Staff: akses terbatas. Viewer: hanya baca.</div>
+                                <div class="form-help">Admin: akses penuh. Staff: akses terbatas. Viewer: hanya baca. QA: dashboard home dan Flow Builder (termasuk publish; tidak bisa toggle).</div>
                             </div>
 
                             <% if (action === 'edit') { %>
