@@ -18,6 +18,16 @@ test('pickRecent limits and preserves order', () => {
   assert.deepEqual(pickRecent(rows, 2).map((x) => x.id), [1, 2])
 })
 
+test('buildOverviewModel surfaces supplier orders that need manual reconciliation', () => {
+  const m = buildOverviewModel({
+    pendingDeposits: [],
+    variants: [],
+    pendingReconciliations: [{ trx_id: 'TRX-1', error: 'perlu rekonsiliasi manual: HTTP 502' }],
+  })
+  assert.equal(m.pendingReconciliations.length, 1)
+  assert.equal(m.pendingReconciliations[0].trx_id, 'TRX-1')
+})
+
 test('buildOverviewModel wires draft notice', () => {
   const m = buildOverviewModel({
     pendingDeposits: [{ id: 'd1' }],

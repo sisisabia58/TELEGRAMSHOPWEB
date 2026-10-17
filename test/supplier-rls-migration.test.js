@@ -20,7 +20,7 @@ test('migrasi lanjutan mengunci RLS Supplier* ke service_role', () => {
   for (const tabel of ['Supplier', 'SupplierProduct', 'SupplierOrder']) {
     assert.match(
       sql,
-      new RegExp(`CREATE POLICY[\\s\\S]*ON "${tabel}"[\\s\\S]*TO service_role`, 'i'),
+      new RegExp(`CREATE POLICY[^;]*ON "${tabel}"[^;]*TO service_role\\b[^;]*;`, 'i'),
       `${tabel} harus punya kebijakan TO service_role`
     )
     assert.match(
@@ -31,11 +31,37 @@ test('migrasi lanjutan mengunci RLS Supplier* ke service_role', () => {
   }
 })
 
-test('kolom api_key tidak bisa di-SELECT oleh anon/authenticated', () => {
+test('REVOKE SELECT(api_key) bukan pagar tahan lama; kebijakan RLS TO service_role yang melindungi', () => {
   const sql = sqlSetelahBaseline()
   assert.match(
     sql,
+    /CREATE POLICY[^;]*ON "Supplier"[^;]*TO service_role\b[^;]*;/i,
+    'perlindungan yang tahan GRANT SELECT ON TABLE adalah kebijakan RLS TO service_role, bukan REVOKE kolom'
+  )
+  const sqlPalsu = `
+CREATE POLICY "Allow all for service role" ON "Supplier"
+    FOR ALL TO PUBLIC USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow all for service role" ON "SupplierProduct"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+`
+  assert.doesNotMatch(
+    sqlPalsu,
+    /CREATE POLICY[^;]*ON "Supplier"[^;]*TO service_role\b[^;]*;/i,
+    'TO service_role pada pernyataan SupplierProduct berikutnya tidak boleh memenuhi asersi Supplier'
+  )
+  const runbook = fs.readFileSync(
+    path.join(__dirname, '..', 'docs', 'runbooks', 'phase13-supplier-sourcing.md'),
+    'utf8'
+  )
+  assert.match(
+    runbook,
+    /column-level REVOKE does NOT override a table-level GRANT SELECT/i,
+    'dokumentasi runbook harus menyatakan REVOKE kolom tidak mengalahkan GRANT SELECT tingkat tabel'
+  )
+  assert.match(
+    sql,
     /REVOKE\s+SELECT\s*\(\s*api_key\s*\)\s+ON TABLE "Supplier" FROM[\s\S]*(anon|authenticated|PUBLIC)/i,
-    'SELECT(api_key) harus di-REVOKE dari peran klien'
+    'pernyataan REVOKE kolom tetap ada sebagai lapisan tambahan, bukan jaminan tahan lama'
   )
 })

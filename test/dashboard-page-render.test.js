@@ -24,6 +24,7 @@ const IDS = {
   history: '99999999-9999-4999-8999-999999999999',
   supplier: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   supplierProduct: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  supplierOrder: 'abababab-abab-4aba-8aba-abababababab',
   tier: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
   flow: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   flowNode: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
@@ -245,6 +246,16 @@ const FIXTURES = {
       produk: { nama: 'Netflix' },
     },
   }],
+  SupplierOrder: [{
+    id: IDS.supplierOrder,
+    trx_id: 'TRX-REKON-1',
+    user_id: IDS.user,
+    quantity: 1,
+    jual_idr: 50000,
+    error: 'perlu rekonsiliasi manual: HTTP 502',
+    created_at: ISO,
+    status: 'failed',
+  }],
   NotificationSettings: [
     { setting_key: 'cache_version', setting_value: { value: 3 } },
     { setting_key: 'low_stock_threshold', setting_value: { default: 5, enabled: true } },
@@ -450,7 +461,7 @@ const skippedPartials = [...partialNames].map((name) => name.replace(/\.ejs$/, '
 
 const PAGES = [
   { view: 'login', path: '/login', auth: false },
-  { view: 'dashboard', path: '/', marker: { seeded: 'DEP-SMOKE-1' } },
+  { view: 'dashboard', path: '/', marker: { seeded: ['DEP-SMOKE-1', 'TRX-REKON-1'] } },
   { view: 'produk', path: '/produk', marker: { seeded: 'Netflix' } },
   { view: 'stok', path: '/stok', marker: { seeded: 'Netflix' } },
   { view: 'pricing', path: '/pricing', marker: { seeded: 'netflix-1b' } },
@@ -547,8 +558,9 @@ function csrfFromHtml(html) {
 
 function markerFor(page, mode) {
   if (!page.marker) return null
-  if (typeof page.marker === 'string') return page.marker
-  return page.marker[mode] || null
+  const value = typeof page.marker === 'string' ? page.marker : (page.marker[mode] || null)
+  if (!value) return null
+  return Array.isArray(value) ? value : [value]
 }
 
 async function login(url) {
@@ -611,8 +623,12 @@ test('every dashboard page renders with the locals its route passes', { timeout:
         assert.match(body, /<html/i, `${where} should return HTML`)
         assert.ok(seen.includes(page.view), `${where} rendered [${seen.join(', ')}] instead of ${page.view}`)
         rendered[mode].add(page.view)
-        const marker = markerFor(page, mode)
-        if (marker) assert.ok(body.includes(marker), `${where} should include ${marker}`)
+        const markers = markerFor(page, mode)
+        if (markers) {
+          for (const marker of markers) {
+            assert.ok(body.includes(marker), `${where} should include ${marker}`)
+          }
+        }
       }
     }
 
