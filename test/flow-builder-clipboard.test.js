@@ -200,12 +200,12 @@ test('in-memory clipboard copy does not mutate the draft', () => {
   assert.equal(clipboard.isEmpty(), true)
 })
 
-test('delete of a non-start node is one undoable step and clears inbound wires', () => {
+test('delete of a non-start node is one undoable step and removes inbound buttons', () => {
   const state = sessionFrom(baseDraft)
   const before = cloneDraft(baseDraft)
   state.applyCommand((draft) => deleteNode(draft, 'product_list'))
   assert.equal(state.getDraft().nodes.some((n) => n.key === 'product_list'), false)
-  assert.equal(state.getDraft().nodes.find((n) => n.key === 'welcome').buttons[0][0].go, '')
+  assert.deepEqual(state.getDraft().nodes.find((n) => n.key === 'welcome').buttons, [])
   assert.deepEqual(state.undo(), before)
 })
 
@@ -365,6 +365,9 @@ test('flow-builder JS wires toolbar, shortcuts, and applyCommand clipboard actio
   assert.match(js, /action === 'duplicate'/)
   assert.match(js, /action === 'delete'/)
   assert.match(js, /applyCommand\(\(draft\) => FlowBuilderClipboard/)
+  assert.match(js, /requestDeleteSelectedNode/)
+  assert.match(js, /inboundGoCount/)
+  assert.match(js, /deleteNodes/)
 })
 
 test('flow-builder JS preventDefaults shortcuts only after resolveShortcut accepts them (a)(b)(c)', () => {
