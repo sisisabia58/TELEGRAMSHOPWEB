@@ -356,6 +356,19 @@ async function logActivity(req, action, entityType = null, entityId = null, deta
 
 const loginRateLimit = security.createLoginRateLimiter({ max: 5, windowMs: 15 * 60 * 1000 })
 
+// GET /login persists an anonymous session so the form can carry a CSRF token.
+// Replace that id before marking it authenticated, and drop the pre-login token.
+function establishAuthenticatedSession(req, fields) {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((regenErr) => {
+      if (regenErr) return reject(regenErr)
+      Object.assign(req.session, fields)
+      delete req.session.csrfToken
+      req.session.save((saveErr) => (saveErr ? reject(saveErr) : resolve()))
+    })
+  })
+}
+
 // Route: Login Page
 app.get('/login', redirectIfAuthenticated, (req, res) => {
   res.render('login', {
@@ -389,11 +402,13 @@ app.post('/login', redirectIfAuthenticated, loginRateLimit, async (req, res) => 
       const adminPassword = envAdmin.password
 
       if (username === adminUsername && password === adminPassword) {
-        req.session.isLoggedIn = true
-        req.session.username = username
-        req.session.role = 'admin'
-        req.session.loginTime = new Date()
-        
+        await establishAuthenticatedSession(req, {
+          isLoggedIn: true,
+          username,
+          role: 'admin',
+          loginTime: new Date(),
+        })
+
         await logActivity(req, 'LOGIN', null, null, { method: 'env', status: 'success' })
         console.log(`[${new Date().toISOString()}] User ${username} logged in (env)`)
         return res.redirect('/')
@@ -447,11 +462,13 @@ app.post('/login', redirectIfAuthenticated, loginRateLimit, async (req, res) => 
     }
 
     // Login berhasil
-    req.session.isLoggedIn = true
-    req.session.username = admin.username
-    req.session.role = admin.role
-    req.session.adminId = admin.id
-    req.session.loginTime = new Date()
+    await establishAuthenticatedSession(req, {
+      isLoggedIn: true,
+      username: admin.username,
+      role: admin.role,
+      adminId: admin.id,
+      loginTime: new Date(),
+    })
 
     // Update last login
     try {
