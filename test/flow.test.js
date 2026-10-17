@@ -441,7 +441,7 @@ test('SIS-55: empty kategori_menu from /start sends err.no_products as a message
   assert.ok(emptyStart >= 0 && emptyEnd > emptyStart, 'empty-product branch is present')
 
   assert.match(empty, /if \(query\.id\)/)
-  assert.match(empty, /answerCallbackQuery\(query\.id/)
+  assert.match(empty, /answerCallbackQuerySafe\(bot,\s*query\.id/)
   assert.match(empty, /err\.no_products/)
   assert.match(empty, /else \{/)
   assert.match(empty, /sendMessage\(query\.from\.id,\s*copy\.get\('err\.no_products'\)/)
@@ -529,6 +529,9 @@ test('flowCallbackNeedsCustomAnswer is true for handlers that answer the query t
       actionNode('deposit_menu', 'deposit_menu'),
       actionNode('noop', 'noop'),
       actionNode('product_card', 'product_card'),
+      actionNode('kategori_menu', 'kategori_menu'),
+      actionNode('stok', 'stok'),
+      actionNode('riwayat', 'riwayat'),
     ],
   })
   await flow.refresh()
@@ -537,6 +540,9 @@ test('flowCallbackNeedsCustomAnswer is true for handlers that answer the query t
   assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('noop')), true)
   assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('product_card')), true)
   assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('product_list')), false)
+  assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('kategori_menu')), false)
+  assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('stok')), false)
+  assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('riwayat')), false)
   assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('welcome')), false)
   assert.equal(flow.flowCallbackNeedsCustomAnswer(null), false)
 })
@@ -751,5 +757,67 @@ test('dispatchFlowScreen remembers sent media by the returned message_id', async
     currentMediaType: 'photo',
   })
   assert.deepEqual(flow.mediaOptsForMessage(12345, 99), {})
+})
+
+function sliceFn(src, startNeedle, endNeedle) {
+  const start = src.indexOf(startNeedle)
+  const end = src.indexOf(endNeedle, start)
+  assert.ok(start >= 0 && end > start, `${startNeedle} .. ${endNeedle}`)
+  return src.slice(start, end)
+}
+
+test('rejected second answerCallbackQuery still renders the action result', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const calls = []
+  const bot = {
+    async answerCallbackQuery(id, extra) {
+      calls.push({ method: 'answerCallbackQuery', id, extra })
+      if (calls.filter((c) => c.method === 'answerCallbackQuery').length > 1) {
+        throw new Error('Bad Request: query is too old and response timeout expired or query ID is invalid')
+      }
+    },
+    async sendMessage(chatId, text) {
+      calls.push({ method: 'sendMessage', chatId, text })
+    },
+  }
+
+  // Wrapper answers first, then the handler answers the same query ID.
+  await bot.answerCallbackQuery('cbq-1').catch(() => {})
+  await assert.rejects(
+    () => bot.answerCallbackQuery('cbq-1'),
+    /query is too old|query ID is invalid/,
+  )
+  await flow.answerCallbackQuerySafe(bot, 'cbq-1')
+  await bot.sendMessage(9, '📂 PILIH KATEGORI')
+
+  assert.equal(calls.filter((c) => c.method === 'answerCallbackQuery').length, 3)
+  assert.equal(calls.some((c) => c.method === 'sendMessage' && c.text === '📂 PILIH KATEGORI'), true)
+})
+
+test('product_list, kategori_menu, and stok handler answers are non-fatal', () => {
+  const indexSrc = fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8')
+  const productPage = sliceFn(indexSrc, 'async function sendProductPage', 'async function sendProductCard')
+  const kategori = sliceFn(indexSrc, 'async function openKategoriMenu', 'async function openStokBuyer')
+  const stok = sliceFn(indexSrc, 'async function openStokBuyer', 'async function openRiwayat')
+  const productList = sliceFn(indexSrc, 'async function openProductList', 'async function openKategoriMenu')
+  const riwayat = sliceFn(indexSrc, 'async function openRiwayat', 'function depositMenuPayload')
+  const wrapper = sliceFn(indexSrc, 'if (flow.isEnabled())', 'if (cmd.startsWith(\'bulan_\')')
+
+  assert.match(productPage, /flow\.answerCallbackQuerySafe\(/)
+  assert.doesNotMatch(productPage, /await bot\.answerCallbackQuery\(/)
+  assert.match(kategori, /flow\.answerCallbackQuerySafe\(/)
+  assert.doesNotMatch(kategori, /await bot\.answerCallbackQuery\(/)
+  assert.match(stok, /flow\.answerCallbackQuerySafe\(/)
+  assert.doesNotMatch(stok, /await bot\.answerCallbackQuery\(/)
+  assert.equal((stok.match(/flow\.answerCallbackQuerySafe\(/g) || []).length, 2)
+
+  const emptyList = productList.slice(
+    productList.indexOf('if (!Produk || Produk.length === 0)'),
+    productList.indexOf('const ProdukWithStok'),
+  )
+  assert.doesNotMatch(emptyList, /answerCallbackQuery/)
+  assert.doesNotMatch(riwayat, /answerCallbackQuery/)
+  assert.match(wrapper, /flow\.flowCallbackNeedsCustomAnswer\(node\)/)
+  assert.match(wrapper, /answerCallbackQuery\(query\.id\)\.catch\(/)
 })
 

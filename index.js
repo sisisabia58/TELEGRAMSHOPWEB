@@ -1748,7 +1748,7 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
   const start = page * PRODUCTS_PER_PAGE
   const items = sortedProducts.slice(start, start + PRODUCTS_PER_PAGE)
 
-  if (callbackId) await bot.answerCallbackQuery(callbackId)
+  if (callbackId) await flow.answerCallbackQuerySafe(bot, callbackId)
 
   let rows = ''
   if (items.length === 0) {
@@ -2352,7 +2352,7 @@ async function openKategoriMenu(query) {
 
   if (!Produk || Produk.length === 0) {
     if (query.id) {
-      await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_products'), show_alert: true })
+      await flow.answerCallbackQuerySafe(bot, query.id, { text: copy.get('err.no_products'), show_alert: true })
     } else {
       await sendMessage(query.from.id, copy.get('err.no_products'))
     }
@@ -2413,7 +2413,7 @@ Pilih kategori produk yang ingin dilihat:
   buttons.push([{ text: copy.get('btn.semua_produk'), callback_data: 'daftarproduk' }])
   buttons.push([{ text: copy.get('btn.kembali'), callback_data: 'kembaliawal' }])
 
-  if (query.id) await bot.answerCallbackQuery(query.id)
+  if (query.id) await flow.answerCallbackQuerySafe(bot, query.id)
   await editOrSendBannerMessage(query.from.id, query.message.message_id, text, {
     reply_markup: { inline_keyboard: buttons },
   })
@@ -2423,7 +2423,7 @@ async function openStokBuyer(query) {
   const { data: Produk } = await supabase.from('Produk').select('*')
 
   if (!Produk || Produk.length === 0) {
-    if (query.id) await bot.answerCallbackQuery(query.id)
+    if (query.id) await flow.answerCallbackQuerySafe(bot, query.id)
     await sendMessage(query.from.id, copy.get('err.no_products'), { parse_mode: 'Markdown' })
     return
   }
@@ -2505,7 +2505,7 @@ async function openStokBuyer(query) {
 
   buttons.push([{ text: copy.get('btn.kembali'), callback_data: 'kembaliawal' }])
 
-  if (query.id) await bot.answerCallbackQuery(query.id)
+  if (query.id) await flow.answerCallbackQuerySafe(bot, query.id)
   await bot.sendMessage(query.from.id, tx, {
     parse_mode: 'Markdown',
     reply_markup: { inline_keyboard: buttons },
