@@ -1,5 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert')
+const fs = require('node:fs')
+const path = require('node:path')
 
 const jalurClient = require.resolve('../lib/supabase.js')
 const jalurCopy = require.resolve('../lib/copy.js')
@@ -170,7 +172,7 @@ test('isEnabled uses the same FLOW_ENGINE_ENABLED override as flowEngineFlagStat
   }
 })
 
-function recordingBot({ editCaptionThrows = false } = {}) {
+function recordingBot({ editCaptionThrows = false, editMediaThrows = false } = {}) {
   const calls = []
   return {
     calls,
@@ -189,6 +191,10 @@ function recordingBot({ editCaptionThrows = false } = {}) {
     editMessageCaption: async (caption, opts) => {
       if (editCaptionThrows) throw new Error('cannot edit caption')
       calls.push({ method: 'editMessageCaption', caption, opts })
+    },
+    editMessageMedia: async (media, opts) => {
+      if (editMediaThrows) throw new Error('cannot edit media')
+      calls.push({ method: 'editMessageMedia', media, opts })
     },
     editMessageText: async (text, opts) => {
       calls.push({ method: 'editMessageText', text, opts })
@@ -290,7 +296,7 @@ test('dispatchFlowScreen inherited-name media_type falls back to sendPhoto', asy
 
 test('dispatchFlowScreen edit-fallback uses sendDocument for document media', async () => {
   const flow = muatFlow({ nodes: sampleNodes })
-  const bot = recordingBot({ editCaptionThrows: true })
+  const bot = recordingBot({ editCaptionThrows: true, editMediaThrows: true })
   const node = mediaNode('document', 'https://example.com/catalog.pdf')
 
   await flow.dispatchFlowScreen(bot, 12345, node, 88, 'Catalog PDF')
@@ -301,7 +307,7 @@ test('dispatchFlowScreen edit-fallback uses sendDocument for document media', as
 
 test('dispatchFlowScreen edit-fallback uses sendVideo for video media', async () => {
   const flow = muatFlow({ nodes: sampleNodes })
-  const bot = recordingBot({ editCaptionThrows: true })
+  const bot = recordingBot({ editCaptionThrows: true, editMediaThrows: true })
   const node = mediaNode('video', 'https://example.com/intro.mp4')
 
   await flow.dispatchFlowScreen(bot, 12345, node, 88, 'Intro video')
@@ -312,11 +318,172 @@ test('dispatchFlowScreen edit-fallback uses sendVideo for video media', async ()
 
 test('dispatchFlowScreen edit-fallback uses sendPhoto for photo media', async () => {
   const flow = muatFlow({ nodes: sampleNodes })
-  const bot = recordingBot({ editCaptionThrows: true })
+  const bot = recordingBot({ editCaptionThrows: true, editMediaThrows: true })
   const node = mediaNode('photo', 'https://example.com/logo.jpg')
 
   await flow.dispatchFlowScreen(bot, 12345, node, 88, 'Welcome Text')
 
   assertMediaSend(bot, 'sendPhoto', 'https://example.com/logo.jpg', 'Welcome Text')
+})
+
+function startMsg(userId = 9) {
+  return {
+    message_id: 77,
+    from: { id: userId, first_name: 'Ada' },
+    chat: { id: userId },
+  }
+}
+
+function callbackQuery(userId = 9) {
+  return {
+    id: 'cbq-1',
+    from: { id: userId, first_name: 'Ada' },
+    message: { message_id: 88, chat: { id: userId } },
+  }
+}
+
+function assertEditMedia(bot, type, mediaUrl, caption) {
+  assert.equal(bot.calls.length, 1)
+  assert.equal(bot.calls[0].method, 'editMessageMedia')
+  assert.equal(bot.calls[0].media.type, type)
+  assert.equal(bot.calls[0].media.media, mediaUrl)
+  assert.equal(bot.calls[0].media.caption, caption)
+  assert.equal(bot.calls[0].media.parse_mode, 'Markdown')
+  assert.equal(bot.calls[0].opts.chat_id, 12345)
+  assert.equal(bot.calls[0].opts.message_id, 88)
+  assert.equal(bot.calls[0].opts.reply_markup.inline_keyboard[0][0].callback_data, 'f:saldo_menu')
+}
+
+test('SIS-58: navigating to a photo screen uses editMessageMedia, not caption-only', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot()
+  const node = mediaNode('photo', 'https://example.com/promo.jpg')
+
+  await flow.dispatchFlowScreen(bot, 12345, node, 88, 'Promo')
+
+  assertEditMedia(bot, 'photo', 'https://example.com/promo.jpg', 'Promo')
+  assert.equal(bot.calls.some((c) => c.method === 'editMessageCaption'), false)
+})
+
+test('SIS-58: navigating to a document screen uses editMessageMedia type document', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot()
+  const node = mediaNode('document', 'https://example.com/catalog.pdf')
+
+  await flow.dispatchFlowScreen(bot, 12345, node, 88, 'Catalog PDF')
+
+  assertEditMedia(bot, 'document', 'https://example.com/catalog.pdf', 'Catalog PDF')
+  assert.equal(bot.calls.some((c) => c.method === 'editMessageCaption'), false)
+})
+
+test('SIS-58: same media_url keeps editMessageCaption', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot()
+  const url = 'https://example.com/logo.jpg'
+  const node = mediaNode('photo', url)
+
+  await flow.dispatchFlowScreen(bot, 12345, node, 88, 'Same photo', {
+    currentMediaUrl: url,
+    currentMediaType: 'photo',
+  })
+
+  assert.equal(bot.calls.length, 1)
+  assert.equal(bot.calls[0].method, 'editMessageCaption')
+  assert.equal(bot.calls[0].caption, 'Same photo')
+  assert.equal(bot.calls.some((c) => c.method === 'editMessageMedia'), false)
+})
+
+test('SIS-58: editMessageMedia failure falls back to sendDocument', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot({ editMediaThrows: true })
+  const node = mediaNode('document', 'https://example.com/catalog.pdf')
+
+  await flow.dispatchFlowScreen(bot, 12345, node, 88, 'Catalog PDF')
+
+  assertMediaSend(bot, 'sendDocument', 'https://example.com/catalog.pdf', 'Catalog PDF')
+})
+
+test('SIS-55: product_list action on /start runs with message context instead of requiring a callback', () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const result = flow.resolveFlowAction('product_list', { msg: startMsg() })
+  assert.equal(result.type, 'run')
+  assert.equal(result.action, 'product_list')
+  assert.equal(result.query.from.id, 9)
+  assert.equal(result.query.message.message_id, 77)
+  assert.equal(result.query.id, null)
+})
+
+test('SIS-55: kategori_menu, stok and riwayat also run from /start message context', () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  for (const action of ['kategori_menu', 'stok', 'riwayat']) {
+    const result = flow.resolveFlowAction(action, { msg: startMsg() })
+    assert.equal(result.type, 'run', action)
+    assert.equal(result.action, action)
+  }
+})
+
+test('SIS-55: product_card as /start entry falls back to legacy welcome', () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const result = flow.resolveFlowAction('product_card', { msg: startMsg() })
+  assert.equal(result.type, 'fallback')
+  assert.equal(flow.resolveFlowAction('noop', { msg: startMsg() }).type, 'fallback')
+})
+
+test('SIS-55: action without query or message falls back instead of showing nothing', () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  assert.equal(flow.resolveFlowAction('product_list', {}).type, 'fallback')
+})
+
+test('SIS-59: deposit_menu action from a button runs the top-up flow', () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const result = flow.resolveFlowAction('deposit_menu', { query: callbackQuery() })
+  assert.equal(result.type, 'run')
+  assert.equal(result.action, 'deposit_menu')
+  assert.equal(result.query.id, 'cbq-1')
+})
+
+test('SIS-59: deposit_menu as /start entry also runs with message context', () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const result = flow.resolveFlowAction('deposit_menu', { msg: startMsg() })
+  assert.equal(result.type, 'run')
+  assert.equal(result.action, 'deposit_menu')
+})
+
+test('SIS-59: noop from a button answers the callback query', () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const result = flow.resolveFlowAction('noop', { query: callbackQuery() })
+  assert.equal(result.type, 'answer')
+  assert.equal(result.query.id, 'cbq-1')
+})
+
+test('SIS-59: product_card from a button answers with a short notice', () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const result = flow.resolveFlowAction('product_card', { query: callbackQuery() })
+  assert.equal(result.type, 'notice')
+  assert.match(result.text, /produk/i)
+  assert.equal(result.query.id, 'cbq-1')
+})
+
+test('SIS-59: editor picker omits product_card but runtime allowlist still accepts it', () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  assert.ok(flow.ACTIONS.includes('product_card'))
+  assert.ok(flow.ACTIONS.includes('deposit_menu'))
+  assert.ok(flow.ACTIONS.includes('noop'))
+  assert.ok(!flow.PICKER_ACTIONS.includes('product_card'))
+  assert.ok(flow.PICKER_ACTIONS.includes('deposit_menu'))
+  assert.deepEqual(
+    flow.actionPickerOptions(['product_list', 'stok'], 'product_card'),
+    ['product_card', 'product_list', 'stok'],
+  )
+  const dashboardSrc = fs.readFileSync(path.join(__dirname, '../dashboard.js'), 'utf8')
+  assert.match(dashboardSrc, /FLOW_PICKER_ACTIONS = FLOW_ACTIONS\.filter/)
+  assert.match(dashboardSrc, /actions:\s*FLOW_PICKER_ACTIONS/)
+  assert.match(dashboardSrc, /allowedActions:\s*FLOW_ACTIONS/)
+  const builderSrc = fs.readFileSync(path.join(__dirname, '../public/js/flow-builder.js'), 'utf8')
+  assert.match(builderSrc, /actionChoices\.unshift\(node\.action\)/)
+  const indexSrc = fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8')
+  assert.match(indexSrc, /flow\.resolveFlowAction\(result\.action/)
+  assert.match(indexSrc, /case 'deposit_menu':/)
+  assert.match(indexSrc, /if \(!ok\) \{/)
 })
 

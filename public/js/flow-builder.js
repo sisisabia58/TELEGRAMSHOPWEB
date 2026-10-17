@@ -515,7 +515,9 @@
       html += '<div class="field"><label>Copy key</label><input type="text" class="readonly" readonly value="' + escapeHtml(node.screen_key || '') + '"></div>'
     } else {
       html += '<div class="field"><label>Action</label><select id="panelAction">'
-      ;(state.actions || []).forEach((a) => {
+      const actionChoices = (state.actions || []).slice()
+      if (node.action && actionChoices.indexOf(node.action) === -1) actionChoices.unshift(node.action)
+      actionChoices.forEach((a) => {
         html += '<option value="' + escapeHtml(a) + '"' + (node.action === a ? ' selected' : '') + '>' + escapeHtml(a) + '</option>'
       })
       html += '</select></div>'
