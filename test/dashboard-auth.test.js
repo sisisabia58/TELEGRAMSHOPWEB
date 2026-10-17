@@ -122,6 +122,47 @@ function mountStubRoutes(app) {
   app.get('/settings/payment-gateway.png', okHtml)
 }
 
+function adminLookupClient(maybeSingle) {
+  let selects = 0
+  return {
+    get selects() { return selects },
+    from(table) {
+      assert.equal(table, 'Admin')
+      return {
+        select() {
+          return {
+            eq() {
+              return {
+                maybeSingle: async () => {
+                  selects += 1
+                  return maybeSingle()
+                },
+              }
+            },
+          }
+        },
+      }
+    },
+  }
+}
+
+function appWithSharedSession(fields, refresh) {
+  const session = destroyableSession(fields)
+  const app = express()
+  app.use(express.json())
+  app.use((req, _res, next) => {
+    req.session = session
+    next()
+  })
+  app.use(refresh)
+  app.use(requireQaAccess)
+  app.use(requireWriteAccess)
+  app.get('/', (_req, res) => res.status(200).send('ok'))
+  app.get('/api/bot-flow', (_req, res) => res.json({ ok: true }))
+  app.get('/produk', (_req, res) => res.status(200).send('ok'))
+  return { app, session }
+}
+
 function withSession(role, extras = {}) {
   const app = express()
   app.use(express.json())
@@ -406,6 +447,94 @@ test('role change on the Admin row takes effect on the next request', async () =
     const adminUsers = await postJson(port, '/admin/users/tambah')
     assert.equal(adminUsers.status, 403)
   } finally {
+    await new Promise((resolve) => server.close(resolve))
+  }
+})
+
+const RECHECK_UNAVAILABLE = 'Verifikasi sesi sedang tidak tersedia. Coba lagi.'
+
+test('Admin re-check error result fails the request closed without ending the session', async () => {
+  let mode = 'error'
+  const logged = []
+  const originalError = console.error
+  console.error = (...args) => { logged.push(args) }
+  const supabase = adminLookupClient(async () => {
+    if (mode === 'error') return { data: null, error: { message: 'connection reset' } }
+    return { data: { role: 'viewer', is_active: true }, error: null }
+  })
+  const refresh = createRefreshSessionAdmin(supabase)
+  const { app, session } = appWithSharedSession({ role: 'qa', adminId: QA_ID }, refresh)
+  const { server, port } = await listen(app)
+  try {
+    const page = await request(port, '/')
+    assert.equal(page.status, 503)
+    assert.equal(page.location, null)
+    assert.equal(page.text, RECHECK_UNAVAILABLE)
+    assert.equal(session.isLoggedIn, true)
+    assert.equal(session.destroyed, undefined)
+    assert.equal(session.role, 'qa')
+
+    const api = await request(port, '/api/bot-flow')
+    assert.equal(api.status, 503)
+    assert.deepEqual(api.json, { success: false, error: RECHECK_UNAVAILABLE })
+    assert.equal(session.isLoggedIn, true)
+    assert.equal(session.role, 'qa')
+    assert.ok(
+      logged.some((args) => args[0] === '[dashboard-auth] Admin re-check failed:' && args[1] === 'connection reset'),
+      'error result must keep the existing re-check failure log'
+    )
+
+    mode = 'ok'
+    const produk = await request(port, '/produk')
+    assert.equal(produk.status, 200)
+    assert.equal(session.role, 'viewer')
+    assert.equal(session.isLoggedIn, true)
+    assert.equal(session.destroyed, undefined)
+    assert.equal(supabase.selects, 3)
+  } finally {
+    console.error = originalError
+    await new Promise((resolve) => server.close(resolve))
+  }
+})
+
+test('Admin re-check throw fails the request closed without ending the session', async () => {
+  let mode = 'throw'
+  const logged = []
+  const originalError = console.error
+  console.error = (...args) => { logged.push(args) }
+  const boom = new Error('socket hang up')
+  const supabase = adminLookupClient(async () => {
+    if (mode === 'throw') throw boom
+    return { data: { role: 'staff', is_active: true }, error: null }
+  })
+  const refresh = createRefreshSessionAdmin(supabase, { ttlMs: 0 })
+  const { app, session } = appWithSharedSession({ role: 'admin', adminId: QA_ID }, refresh)
+  const { server, port } = await listen(app)
+  try {
+    const page = await request(port, '/')
+    assert.equal(page.status, 503)
+    assert.equal(page.text, RECHECK_UNAVAILABLE)
+    assert.equal(session.isLoggedIn, true)
+    assert.equal(session.destroyed, undefined)
+    assert.equal(session.role, 'admin')
+
+    const api = await request(port, '/api/bot-flow')
+    assert.equal(api.status, 503)
+    assert.equal(api.json && api.json.success, false)
+    assert.equal(api.json && api.json.ok, undefined)
+    assert.ok(
+      logged.some((args) => args[0] === '[dashboard-auth] Admin re-check error:' && args[1] === boom),
+      'thrown re-check must keep the existing re-check error log'
+    )
+
+    mode = 'ok'
+    const produk = await request(port, '/produk')
+    assert.equal(produk.status, 200)
+    assert.equal(session.role, 'staff')
+    assert.equal(session.isLoggedIn, true)
+    assert.equal(session.destroyed, undefined)
+  } finally {
+    console.error = originalError
     await new Promise((resolve) => server.close(resolve))
   }
 })
