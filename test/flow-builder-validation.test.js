@@ -350,6 +350,50 @@ test('http(s) button urls are accepted', () => {
   assert.equal(r.errors.some((e) => e.code === 'url_scheme'), false)
 })
 
+test('tg:// button urls are accepted and unsafe or non-telegram schemes are rejected', () => {
+  const accepted = [
+    'tg://user?id=42',
+    'tg://resolve?domain=shop',
+    'TG://msg?text=hi',
+    '  https://t.me/shop  ',
+    'http://example.com/path',
+  ]
+  for (const url of accepted) {
+    const d = structuredClone(baseDraft)
+    d.nodes[0].media_url = 'AgACAgIAAxkBAAIB'
+    d.nodes[0].buttons = [[{ label: 'Open', url }]]
+    const r = collectDraftIssues(d, { allowedActions: DEFAULT_FLOW_ACTIONS })
+    assert.equal(r.errors.some((e) => e.code === 'url_scheme'), false, url)
+    assert.equal(r.errors.some((e) => e.code === 'media_url'), false, url)
+    assert.equal(saveBlocked(r), false, url + ' ' + r.errors.map((e) => e.message).join('; '))
+    const v = validateDraft(d, { allowedActions: DEFAULT_FLOW_ACTIONS })
+    assert.equal(v.ok, true, url + ' ' + v.errors.join('; '))
+  }
+
+  const rejected = [
+    'javascript:alert(1)',
+    'JAVASCRIPT:alert(1)',
+    '  javascript:alert(1)',
+    'data:text/html,hi',
+    'ftp://files.example',
+    'tg:',
+    'tg://',
+    'example.com',
+  ]
+  for (const url of rejected) {
+    const d = structuredClone(baseDraft)
+    d.nodes[0].buttons = [[{ label: 'Open', url }]]
+    const r = collectDraftIssues(d)
+    const issue = r.errors.find((e) => e.code === 'url_scheme')
+    assert.ok(issue, url)
+    assert.equal(issue.field, 'url')
+    assert.match(issue.message, /url must be http\(s\) or tg:\/\//)
+    const v = validateDraft(d)
+    assert.equal(v.ok, false, url)
+    assert.ok(v.errors.some((e) => /url must be http\(s\) or tg:\/\//.test(e)), url)
+  }
+})
+
 test('telegram file ids and local paths are accepted media_url values', () => {
   for (const mediaUrl of ['AgACAgIAAxkBAAIB', './logo.jpg', '/var/bot/banner.png']) {
     const d = structuredClone(baseDraft)

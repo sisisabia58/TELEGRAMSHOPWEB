@@ -297,6 +297,13 @@ test('validateDraft rejects non-http(s) button url (M6 spec red rule)', () => {
   assert.ok(r.errors.some((e) => /url must be http/.test(e)))
 })
 
+test('validateDraft accepts tg:// button urls that Telegram inline buttons allow', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].buttons = [[{ label: 'Profile', url: 'tg://user?id=42' }]]
+  const r = validateDraft(d, { allowedActions: DEFAULT_FLOW_ACTIONS })
+  assert.equal(r.ok, true, r.errors.join('; '))
+})
+
 test('validateDraft accepts telegram file ids and local paths as media_url', () => {
   for (const mediaUrl of ['AgACAgIAAxkBAAIB', './logo.jpg', '/local/banner.png']) {
     const d = structuredClone(baseDraft)

@@ -23,6 +23,13 @@
     return /^https?:\/\/\S+$/i.test(String(value).trim())
   }
 
+  // InlineKeyboardButton.url is an HTTP or tg:// URL. lib/flow.js forwards btn.url as-is.
+  function isTelegramButtonUrl(value) {
+    if (isHttpUrl(value)) return true
+    if (value == null) return false
+    return /^tg:\/\/\S+$/i.test(String(value).trim())
+  }
+
   function buttonModeCount(btn) {
     return [btn.go, btn.callback, btn.url_from, btn.url]
       .filter((v) => v !== undefined && v !== null && String(v) !== '').length
@@ -248,13 +255,13 @@
               message: key + ': go target unknown: ' + btn.go,
             }))
           }
-          if (btn.url != null && String(btn.url) !== '' && !isHttpUrl(btn.url)) {
+          if (btn.url != null && String(btn.url) !== '' && !isTelegramButtonUrl(btn.url)) {
             errors.push(issue({
               code: 'url_scheme',
               nodeKey: key,
               field: 'url',
               buttonIndex: idx,
-              message: key + ': url must be http(s): ' + btn.url,
+              message: key + ': url must be http(s) or tg://: ' + btn.url,
             }))
           }
         }
