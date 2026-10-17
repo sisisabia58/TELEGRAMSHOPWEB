@@ -1,6 +1,13 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
-const { maskSecret, redactSecrets, isMaskedOrBlank, resolveSecretInput, secretUpdateRow } = require('../lib/secret-mask')
+const {
+  maskSecret,
+  redactSecrets,
+  isMaskedOrBlank,
+  resolveSecretInput,
+  secretUpdateRow,
+  selectSupabaseTestKey,
+} = require('../lib/secret-mask')
 
 const PAKASIR = 'pakasir-live-SUPERSECRETVALUE-9xK2'
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.anon-SUPERSECRET-abcd'
@@ -13,6 +20,33 @@ test('maskSecret never returns the full secret, only last 4 as a hint', () => {
   assert.equal(masked.masked.includes('SUPERSECRETVALUE'), false)
   assert.equal(masked.masked.slice(-4), '9xK2')
   assert.match(masked.masked, /^•+9xK2$/)
+})
+
+test('secrets of four or fewer characters are fully masked with no visible suffix', () => {
+  for (const secret of ['k', 'ab', 'xyz', 'wxyz']) {
+    const masked = maskSecret(secret)
+    assert.equal(masked.configured, true)
+    assert.equal(masked.masked.includes(secret), false, `suffix leaked for ${secret}`)
+    assert.match(masked.masked, /^•+$/)
+
+    const redacted = redactSecrets({ serviceKey: secret, url: 'https://example.supabase.co' }, ['serviceKey'])
+    assert.equal(JSON.stringify(redacted).includes(JSON.stringify(secret)), false)
+    assert.equal(redacted.serviceKeySet, true)
+    assert.match(redacted.serviceKey, /^•+$/)
+    assert.equal(isMaskedOrBlank(masked.masked), true)
+  }
+
+  // A suffix is shown only when at least one character stays hidden.
+  const five = maskSecret('abcde')
+  assert.equal(five.masked.includes('abcde'), false)
+  assert.match(five.masked, /^•+bcde$/)
+  assert.equal(five.masked.includes('a'), false)
+
+  const custom = maskSecret('abcdef', 5)
+  assert.equal(custom.masked.includes('abcdef'), false)
+  assert.match(custom.masked, /^•+bcdef$/)
+  assert.equal(maskSecret('abcdef', 6).masked.includes('abcdef'), false)
+  assert.match(maskSecret('abcdef', 6).masked, /^•+$/)
 })
 
 test('maskSecret empty value is a not-set flag', () => {
@@ -111,4 +145,96 @@ test('a new secret is persisted as submitted, never a mask or env fallback', () 
   assert.equal(row.setting_value.value.includes('•'), false)
   assert.equal(row.setting_value.value.includes('*'), false)
   assert.equal(row.setting_value.value.includes('SUPERSECRET'), false)
+})
+
+test('an explicit clear persists an empty service role key; an untouched blank or mask does not', () => {
+  const masked = maskSecret(SERVICE_ROLE).masked
+  assert.equal(secretUpdateRow('supabase_service_key', ''), null)
+  assert.equal(secretUpdateRow('supabase_service_key', '   '), null)
+  assert.equal(secretUpdateRow('supabase_service_key', masked), null)
+  assert.equal(secretUpdateRow('supabase_service_key', '', { clear: false }), null)
+  assert.equal(secretUpdateRow('supabase_service_key', masked, { clear: 'false' }), null)
+
+  assert.deepEqual(secretUpdateRow('supabase_service_key', '', { clear: true }), {
+    setting_key: 'supabase_service_key',
+    setting_value: { value: '' },
+  })
+  assert.deepEqual(secretUpdateRow('supabase_service_key', masked, { clear: 'true' }), {
+    setting_key: 'supabase_service_key',
+    setting_value: { value: '' },
+  })
+
+  const replacement = 'replacement-service-role-dummy'
+  assert.deepEqual(secretUpdateRow('supabase_service_key', replacement, { clear: true }), {
+    setting_key: 'supabase_service_key',
+    setting_value: { value: replacement },
+  })
+})
+
+test('a stored Supabase key is reused only when the requested origin matches', () => {
+  // getSupabaseSettings() places the SUPABASE_KEY env fallback in stored.key.
+  // The selector must treat that value like any other stored key.
+  const storedUrl = 'https://project-ref.supabase.co'
+  const storedKey = 'SUPABASE_KEY-dummy-value'
+  const explicit = 'caller-supplied-key-DUMMY'
+  const masked = maskSecret(storedKey).masked
+
+  const samePath = selectSupabaseTestKey({
+    requestedUrl: 'https://project-ref.supabase.co/rest/v1',
+    submittedKey: '',
+    storedUrl,
+    storedKey,
+  })
+  assert.equal(samePath.reused, true)
+  assert.equal(samePath.key, storedKey)
+  assert.equal(samePath.error, null)
+
+  const sameMasked = selectSupabaseTestKey({
+    requestedUrl: `${storedUrl}/`,
+    submittedKey: masked,
+    storedUrl,
+    storedKey,
+  })
+  assert.equal(sameMasked.reused, true)
+  assert.equal(sameMasked.key, storedKey)
+
+  const sameExplicit = selectSupabaseTestKey({
+    requestedUrl: storedUrl,
+    submittedKey: explicit,
+    storedUrl,
+    storedKey,
+  })
+  assert.equal(sameExplicit.reused, false)
+  assert.equal(sameExplicit.key, explicit)
+
+  for (const requestedUrl of [
+    'https://attacker.example',
+    'http://project-ref.supabase.co',
+    'https://project-ref.supabase.co.evil.example',
+    'https://project-ref.supabase.co:8443',
+  ]) {
+    for (const submittedKey of ['', '   ', null, masked]) {
+      const rejected = selectSupabaseTestKey({
+        requestedUrl,
+        submittedKey,
+        storedUrl,
+        storedKey,
+      })
+      assert.equal(rejected.key, '', requestedUrl)
+      assert.equal(rejected.reused, false)
+      assert.ok(rejected.error)
+      assert.equal(JSON.stringify(rejected).includes(storedKey), false)
+    }
+  }
+
+  const otherExplicit = selectSupabaseTestKey({
+    requestedUrl: 'https://attacker.example',
+    submittedKey: explicit,
+    storedUrl,
+    storedKey,
+  })
+  assert.equal(otherExplicit.error, null)
+  assert.equal(otherExplicit.reused, false)
+  assert.equal(otherExplicit.key, explicit)
+  assert.equal(otherExplicit.key.includes(storedKey), false)
 })

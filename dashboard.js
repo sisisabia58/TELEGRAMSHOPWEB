@@ -22,7 +22,7 @@ const supplierAdapters = require('./lib/suppliers')
 const ejs = require('ejs')
 const { formatrupiah, formatTanggal } = require('./lib/format')
 const { buildOverviewModel, summarizeStock } = require('./lib/dashboard-overview')
-const { redactSecrets, resolveSecretInput, secretUpdateRow } = require('./lib/secret-mask')
+const { redactSecrets, secretUpdateRow, selectSupabaseTestKey } = require('./lib/secret-mask')
 const { requireRole, requireWriteAccess } = require('./lib/dashboard-auth')
 
 const app = express()
@@ -6331,8 +6331,10 @@ app.post('/api/settings/supabase', isAuthenticated, async (req, res) => {
       enabled,
       connectionTimeout,
       retryAttempts,
-      retryDelay
+      retryDelay,
+      clearServiceKey: clearServiceKeyRaw,
     } = req.body
+    const clearServiceKey = clearServiceKeyRaw === true || clearServiceKeyRaw === 'true'
 
     const updates = []
     
@@ -6346,8 +6348,9 @@ app.post('/api/settings/supabase', isAuthenticated, async (req, res) => {
     const keyUpdate = secretUpdateRow('supabase_key', key)
     if (keyUpdate) updates.push(keyUpdate)
     
-    // Supabase Service Key (opsional) — blank or masked omits the row
-    const serviceKeyUpdate = secretUpdateRow('supabase_service_key', serviceKey)
+    // Service role key — blank or masked omits the row unless the admin
+    // explicitly clears it (clearServiceKey). A new typed key still wins.
+    const serviceKeyUpdate = secretUpdateRow('supabase_service_key', serviceKey, { clear: clearServiceKey })
     if (serviceKeyUpdate) updates.push(serviceKeyUpdate)
     
     // Supabase Enabled
@@ -6408,18 +6411,25 @@ app.post('/api/settings/supabase/test', isAuthenticated, async (req, res) => {
   try {
     const stored = await getSupabaseSettings()
     const url = req.body.url
-    const key = resolveSecretInput(req.body.key, stored.key)
+    // stored.key may be the SUPABASE_KEY env fallback. Reuse it only for the
+    // configured origin; never attach it to a request-supplied host.
+    const selection = selectSupabaseTestKey({
+      requestedUrl: url,
+      submittedKey: req.body.key,
+      storedUrl: stored.url,
+      storedKey: stored.key,
+    })
     
-    if (!url || !key) {
+    if (!url || !selection.key) {
       return res.status(400).json({ 
         success: false, 
-        error: 'URL dan API Key harus diisi' 
+        error: selection.error || 'URL dan API Key harus diisi' 
       })
     }
     
     // Create temporary Supabase client untuk test
     const { createClient } = require('@supabase/supabase-js')
-    const testClient = createClient(url, key)
+    const testClient = createClient(url, selection.key)
     
     // Test connection dengan query sederhana
     const { data, error } = await testClient

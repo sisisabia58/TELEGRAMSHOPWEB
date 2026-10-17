@@ -142,6 +142,14 @@
             background: #f8d7da;
             color: #721c24;
         }
+        .secret-clear {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+            font-size: 13px;
+            color: #333;
+        }
     </style>
 </head>
 <body>
@@ -216,7 +224,7 @@
                             <label class="setting-label">Supabase Service Role Key (Opsional)</label>
                             <div class="setting-description">
                                 Service Role Key untuk operasi admin. Jangan bagikan; browser hanya melihat petunjuk 4 karakter terakhir.
-                                <% if (settings.serviceKeySet) { %>Tersimpan. Kosongkan atau biarkan nilai tertutup untuk tidak mengubah.<% } else { %>Belum diatur.<% } %>
+                                <% if (settings.serviceKeySet) { %>Tersimpan. Field kosong atau nilai tertutup tidak mengubah key. Centang kotak di bawah untuk menghapusnya.<% } else { %>Belum diatur.<% } %>
                             </div>
                             <div class="api-key-wrapper">
                                 <input type="password" name="serviceKey" id="serviceKeyInput" class="setting-input" 
@@ -227,6 +235,12 @@
                                     👁️
                                 </button>
                             </div>
+                            <% if (settings.serviceKeySet) { %>
+                            <label class="secret-clear" for="clearServiceKey">
+                                <input type="checkbox" name="clearServiceKey" id="clearServiceKey" value="true">
+                                Hapus Service Role Key yang tersimpan
+                            </label>
+                            <% } %>
                         </div>
                     </div>
                 </div>
@@ -337,6 +351,7 @@
                 url: formData.get('url') || '',
                 key: formData.get('key') || '',
                 serviceKey: formData.get('serviceKey') || '',
+                clearServiceKey: formData.get('clearServiceKey') === 'true',
                 enabled: formData.get('enabled') ? 'true' : 'false',
                 connectionTimeout: parseInt(formData.get('connectionTimeout')) || 30,
                 retryAttempts: parseInt(formData.get('retryAttempts')) || 3,

@@ -82,6 +82,8 @@ test('payment gateway and supabase settings HTML never contain the raw secrets',
   assert.match(paymentHtml, /9xK2/)
   assert.match(supabaseHtml, /abcd/)
   assert.match(supabaseHtml, /wxyz/)
+  assert.match(supabaseHtml, /name="clearServiceKey"/)
+  assert.match(supabaseHtml, /clearServiceKey:\s*formData\.get\(['"]clearServiceKey['"]\)\s*===\s*['"]true['"]/)
 })
 
 function sliceRoute(src, routeLiteral) {
@@ -104,12 +106,17 @@ test('dashboard GET settings handlers redact secrets before render, and saves ke
   assert.doesNotMatch(paymentSave, /getPaymentGatewaySettings/)
 
   assert.match(supabaseSave, /secretUpdateRow\(\s*'supabase_key'\s*,\s*key\s*\)/)
-  assert.match(supabaseSave, /secretUpdateRow\(\s*'supabase_service_key'\s*,\s*serviceKey\s*\)/)
+  assert.match(supabaseSave, /secretUpdateRow\(\s*'supabase_service_key'\s*,\s*serviceKey\s*,/)
+  assert.match(supabaseSave, /clear:\s*clearServiceKey/)
   assert.doesNotMatch(supabaseSave, /resolveSecretInput/)
   assert.doesNotMatch(supabaseSave, /getSupabaseSettings/)
 
-  assert.match(supabaseTest, /resolveSecretInput\(\s*req\.body\.key/)
+  assert.match(supabaseTest, /selectSupabaseTestKey\s*\(/)
+  assert.match(supabaseTest, /storedUrl:\s*stored\.url/)
+  assert.match(supabaseTest, /storedKey:\s*stored\.key/)
+  assert.match(supabaseTest, /createClient\(\s*url\s*,\s*selection\.key\s*\)/)
   assert.match(supabaseTest, /getSupabaseSettings\s*\(/)
+  assert.doesNotMatch(supabaseTest, /resolveSecretInput/)
 })
 
 test('every mutating dashboard route is covered by requireWriteAccess (except login/webhook/self-service)', () => {
