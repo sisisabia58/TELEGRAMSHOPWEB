@@ -305,7 +305,8 @@ test('validateDraft rejects empty message body (M6 spec red rule)', () => {
   d.nodes[0].body = ''
   const r = validateDraft(d)
   assert.equal(r.ok, false)
-  assert.ok(r.errors.some((e) => /welcome: message body required/.test(e)))
+  const bodyErrors = r.errors.filter((e) => /message (body|text)/.test(e))
+  assert.deepEqual(bodyErrors, ['welcome: message text is empty'])
 })
 
 test('validateDraft rejects empty button label (M6 spec red rule)', () => {
@@ -428,7 +429,8 @@ test('validateDraft rejects empty screen message text with node key and reason',
   d.nodes[0].body = '   '
   const r = validateDraft(d)
   assert.equal(r.ok, false)
-  assert.ok(hasScreenReason(r, 'welcome', 'message text is empty'))
+  const bodyErrors = r.errors.filter((e) => /message text/.test(e))
+  assert.deepEqual(bodyErrors, ['welcome: message text is empty'])
 })
 
 test('validateDraft rejects non-string screen message text', () => {
@@ -436,7 +438,8 @@ test('validateDraft rejects non-string screen message text', () => {
   d.nodes[0].body = 12
   const r = validateDraft(d)
   assert.equal(r.ok, false)
-  assert.ok(hasScreenReason(r, 'welcome', /must be a string/))
+  const bodyErrors = r.errors.filter((e) => /message text/.test(e))
+  assert.deepEqual(bodyErrors, ['welcome: message text must be a string'])
 })
 
 test('validateDraft uses 1024-char caption limit when media_url is set', () => {

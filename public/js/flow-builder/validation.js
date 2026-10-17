@@ -137,12 +137,6 @@
     const key = node.key
     if (typeof node.body !== 'string') {
       errors.push(issue({
-        code: 'empty_body',
-        nodeKey: key,
-        field: 'body',
-        message: key + ': message body required',
-      }))
-      errors.push(issue({
         code: 'body_type',
         nodeKey: key,
         field: 'body',
@@ -151,12 +145,6 @@
       return
     }
     if (!node.body.trim()) {
-      errors.push(issue({
-        code: 'empty_body',
-        nodeKey: key,
-        field: 'body',
-        message: key + ': message body required',
-      }))
       errors.push(issue({
         code: 'empty_text',
         nodeKey: key,
