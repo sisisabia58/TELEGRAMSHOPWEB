@@ -251,6 +251,17 @@ test('validateDraft empty go names the node and button', () => {
   )
 })
 
+test('validateDraft rejects whitespace-only go even when it counts as a mode', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].buttons = [[{ label: 'Menu', go: '   ' }]]
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(
+    r.errors.some((e) => /welcome: button "Menu" has an empty go target/.test(e)),
+    r.errors.join('; ')
+  )
+})
+
 test('validateDraft empty go falls back to row/col when the button has no label', () => {
   const d = structuredClone(baseDraft)
   d.nodes[2].buttons = [[], [{ go: '' }]]
