@@ -148,7 +148,11 @@
   function nodeHtml(node) {
     const kindClass = node.kind === 'screen' ? 'screen' : 'action'
     const kindLabel = node.kind === 'screen' ? 'Message' : 'Action'
+    const entryKey = (state.draft && state.draft.entry_key) || 'welcome'
     let html = '<div class="sp-card ' + kindClass + '" data-node-key="' + escapeHtml(node.key) + '">'
+    if (node.key === entryKey) {
+      html += '<span class="sp-start-pill">Start</span>'
+    }
     html += '<div class="sp-card-header"><span>' + kindLabel + '</span><span class="sp-card-key">' + escapeHtml(node.key) + '</span></div>'
     html += '<div class="sp-card-body">' + escapeHtml(nodePreviewText(node)) + '</div>'
 
@@ -328,8 +332,8 @@
     if (!key) {
       panel.innerHTML =
         '<div class="flow-panel-empty">' +
-        '<strong>Edit panel</strong>' +
-        'Click a <em>Message</em> or <em>Action</em> card on the canvas to edit its text and buttons here.' +
+        '<strong>Inspector</strong>' +
+        'Select a Message or Action block to edit type, key, copy, and buttons.' +
         '</div>'
       return
     }
@@ -342,10 +346,17 @@
     const kindClass = node.kind === 'action' ? 'action' : ''
     const kindLabel = node.kind === 'screen' ? 'Message' : 'Action'
 
+    const isStart = !!(state.draft && state.draft.entry_key === node.key)
+
     let html = '<div class="flow-panel-head">'
+    html += '<p class="flow-panel-kicker">Inspector</p>'
     html += '<div class="sp-kind ' + kindClass + '">' + kindLabel + '</div>'
     html += '<h2>' + escapeHtml(node.key) + '</h2>'
     html += '</div><div class="flow-panel-body">'
+    html += '<div class="flow-panel-meta">'
+    html += '<div class="field"><label>Type</label><input type="text" class="readonly" readonly value="' + escapeHtml(kindLabel) + '"></div>'
+    html += '<div class="field"><label>Key</label><input type="text" class="readonly" readonly value="' + escapeHtml(node.key) + '"></div>'
+    html += '</div>'
 
     if (node.kind === 'screen') {
       html += '<div class="field"><label>Media URL (Image / Banner)</label>'
@@ -426,7 +437,11 @@
     html += '</div>'
 
     html += '<div class="flow-panel-footer">'
-    html += '<button type="button" id="panelDeleteNode" class="btn-delete-node" title="Remove this node from the draft">Delete Node</button>'
+    if (isStart) {
+      html += '<button type="button" id="panelDeleteNode" class="btn-delete-node" disabled title="The Start node cannot be deleted">Delete Node</button>'
+    } else {
+      html += '<button type="button" id="panelDeleteNode" class="btn-delete-node" title="Remove this node from the draft">Delete Node</button>'
+    }
     html += '<button type="button" id="panelApply" class="btn-apply">Apply</button>'
     html += '</div>'
 
@@ -1041,15 +1056,58 @@
     })
   }
 
+  function closeAllMenus() {
+    document.querySelectorAll('.flow-dropdown-menu').forEach((el) => el.classList.add('hidden'))
+    document.querySelectorAll('.flow-dropdown > button[aria-expanded]').forEach((el) => {
+      el.setAttribute('aria-expanded', 'false')
+    })
+  }
+
+  function bindDropdown(toggleId, menuId) {
+    const toggle = document.getElementById(toggleId)
+    const menu = document.getElementById(menuId)
+    if (!toggle || !menu) return
+    toggle.addEventListener('click', function (ev) {
+      ev.stopPropagation()
+      const willOpen = menu.classList.contains('hidden')
+      closeAllMenus()
+      if (willOpen) {
+        menu.classList.remove('hidden')
+        toggle.setAttribute('aria-expanded', 'true')
+      }
+    })
+    menu.addEventListener('click', function (ev) {
+      ev.stopPropagation()
+    })
+  }
+
   function bindToolbar() {
-    document.getElementById('btnSaveDraft').addEventListener('click', saveDraft)
-    document.getElementById('btnPublish').addEventListener('click', publishDraft)
+    bindDropdown('btnSaveMenu', 'flowSaveMenu')
+    bindDropdown('btnOverflowMenu', 'flowOverflowMenu')
+    document.addEventListener('click', closeAllMenus)
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') closeAllMenus()
+    })
+
+    document.getElementById('btnSaveDraft').addEventListener('click', function () {
+      closeAllMenus()
+      saveDraft()
+    })
+    document.getElementById('btnPublish').addEventListener('click', function () {
+      closeAllMenus()
+      publishDraft()
+    })
     document.getElementById('btnPreview').addEventListener('click', openPreview)
     document.getElementById('previewClose').addEventListener('click', closePreview)
     document.getElementById('previewBackdrop').addEventListener('click', closePreview)
 
     const btnGlobal = document.getElementById('btnGlobalStrings')
-    if (btnGlobal) btnGlobal.addEventListener('click', openGlobalStringsDrawer)
+    if (btnGlobal) {
+      btnGlobal.addEventListener('click', function () {
+        closeAllMenus()
+        openGlobalStringsDrawer()
+      })
+    }
     const btnGlobalClose = document.getElementById('globalStringsClose')
     if (btnGlobalClose) btnGlobalClose.addEventListener('click', closeGlobalStringsDrawer)
     const btnGlobalBackdrop = document.getElementById('globalStringsBackdrop')
@@ -1104,12 +1162,15 @@
 
     document.getElementById('flowEnabled').checked = !!state.enabled
 
-    const meta = document.getElementById('flowMeta')
-    if (meta && data.flow) {
-      meta.textContent = 'Flow: ' + data.flow.name + ' · entry ' + (data.flow.entry_key || 'welcome') +
+    const nameEl = document.getElementById('flowName')
+    if (nameEl && data.flow) {
+      nameEl.textContent = data.flow.name || 'Untitled flow'
+      nameEl.title = 'Flow: ' + (data.flow.name || 'Untitled') +
+        ' · entry ' + (data.flow.entry_key || 'welcome') +
         (data.flow.draft_updated_at ? ' · draft ' + new Date(data.flow.draft_updated_at).toLocaleString() : '')
-    } else if (meta) {
-      meta.textContent = 'No active flow configured.'
+    } else if (nameEl) {
+      nameEl.textContent = 'Untitled flow'
+      nameEl.title = 'No active flow configured.'
     }
 
     const container = document.getElementById('drawflow')
@@ -1124,7 +1185,7 @@
     updateHistoryButtons()
 
     if (!state.draft.nodes.length) {
-      setStatus('No flow nodes configured — click + Message Node to start', 'ok')
+      setStatus('No flow nodes configured — click Message or Action in the palette to start', 'ok')
       renderEntryKeySelect()
       renderPanel()
       return
