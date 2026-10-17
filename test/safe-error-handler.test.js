@@ -69,13 +69,17 @@ test('dashboard.js registers the safe error handler after routes', () => {
   assert.ok(listenAt > handlerAt, 'error handler must be registered before app.listen')
 })
 
-test('exposeErrorDetails is true only for development and test', () => {
+test('exposeErrorDetails is true only for development and test', async () => {
   assert.equal(exposeErrorDetails('development'), true)
   assert.equal(exposeErrorDetails('test'), true)
   assert.equal(exposeErrorDetails('production'), false)
   assert.equal(exposeErrorDetails('staging'), false)
   assert.equal(exposeErrorDetails(''), false)
-  assert.equal(exposeErrorDetails(undefined), false)
+  // Default-param `undefined` reads process.env.NODE_ENV; isolate from ambient npm test.
+  await withNodeEnv(undefined, () => {
+    assert.equal(exposeErrorDetails(), false)
+    assert.equal(exposeErrorDetails(undefined), false)
+  })
 })
 
 test('production HTML response hides stack and error message', async (t) => {
