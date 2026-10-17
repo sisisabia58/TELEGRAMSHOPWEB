@@ -443,11 +443,22 @@
   function applyPanelFieldErrors(result) {
     const panel = document.getElementById('flowPanel')
     if (!panel) return
-    panel.querySelectorAll('.field-error').forEach((el) => el.remove())
+    const errorIds = new Set()
+    panel.querySelectorAll('.field-error').forEach((el) => {
+      if (el.id) errorIds.add(el.id)
+      el.remove()
+    })
     panel.querySelectorAll('.is-invalid').forEach((el) => {
       el.classList.remove('is-invalid')
       el.removeAttribute('aria-invalid')
-      el.removeAttribute('aria-describedby')
+      const described = el.getAttribute('aria-describedby')
+      if (!described) {
+        el.removeAttribute('aria-describedby')
+      } else {
+        const kept = described.split(/\s+/).filter((id) => id && !errorIds.has(id))
+        if (kept.length) el.setAttribute('aria-describedby', kept.join(' '))
+        else el.removeAttribute('aria-describedby')
+      }
     })
     const key = state.selectedKey
     if (!key || !result) return
@@ -460,24 +471,27 @@
         const row = panel.querySelector('.sp-btn-row[data-flat-index="' + item.buttonIndex + '"]')
         if (!row) continue
         row.classList.add('is-invalid')
-        if (item.field === 'label') {
-          const labelEl = row.querySelector('.btn-label')
-          if (labelEl) labelEl.classList.add('is-invalid')
-        } else if (item.field === 'url' || item.field === 'go') {
-          const targetEl = row.querySelector('.btn-target')
-          if (targetEl) targetEl.classList.add('is-invalid')
-        } else if (item.field === 'mode') {
-          const modeEl = row.querySelector('.btn-mode')
-          if (modeEl) modeEl.classList.add('is-invalid')
-        }
-        const existing = row.querySelector('.field-error')
-        if (existing) {
-          existing.textContent = existing.textContent + '; ' + item.message
+        let fieldEl = null
+        if (item.field === 'label') fieldEl = row.querySelector('.btn-label')
+        else if (item.field === 'url' || item.field === 'go') fieldEl = row.querySelector('.btn-target')
+        else if (item.field === 'mode') fieldEl = row.querySelector('.btn-mode')
+        let err = row.querySelector('.field-error')
+        if (err) {
+          err.textContent = err.textContent + '; ' + item.message
         } else {
-          const err = document.createElement('p')
+          err = document.createElement('p')
           err.className = 'field-error'
+          err.id = 'btn-row-' + item.buttonIndex + '-error'
           err.textContent = item.message
           row.appendChild(err)
+        }
+        if (fieldEl) {
+          fieldEl.classList.add('is-invalid')
+          fieldEl.setAttribute('aria-invalid', 'true')
+          const described = fieldEl.getAttribute('aria-describedby')
+          const ids = described ? described.split(/\s+/).filter(Boolean) : []
+          if (!ids.includes(err.id)) ids.push(err.id)
+          fieldEl.setAttribute('aria-describedby', ids.join(' '))
         }
       }
     }

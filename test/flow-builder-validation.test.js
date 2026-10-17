@@ -391,6 +391,263 @@ test('syncPanelIntoDraft applies the inspector only after a real edit', () => {
   assert.ok(validation.indexOf('!panelDirty') < validation.indexOf('readPanelPatch'))
 })
 
+function endOfBalanced(source, openIndex) {
+  let depth = 0
+  let quote = null
+  for (let i = openIndex; i < source.length; i++) {
+    const ch = source[i]
+    if (quote) {
+      if (ch === '\\') {
+        i++
+        continue
+      }
+      if (ch === quote) quote = null
+      continue
+    }
+    if (ch === '"' || ch === '\'' || ch === '`') {
+      quote = ch
+      continue
+    }
+    if (ch === '/' && source[i + 1] === '/') {
+      const nl = source.indexOf('\n', i)
+      if (nl < 0) return source.length
+      i = nl
+      continue
+    }
+    if (ch === '/' && source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2)
+      if (end < 0) throw new Error('unterminated comment')
+      i = end + 1
+      continue
+    }
+    if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) return i + 1
+    }
+  }
+  throw new Error('unbalanced brace')
+}
+
+function extractFunction(source, name) {
+  const start = source.indexOf('function ' + name + '(')
+  if (start < 0) throw new Error('missing function ' + name)
+  const open = source.indexOf('{', start)
+  return source.slice(start, endOfBalanced(source, open))
+}
+
+class ButtonRowEl {
+  constructor(className) {
+    this.id = ''
+    this.textContent = ''
+    this.parentElement = null
+    this.children = []
+    this.attrs = {}
+    this._classes = new Set()
+    const classes = this._classes
+    this.classList = {
+      add(name) { classes.add(name) },
+      remove(name) { classes.delete(name) },
+      contains(name) { return classes.has(name) },
+    }
+    if (className) this.className = className
+  }
+
+  get className() {
+    return Array.from(this._classes).join(' ')
+  }
+
+  set className(value) {
+    this._classes.clear()
+    String(value || '').split(/\s+/).filter(Boolean).forEach((name) => this._classes.add(name))
+  }
+
+  appendChild(child) {
+    child.parentElement = this
+    this.children.push(child)
+    return child
+  }
+
+  remove() {
+    const parent = this.parentElement
+    if (!parent) return
+    const idx = parent.children.indexOf(this)
+    if (idx >= 0) parent.children.splice(idx, 1)
+    this.parentElement = null
+  }
+
+  setAttribute(name, value) {
+    this.attrs[name] = String(value)
+  }
+
+  getAttribute(name) {
+    return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null
+  }
+
+  removeAttribute(name) {
+    delete this.attrs[name]
+  }
+
+  matches(selector) {
+    const cls = /^\.([A-Za-z0-9_-]+)/.exec(selector)
+    if (!cls || !this.classList.contains(cls[1])) return false
+    const attrRe = /\[([A-Za-z0-9_-]+)="([^"]*)"\]/g
+    let match
+    while ((match = attrRe.exec(selector))) {
+      if (this.getAttribute(match[1]) !== match[2]) return false
+    }
+    return true
+  }
+
+  querySelectorAll(selector) {
+    const found = []
+    const walk = (el) => {
+      for (const child of el.children) {
+        if (child.matches(selector)) found.push(child)
+        walk(child)
+      }
+    }
+    walk(this)
+    return found
+  }
+
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] || null
+  }
+}
+
+function buttonControl(className, describedBy) {
+  const el = new ButtonRowEl(className)
+  if (describedBy) el.setAttribute('aria-describedby', describedBy)
+  return el
+}
+
+function buttonRowDom() {
+  const panel = new ButtonRowEl('flow-panel')
+  panel.id = 'flowPanel'
+  const row0Label = buttonControl('btn-label', 'label-hint')
+  const row0Mode = buttonControl('btn-mode', 'mode-hint')
+  const row0Target = buttonControl('btn-target')
+  const row1Label = buttonControl('btn-label', 'row1-label-hint')
+  const row1Mode = buttonControl('btn-mode')
+  const row1Target = buttonControl('btn-target', 'target-hint extra')
+  const row0 = new ButtonRowEl('sp-btn-row')
+  row0.setAttribute('data-flat-index', '0')
+  row0.appendChild(row0Label)
+  row0.appendChild(row0Mode)
+  row0.appendChild(row0Target)
+  const row1 = new ButtonRowEl('sp-btn-row')
+  row1.setAttribute('data-flat-index', '1')
+  row1.appendChild(row1Label)
+  row1.appendChild(row1Mode)
+  row1.appendChild(row1Target)
+  panel.appendChild(row0)
+  panel.appendChild(row1)
+  const document = {
+    getElementById(id) {
+      return id === 'flowPanel' ? panel : null
+    },
+    createElement() {
+      return new ButtonRowEl()
+    },
+  }
+  const state = { selectedKey: 'welcome' }
+  const js = fs.readFileSync(jsFile, 'utf8')
+  const applyPanelFieldErrors = new Function(
+    'document',
+    'state',
+    "'use strict'\n" +
+      extractFunction(js, 'insertFieldError') + '\n' +
+      extractFunction(js, 'applyPanelFieldErrors') + '\n' +
+      'return applyPanelFieldErrors\n'
+  )(document, state)
+  return {
+    applyPanelFieldErrors,
+    panel,
+    row0,
+    row1,
+    row0Label,
+    row0Mode,
+    row0Target,
+    row1Label,
+    row1Mode,
+    row1Target,
+  }
+}
+
+function buttonRowErrors() {
+  return {
+    errors: [
+      { nodeKey: 'welcome', field: 'label', buttonIndex: 0, message: 'welcome: button 1 needs a label' },
+      { nodeKey: 'welcome', field: 'go', buttonIndex: 0, message: 'welcome: button Go has an empty go target' },
+      { nodeKey: 'welcome', field: 'url', buttonIndex: 0, message: 'welcome: url must be http(s): nope' },
+      { nodeKey: 'welcome', field: 'mode', buttonIndex: 1, message: 'welcome: button Next needs exactly one mode' },
+      { nodeKey: 'other', field: 'label', buttonIndex: 0, message: 'other: button 1 needs a label' },
+      { nodeKey: 'welcome', field: 'label', buttonIndex: 9, message: 'welcome: missing row' },
+    ],
+  }
+}
+
+test('button-row errors point aria-describedby at the matching control without replacing an existing description', () => {
+  const dom = buttonRowDom()
+  dom.applyPanelFieldErrors(buttonRowErrors())
+  dom.applyPanelFieldErrors(buttonRowErrors())
+
+  const row0Error = dom.row0.querySelector('.field-error')
+  const row1Error = dom.row1.querySelector('.field-error')
+  assert.ok(row0Error)
+  assert.equal(row0Error.id, 'btn-row-0-error')
+  assert.equal(
+    row0Error.textContent,
+    'welcome: button 1 needs a label; welcome: button Go has an empty go target; welcome: url must be http(s): nope'
+  )
+  assert.equal(dom.panel.querySelectorAll('.field-error').length, 2)
+  assert.equal(dom.row0Label.getAttribute('aria-invalid'), 'true')
+  assert.equal(dom.row0Label.getAttribute('aria-describedby'), 'label-hint btn-row-0-error')
+  assert.equal(dom.row0Label.classList.contains('is-invalid'), true)
+  assert.equal(dom.row0Target.getAttribute('aria-invalid'), 'true')
+  assert.equal(dom.row0Target.getAttribute('aria-describedby'), 'btn-row-0-error')
+  assert.equal(dom.row0Mode.getAttribute('aria-invalid'), null)
+  assert.equal(dom.row0Mode.getAttribute('aria-describedby'), 'mode-hint')
+  assert.equal(dom.row0.classList.contains('is-invalid'), true)
+
+  assert.ok(row1Error)
+  assert.equal(row1Error.id, 'btn-row-1-error')
+  assert.equal(row1Error.textContent, 'welcome: button Next needs exactly one mode')
+  assert.equal(dom.row1Mode.getAttribute('aria-invalid'), 'true')
+  assert.equal(dom.row1Mode.getAttribute('aria-describedby'), 'btn-row-1-error')
+  assert.equal(dom.row1Label.getAttribute('aria-invalid'), null)
+  assert.equal(dom.row1Label.getAttribute('aria-describedby'), 'row1-label-hint')
+  assert.equal(dom.row1Target.getAttribute('aria-invalid'), null)
+  assert.equal(dom.row1Target.getAttribute('aria-describedby'), 'target-hint extra')
+})
+
+test('clearing button-row highlights removes the error association and keeps the previous aria-describedby', () => {
+  const dom = buttonRowDom()
+  dom.applyPanelFieldErrors(buttonRowErrors())
+  dom.applyPanelFieldErrors({ errors: [] })
+
+  assert.equal(dom.panel.querySelectorAll('.field-error').length, 0)
+  assert.equal(dom.panel.querySelectorAll('.is-invalid').length, 0)
+  assert.equal(dom.row0Label.getAttribute('aria-invalid'), null)
+  assert.equal(dom.row0Label.getAttribute('aria-describedby'), 'label-hint')
+  assert.equal(dom.row0Target.getAttribute('aria-invalid'), null)
+  assert.equal(dom.row0Target.getAttribute('aria-describedby'), null)
+  assert.equal(dom.row0Mode.getAttribute('aria-describedby'), 'mode-hint')
+  assert.equal(dom.row1Mode.getAttribute('aria-invalid'), null)
+  assert.equal(dom.row1Mode.getAttribute('aria-describedby'), null)
+  assert.equal(dom.row1Label.getAttribute('aria-describedby'), 'row1-label-hint')
+  assert.equal(dom.row1Target.getAttribute('aria-describedby'), 'target-hint extra')
+
+  dom.applyPanelFieldErrors(buttonRowErrors())
+  dom.applyPanelFieldErrors(null)
+  assert.equal(dom.panel.querySelectorAll('.field-error').length, 0)
+  assert.equal(dom.row0Label.getAttribute('aria-invalid'), null)
+  assert.equal(dom.row0Label.getAttribute('aria-describedby'), 'label-hint')
+  assert.equal(dom.row0Target.getAttribute('aria-describedby'), null)
+  assert.equal(dom.row1Mode.getAttribute('aria-describedby'), null)
+})
+
 test('flow-builder JS highlights nodes, gates Save/Publish, and centres on list click (M6)', () => {
   const js = fs.readFileSync(jsFile, 'utf8')
   assert.match(js, /FlowBuilderValidation/)
