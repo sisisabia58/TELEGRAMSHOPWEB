@@ -112,6 +112,18 @@ test('dashboard GET settings handlers redact secrets before render, and saves ke
   assert.match(supabaseTest, /getSupabaseSettings\s*\(/)
 })
 
+test('qa allowlist and Admin session re-check run before mutating routes', () => {
+  assert.match(dashboardSrc, /requireQaAccess/)
+  assert.match(dashboardSrc, /createRefreshSessionAdmin\s*\(\s*supabase/)
+  const refreshIndex = dashboardSrc.search(/app\.use\(\s*refreshSessionAdmin\s*\)/)
+  const qaIndex = dashboardSrc.search(/app\.use\(\s*requireQaAccess\s*\)/)
+  const writeIndex = dashboardSrc.search(/app\.use\(\s*requireWriteAccess\s*\)/)
+  assert.ok(refreshIndex > 0, 'refreshSessionAdmin must be registered')
+  assert.ok(qaIndex > 0, 'requireQaAccess must be registered')
+  assert.ok(refreshIndex < writeIndex, 'Admin re-check must run before write guard')
+  assert.ok(qaIndex < writeIndex, 'qa allowlist must run before write guard')
+})
+
 test('every mutating dashboard route is covered by requireWriteAccess (except login/webhook/self-service)', () => {
   assert.match(dashboardSrc, /app\.use\(\s*requireWriteAccess\s*\)/)
   const guardIndex = dashboardSrc.search(/app\.use\(\s*requireWriteAccess\s*\)/)
