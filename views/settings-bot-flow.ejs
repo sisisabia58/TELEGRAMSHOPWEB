@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <%- include('partials/head') %>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.css">
+    <link rel="stylesheet" href="/vendor/drawflow/drawflow.min.css">
     <link rel="stylesheet" href="/css/flow-builder.css">
 </head>
 <body>
@@ -23,6 +23,10 @@
                     <button type="button" id="btnZoomIn" class="btn btn-sm btn-secondary" title="Zoom In">+</button>
                     <button type="button" id="btnZoomOut" class="btn btn-sm btn-secondary" title="Zoom Out">-</button>
                     <button type="button" id="btnFitView" class="btn btn-sm btn-secondary" title="Reset Zoom">⛶</button>
+                </div>
+                <div class="history-controls">
+                    <button type="button" id="btnUndo" class="btn btn-sm btn-secondary" title="Undo (Ctrl/Cmd+Z)" disabled>Undo</button>
+                    <button type="button" id="btnRedo" class="btn btn-sm btn-secondary" title="Redo (Ctrl/Cmd+Shift+Z or Ctrl+Y)" disabled>Redo</button>
                 </div>
                 <button type="button" id="btnGlobalStrings" class="btn btn-secondary">Global Strings 🌐</button>
                 <label class="flow-entry-picker">
@@ -81,7 +85,9 @@
         </div>
     </main>
     <%- include('partials/mobile-tabs') %>
-    <script src="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.js"></script>
+    <script src="/vendor/drawflow/drawflow.min.js"></script>
+    <script src="/js/flow-builder/state.js"></script>
+    <script src="/js/flow-builder/commands.js"></script>
     <script src="/js/flow-builder.js"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-/* global Drawflow */
+/* global Drawflow, FlowBuilderState, FlowBuilderCommands */
 (function () {
   'use strict'
 
@@ -7,6 +7,22 @@
   const idToKey = new Map()
   /** @type {Map<string, number[]>} node key -> flat button indices for each go output */
   const goOutputFlatIndices = new Map()
+
+  const editorState = FlowBuilderState.createEditorState()
+  let historyLockCount = 0
+
+  function isHistoryLocked() {
+    return historyLockCount > 0
+  }
+
+  function withHistoryLock(fn) {
+    historyLockCount++
+    try {
+      return fn()
+    } finally {
+      historyLockCount--
+    }
+  }
 
   const state = {
     draft: null,
@@ -33,7 +49,54 @@
   }
 
   function clone(x) {
-    return JSON.parse(JSON.stringify(x))
+    return FlowBuilderState.cloneDraft(x)
+  }
+
+  function applyCommand(mutator) {
+    const next = editorState.applyCommand(mutator)
+    state.draft = next
+    updateHistoryButtons()
+    return next
+  }
+
+  function updateHistoryButtons() {
+    const undoBtn = document.getElementById('btnUndo')
+    const redoBtn = document.getElementById('btnRedo')
+    if (undoBtn) undoBtn.disabled = !editorState.canUndo()
+    if (redoBtn) redoBtn.disabled = !editorState.canRedo()
+  }
+
+  function restoreSelectionAfterHistory() {
+    if (state.selectedKey && getNode(state.selectedKey)) return
+    const draft = state.draft
+    if (!draft || !draft.nodes || !draft.nodes.length) {
+      state.selectedKey = null
+      return
+    }
+    const entry = draft.entry_key
+    state.selectedKey = getNode(entry) ? entry : draft.nodes[0].key
+  }
+
+  function restoreFromHistory(next) {
+    state.draft = next
+    restoreSelectionAfterHistory()
+    withHistoryLock(function () {
+      renderCanvas()
+      renderPanel()
+    })
+    updateHistoryButtons()
+  }
+
+  function undoDraft() {
+    if (!editorState.canUndo()) return
+    restoreFromHistory(editorState.undo())
+    setStatus('Undid last change', 'ok')
+  }
+
+  function redoDraft() {
+    if (!editorState.canRedo()) return
+    restoreFromHistory(editorState.redo())
+    setStatus('Redid last change', 'ok')
   }
 
   function flattenButtons(buttons) {
@@ -116,47 +179,6 @@
     if (data) data.html = nodeHtml(node)
   }
 
-  function applyWire(draft, fromKey, buttonFlatIndex, toKey) {
-    const next = clone(draft)
-    const node = next.nodes.find((n) => n.key === fromKey)
-    if (!node) return next
-    let i = 0
-    for (const row of node.buttons || []) {
-      for (let c = 0; c < row.length; c++) {
-        if (i === buttonFlatIndex) {
-          const btn = { ...row[c] }
-          delete btn.callback
-          delete btn.url
-          delete btn.url_from
-          btn.go = toKey
-          row[c] = btn
-          return next
-        }
-        i++
-      }
-    }
-    return next
-  }
-
-  function clearWire(draft, fromKey, buttonFlatIndex) {
-    const next = clone(draft)
-    const node = next.nodes.find((n) => n.key === fromKey)
-    if (!node) return next
-    let i = 0
-    for (const row of node.buttons || []) {
-      for (let c = 0; c < row.length; c++) {
-        if (i === buttonFlatIndex) {
-          const btn = { ...row[c] }
-          btn.go = ''
-          row[c] = btn
-          return next
-        }
-        i++
-      }
-    }
-    return next
-  }
-
   function syncPositionsFromEditor() {
     if (!editor || !state.draft) return
     for (const node of state.draft.nodes) {
@@ -196,6 +218,7 @@
   function renderCanvas() {
     if (!editor || !state.draft) return
     const keepKey = state.selectedKey
+    withHistoryLock(function () {
     editor.clear()
     keyToId.clear()
     idToKey.clear()
@@ -249,10 +272,11 @@
     }
 
     renderEntryKeySelect()
+    })
   }
 
   function getNode(key) {
-    return (state.draft.nodes || []).find((n) => n.key === key)
+    return ((state.draft && state.draft.nodes) || []).find((n) => n.key === key)
   }
 
   function renderTelegramMarkdown(text) {
@@ -447,10 +471,15 @@
     const btnAdd = document.getElementById('btnAddButton')
     if (btnAdd) {
       btnAdd.addEventListener('click', function () {
-        if (!node.buttons) node.buttons = []
-        const newIdx = flattenButtons(node.buttons).length
-        const label = 'Button ' + (newIdx + 1)
-        node.buttons.push([{ label, go: '' }])
+        const nodeKey = state.selectedKey
+        applyCommand((draft) => {
+          const n = (draft.nodes || []).find((item) => item.key === nodeKey)
+          if (!n) return draft
+          if (!n.buttons) n.buttons = []
+          const newIdx = flattenButtons(n.buttons).length
+          n.buttons.push([{ label: 'Button ' + (newIdx + 1), go: '' }])
+          return draft
+        })
         renderPanel()
       })
     }
@@ -458,17 +487,23 @@
     panel.querySelectorAll('.btn-row-delete').forEach((btn) => {
       btn.addEventListener('click', function () {
         const idx = Number(btn.getAttribute('data-delete'))
-        let cur = 0
-        const result = []
-        for (const row of node.buttons || []) {
-          const newRow = []
-          for (const b of row) {
-            if (cur !== idx) newRow.push(b)
-            cur++
+        const nodeKey = state.selectedKey
+        applyCommand((draft) => {
+          const n = (draft.nodes || []).find((item) => item.key === nodeKey)
+          if (!n) return draft
+          let cur = 0
+          const result = []
+          for (const row of n.buttons || []) {
+            const newRow = []
+            for (const b of row) {
+              if (cur !== idx) newRow.push(b)
+              cur++
+            }
+            if (newRow.length > 0) result.push(newRow)
           }
-          if (newRow.length > 0) result.push(newRow)
-        }
-        node.buttons = result
+          n.buttons = result
+          return draft
+        })
         renderPanel()
       })
     })
@@ -477,27 +512,32 @@
       btn.addEventListener('click', function () {
         const idx = Number(btn.getAttribute('data-idx'))
         const dir = btn.getAttribute('data-move')
-        const flat = flattenButtons(node.buttons)
-        const targetIdx = dir === 'up' ? idx - 1 : idx + 1
-        if (targetIdx >= 0 && targetIdx < flat.length) {
-          const temp = flat[idx]
-          flat[idx] = flat[targetIdx]
-          flat[targetIdx] = temp
+        const nodeKey = state.selectedKey
+        applyCommand((draft) => {
+          const n = (draft.nodes || []).find((item) => item.key === nodeKey)
+          if (!n) return draft
+          const flatBtns = flattenButtons(n.buttons)
+          const targetIdx = dir === 'up' ? idx - 1 : idx + 1
+          if (targetIdx < 0 || targetIdx >= flatBtns.length) return draft
+          const temp = flatBtns[idx]
+          flatBtns[idx] = flatBtns[targetIdx]
+          flatBtns[targetIdx] = temp
           let cur = 0
           const result = []
-          for (const row of node.buttons || []) {
+          for (const row of n.buttons || []) {
             const newRow = []
             for (let c = 0; c < row.length; c++) {
-              if (cur < flat.length) {
-                newRow.push(flat[cur])
+              if (cur < flatBtns.length) {
+                newRow.push(flatBtns[cur])
                 cur++
               }
             }
             if (newRow.length > 0) result.push(newRow)
           }
-          node.buttons = result
-          renderPanel()
-        }
+          n.buttons = result
+          return draft
+        })
+        renderPanel()
       })
     })
 
@@ -513,15 +553,7 @@
           return
         }
         if (!window.confirm('Delete node "' + nodeKey + '"? Connections pointing to this node will be disconnected.')) return
-        state.draft.nodes = (state.draft.nodes || []).filter((n) => n.key !== nodeKey)
-        // Clean up dangling targets on other nodes
-        for (const other of state.draft.nodes || []) {
-          for (const row of other.buttons || []) {
-            for (const b of row || []) {
-              if (b.go === nodeKey) b.go = ''
-            }
-          }
-        }
+        applyCommand((draft) => FlowBuilderCommands.deleteNode(draft, nodeKey))
         state.selectedKey = null
         renderCanvas()
         renderPanel()
@@ -535,19 +567,20 @@
     const node = getNode(key)
     if (!node) return
 
+    const patch = {}
     const descEl = document.getElementById('panelDescription')
-    if (descEl) node.description = descEl.value
+    if (descEl) patch.description = descEl.value
 
     if (node.kind === 'screen') {
       const mediaEl = document.getElementById('panelMediaUrl')
-      if (mediaEl) node.media_url = mediaEl.value.trim() || null
+      if (mediaEl) patch.media_url = mediaEl.value.trim() || null
       const mediaTypeEl = document.getElementById('panelMediaType')
-      if (mediaTypeEl) node.media_type = mediaTypeEl.value || 'photo'
+      if (mediaTypeEl) patch.media_type = mediaTypeEl.value || 'photo'
       const bodyEl = document.getElementById('panelBody')
-      if (bodyEl) node.body = bodyEl.value
+      if (bodyEl) patch.body = bodyEl.value
     } else {
       const actionEl = document.getElementById('panelAction')
-      if (actionEl && node.kind === 'action') node.action = actionEl.value
+      if (actionEl && node.kind === 'action') patch.action = actionEl.value
     }
 
     const list = document.getElementById('panelButtonsBody')
@@ -583,18 +616,22 @@
         }
         rebuilt.push(newRow)
       }
-      node.buttons = rebuilt
+      patch.buttons = rebuilt
     }
 
-    const outputs = countGoOutputs(node)
+    applyCommand((draft) => FlowBuilderCommands.patchNode(draft, key, patch))
+
+    const applied = getNode(key)
+    if (!applied) return
+    const outputs = countGoOutputs(applied)
     const prevOutputs = (goOutputFlatIndices.get(key) || []).length
     if (outputs !== prevOutputs) {
       renderCanvas()
     } else {
       const id = keyToId.get(key)
       if (id != null) {
-        editor.updateNodeDataFromId(id, { key: node.key })
-        refreshNodeDom(id, node)
+        editor.updateNodeDataFromId(id, { key: applied.key })
+        refreshNodeDom(id, applied)
         editor.updateConnectionNodes('node-' + id)
       } else {
         renderCanvas()
@@ -617,17 +654,17 @@
     })
 
     editor.on('nodeMoved', function (id) {
+      if (isHistoryLocked()) return
       const resolved = resolveNodeId(id)
       const key = resolved != null ? idToKey.get(resolved) : null
-      const node = getNode(key)
       const info = editor.getNodeFromId(resolved)
-      if (node && info) {
-        node.pos_x = info.pos_x
-        node.pos_y = info.pos_y
+      if (key && info) {
+        applyCommand((draft) => FlowBuilderCommands.moveNode(draft, key, info.pos_x, info.pos_y))
       }
     })
 
     editor.on('connectionCreated', function (info) {
+      if (isHistoryLocked()) return
       const fromKey = idToKey.get(resolveNodeId(info.output_id)) || idToKey.get(info.output_id)
       const toKey = idToKey.get(resolveNodeId(info.input_id)) || idToKey.get(info.input_id)
       if (!fromKey || !toKey) return
@@ -635,19 +672,20 @@
       const flatList = goOutputFlatIndices.get(fromKey) || []
       const flatIdx = flatList[outNum - 1]
       if (flatIdx === undefined) return
-      state.draft = applyWire(state.draft, fromKey, flatIdx, toKey)
+      applyCommand((draft) => FlowBuilderCommands.applyWire(draft, fromKey, flatIdx, toKey))
       if (state.selectedKey === fromKey) renderPanel()
       setStatus('Connected ' + fromKey + ' → ' + toKey, 'ok')
     })
 
     editor.on('connectionRemoved', function (info) {
+      if (isHistoryLocked()) return
       const fromKey = idToKey.get(resolveNodeId(info.output_id)) || idToKey.get(info.output_id)
       if (!fromKey) return
       const outNum = parseInt(String(info.output_class).replace('output_', ''), 10)
       const flatList = goOutputFlatIndices.get(fromKey) || []
       const flatIdx = flatList[outNum - 1]
       if (flatIdx === undefined) return
-      state.draft = clearWire(state.draft, fromKey, flatIdx)
+      applyCommand((draft) => FlowBuilderCommands.clearWire(draft, fromKey, flatIdx))
       if (state.selectedKey === fromKey) renderPanel()
       setStatus('Wire removed from ' + fromKey, 'ok')
     })
@@ -873,7 +911,7 @@
       buttons: [[{ label: 'Menu', go: 'welcome' }]],
       description: '',
     }
-    state.draft.nodes.push(newNode)
+    applyCommand((draft) => FlowBuilderCommands.addNode(draft, newNode))
     renderCanvas()
     selectNodeByKey(key)
     setStatus('Added Message node: ' + key, 'ok')
@@ -892,7 +930,7 @@
       buttons: [],
       description: 'Open product catalog',
     }
-    state.draft.nodes.push(newNode)
+    applyCommand((draft) => FlowBuilderCommands.addNode(draft, newNode))
     renderCanvas()
     selectNodeByKey(key)
     setStatus('Added Action node: ' + key, 'ok')
@@ -987,18 +1025,19 @@
       if (n.key === effective) opt.selected = true
       sel.appendChild(opt)
     }
-    if (effective && state.draft.entry_key !== effective) state.draft.entry_key = effective
   }
 
   function bindEntryKeySelect() {
     const sel = document.getElementById('entryKeySelect')
     if (!sel) return
     sel.addEventListener('change', function () {
-      if (state.draft) {
-        state.draft.entry_key = sel.value
-        renderCanvas()
-        setStatus('Entry node set to ' + sel.value, 'ok')
-      }
+      if (!state.draft) return
+      applyCommand((draft) => {
+        draft.entry_key = sel.value
+        return draft
+      })
+      renderCanvas()
+      setStatus('Entry node set to ' + sel.value, 'ok')
     })
   }
 
@@ -1032,6 +1071,11 @@
     const btnFitView = document.getElementById('btnFitView')
     if (btnFitView) btnFitView.addEventListener('click', function () { if (editor) editor.zoom_reset() })
 
+    const btnUndo = document.getElementById('btnUndo')
+    if (btnUndo) btnUndo.addEventListener('click', undoDraft)
+    const btnRedo = document.getElementById('btnRedo')
+    if (btnRedo) btnRedo.addEventListener('click', redoDraft)
+
     const enabledEl = document.getElementById('flowEnabled')
     enabledEl.addEventListener('change', function () {
       toggleEnabled(enabledEl.checked)
@@ -1046,7 +1090,13 @@
       setStatus(data.error || 'Failed to load flow', 'err')
       return
     }
-    state.draft = data.draft
+    const loaded = clone(data.draft || { nodes: [], entry_key: 'welcome' })
+    if (!Array.isArray(loaded.nodes)) loaded.nodes = []
+    if (loaded.nodes.length && !loaded.nodes.some((n) => n.key === loaded.entry_key)) {
+      loaded.entry_key = loaded.nodes[0].key
+    }
+    editorState.replaceDraft(loaded)
+    state.draft = editorState.getDraft()
     state.publishedKeys = data.publishedKeys
     state.enabled = data.enabled
     state.actions = data.actions || []
@@ -1070,10 +1120,10 @@
     bindEditorEvents()
     bindToolbar()
     bindEntryKeySelect()
+    bindHistoryShortcuts()
+    updateHistoryButtons()
 
-    if (!state.draft || !state.draft.nodes || !state.draft.nodes.length) {
-      if (!state.draft) state.draft = { nodes: [] }
-      if (!state.draft.nodes) state.draft.nodes = []
+    if (!state.draft.nodes.length) {
       setStatus('No flow nodes configured — click + Message Node to start', 'ok')
       renderEntryKeySelect()
       renderPanel()
@@ -1085,6 +1135,16 @@
     const entry = state.draft.entry_key || 'welcome'
     selectNodeByKey(keyToId.has(entry) ? entry : state.draft.nodes[0].key)
     setStatus('Click a card to edit · Apply · Save draft · Preview', 'ok')
+  }
+
+  function bindHistoryShortcuts() {
+    document.addEventListener('keydown', function (ev) {
+      const action = FlowBuilderState.shortcutFromEvent(ev)
+      if (!action) return
+      ev.preventDefault()
+      if (action === 'undo') undoDraft()
+      else if (action === 'redo') redoDraft()
+    })
   }
 
   document.addEventListener('DOMContentLoaded', loadGraph)
