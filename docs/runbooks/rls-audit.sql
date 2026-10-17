@@ -9,11 +9,14 @@
 -- Expected AFTER applying the lockdown (and NOT before):
 --   1. pg_policies.roles is {service_role} for every "Allow all for service role"
 --      policy, including Supplier* (already that way) and the 22 former-PUBLIC tables.
---   2. has_table_privilege(anon|authenticated, table, SELECT/INSERT/UPDATE/DELETE)
---      is false for every public table. TRUNCATE should also be false.
---   3. has_function_privilege(anon|authenticated, publish_bot_flow_graph, EXECUTE)
+--   2. has_table_privilege(anon|authenticated, oid, SELECT/INSERT/UPDATE/DELETE/TRUNCATE)
+--      is false for every public table, view, matview, foreign table, and
+--      partitioned table (GRANT ALL TABLES covers these relkinds).
+--   3. has_sequence_privilege(anon|authenticated, oid, USAGE/SELECT/UPDATE)
+--      is false for every public sequence.
+--   4. has_function_privilege(anon|authenticated, publish_bot_flow_graph, EXECUTE)
 --      is false. service_role remains true.
---   4. pg_proc.proconfig for public.update_updated_at_column contains
+--   5. pg_proc.proconfig for public.update_updated_at_column contains
 --      search_path=public.
 
 -- 1. Policies in public (tablename, policyname, roles, cmd, qual)
@@ -29,9 +32,19 @@ FROM pg_policies
 WHERE schemaname = 'public'
 ORDER BY tablename, policyname;
 
--- 2. anon / authenticated table privileges on every public table
+-- 2. anon / authenticated privileges on every public relation covered by
+--    GRANT/REVOKE ALL TABLES: ordinary tables (r), views (v), materialized
+--    views (m), foreign tables (f), partitioned tables (p).
 SELECT
-  c.relname AS table_name,
+  c.relname AS relation_name,
+  c.relkind,
+  CASE c.relkind
+    WHEN 'r' THEN 'table'
+    WHEN 'v' THEN 'view'
+    WHEN 'm' THEN 'matview'
+    WHEN 'f' THEN 'foreign table'
+    WHEN 'p' THEN 'partitioned table'
+  END AS relkind_label,
   has_table_privilege('anon', c.oid, 'SELECT') AS anon_select,
   has_table_privilege('anon', c.oid, 'INSERT') AS anon_insert,
   has_table_privilege('anon', c.oid, 'UPDATE') AS anon_update,
@@ -46,10 +59,25 @@ SELECT
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = 'public'
-  AND c.relkind = 'r'
+  AND c.relkind IN ('r', 'v', 'm', 'f', 'p')
 ORDER BY c.relname;
 
--- 3. Function EXECUTE for anon / authenticated / service_role
+-- 3. anon / authenticated sequence privileges (GRANT/REVOKE ALL SEQUENCES)
+SELECT
+  c.relname AS sequence_name,
+  has_sequence_privilege('anon', c.oid, 'USAGE') AS anon_usage,
+  has_sequence_privilege('anon', c.oid, 'SELECT') AS anon_select,
+  has_sequence_privilege('anon', c.oid, 'UPDATE') AS anon_update,
+  has_sequence_privilege('authenticated', c.oid, 'USAGE') AS authenticated_usage,
+  has_sequence_privilege('authenticated', c.oid, 'SELECT') AS authenticated_select,
+  has_sequence_privilege('authenticated', c.oid, 'UPDATE') AS authenticated_update
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public'
+  AND c.relkind = 'S'
+ORDER BY c.relname;
+
+-- 4. Function EXECUTE for anon / authenticated / service_role
 SELECT
   n.nspname AS schema_name,
   p.proname AS function_name,
@@ -62,7 +90,7 @@ JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE n.nspname = 'public'
 ORDER BY p.proname, identity_args;
 
--- 4. search_path pin on the updated_at trigger function
+-- 5. search_path pin on the updated_at trigger function
 SELECT
   n.nspname AS schema_name,
   p.proname AS function_name,
