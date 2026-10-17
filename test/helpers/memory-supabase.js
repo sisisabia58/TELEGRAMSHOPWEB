@@ -74,11 +74,11 @@ function createMemorySupabase(seed = {}) {
         return 0
       })
     }
+    const count = rows.length
     if (state.range) {
       rows = rows.slice(state.range.from, state.range.to + 1)
     }
     if (state.limit != null) rows = rows.slice(0, state.limit)
-    const count = rows.length
     if (state.head) {
       return { data: null, error: null, count }
     }
