@@ -22,7 +22,8 @@
         init.method || (input && input.method) || 'GET'
       ).toUpperCase()
       if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
-        init.headers = csrfHeaders(init.headers)
+        const sourceHeaders = init.headers || (input && input.headers)
+        init.headers = csrfHeaders(sourceHeaders)
       }
       return origFetch.call(this, input, init)
     }

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const http = require('node:http')
+const vm = require('node:vm')
 const express = require('express')
 const session = require('express-session')
 
@@ -141,6 +142,10 @@ test('dashboard.js does not hardcode default admin credentials', () => {
 test('CSRF rejects state-changing requests without a token and accepts a valid session token', async () => {
   const app = sessionApp((a) => {
     a.use(security.csrfProtection)
+    a.get('/session-login', (req, res) => {
+      req.session.isLoggedIn = true
+      res.sendStatus(204)
+    })
     a.get('/form', (req, res) => {
       res.type('html').send(`<form method="POST" action="/form"><input type="hidden" name="_csrf" value="${res.locals.csrfToken}"></form>`)
     })
@@ -153,11 +158,12 @@ test('CSRF rejects state-changing requests without a token and accepts a valid s
     const denied = await fetch(`${url}/form`, { method: 'POST' })
     assert.equal(denied.status, 403)
 
-    const page = await fetch(`${url}/form`)
+    const login = await fetch(`${url}/session-login`)
+    const cookie = cookieHeader(login)
+    const page = await fetch(`${url}/form`, { headers: { Cookie: cookie } })
     assert.equal(page.status, 200)
     const html = await page.text()
     const token = html.match(/name="_csrf" value="([^"]+)"/)[1]
-    const cookie = cookieHeader(page)
     assert.ok(token)
     assert.ok(cookie)
 
@@ -303,4 +309,97 @@ test('login form, head partial, and frontend fetch helpers include the CSRF toke
 
   const notifications = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'notifications.js'), 'utf8')
   assert.match(notifications, /X-CSRF-Token|csrfHeaders/)
+})
+
+test('csrfLocals creates tokens for /login and logged-in pages only', () => {
+  const anonymous = { session: {}, path: '/produk', originalUrl: '/produk' }
+  const anonymousRes = { locals: {} }
+  security.csrfLocals(anonymous, anonymousRes, () => {})
+  assert.equal(anonymousRes.locals.csrfToken, '')
+  assert.equal(anonymous.session.csrfToken, undefined)
+
+  const api = { session: {}, path: '/api/stats', originalUrl: '/api/stats' }
+  const apiRes = { locals: {} }
+  security.csrfLocals(api, apiRes, () => {})
+  assert.equal(api.session.csrfToken, undefined)
+
+  const login = { session: {}, path: '/login', originalUrl: '/login' }
+  const loginRes = { locals: {} }
+  security.csrfLocals(login, loginRes, () => {})
+  assert.match(String(login.session.csrfToken), /^[a-f0-9]{64}$/)
+  assert.equal(loginRes.locals.csrfToken, login.session.csrfToken)
+
+  const loggedIn = { session: { isLoggedIn: true }, path: '/produk', originalUrl: '/produk' }
+  const loggedInRes = { locals: {} }
+  security.csrfLocals(loggedIn, loggedInRes, () => {})
+  assert.match(String(loggedIn.session.csrfToken), /^[a-f0-9]{64}$/)
+  assert.equal(loggedInRes.locals.csrfToken, loggedIn.session.csrfToken)
+})
+
+test('anonymous non-login GET does not Set-Cookie when saveUninitialized is false', async () => {
+  const app = sessionApp((a) => {
+    a.get('/produk', (req, res) => res.status(200).send('produk'))
+    a.get('/login', (req, res) => res.status(200).send(`token=${res.locals.csrfToken}`))
+  })
+  const { server, url } = await listen(app)
+  try {
+    const anon = await fetch(`${url}/produk`)
+    assert.equal(anon.status, 200)
+    assert.equal(cookieHeader(anon), '')
+
+    const login = await fetch(`${url}/login`)
+    assert.equal(login.status, 200)
+    assert.match(await login.text(), /token=[a-f0-9]{64}/)
+    assert.ok(cookieHeader(login))
+  } finally {
+    await close(server)
+  }
+})
+
+function loadCsrfScript({ token = 'test-csrf-token', fetchImpl }) {
+  const context = vm.createContext({
+    fetch: fetchImpl,
+    document: {
+      querySelector(sel) {
+        if (sel === 'meta[name="csrf-token"]') {
+          return { getAttribute: () => token }
+        }
+        return null
+      },
+      querySelectorAll() { return [] },
+      readyState: 'complete',
+      addEventListener() {},
+    },
+    Headers,
+    Request,
+    Response,
+  })
+  vm.runInContext(
+    fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'csrf.js'), 'utf8'),
+    context
+  )
+  return context
+}
+
+test('fetch wrapper preserves Request headers when init.headers is absent', async () => {
+  const captured = []
+  const context = loadCsrfScript({
+    fetchImpl: async (input, init) => {
+      captured.push({ input, init })
+      return new Response('ok')
+    },
+  })
+
+  const request = new Request('http://127.0.0.1/api/bot-flow/publish', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ draft: {} }),
+  })
+  await context.fetch(request)
+
+  assert.equal(captured.length, 1)
+  const headers = new Headers(captured[0].init.headers)
+  assert.equal(headers.get('Content-Type'), 'application/json')
+  assert.equal(headers.get('Accept'), 'application/json')
+  assert.equal(headers.get('X-CSRF-Token'), 'test-csrf-token')
 })
