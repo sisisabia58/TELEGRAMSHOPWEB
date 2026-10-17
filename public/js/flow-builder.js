@@ -1032,8 +1032,11 @@
   }
 
   function syncPanelIntoDraft() {
-    if (!state.selectedKey || !getNode(state.selectedKey)) return
+    const node = state.selectedKey ? getNode(state.selectedKey) : null
+    if (!node) return
     if (!document.getElementById('panelApply')) return
+    const patch = readPanelPatch(node)
+    if (!patch || !FlowBuilderCommands.patchChangesNode(node, patch)) return
     applyPanelToDraft()
   }
 

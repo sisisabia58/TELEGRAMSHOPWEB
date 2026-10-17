@@ -324,4 +324,7 @@ test('flow-builder JS highlights nodes, gates Save/Publish, and centres on list 
   assert.match(js, /canvasPanToCenter/)
   assert.match(js, /validationList/)
   assert.match(js, /overlayNodePatch/)
+  const sync = js.slice(js.indexOf('function syncPanelIntoDraft'), js.indexOf('async function saveDraft'))
+  assert.match(sync, /patchChangesNode\(node, patch\)/)
+  assert.ok(sync.indexOf('patchChangesNode') < sync.lastIndexOf('applyPanelToDraft()'))
 })
