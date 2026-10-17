@@ -117,6 +117,14 @@ test('validateDraft rejects whitespace-only go targets', () => {
   assert.ok(r.errors.some((e) => /go target/i.test(e)), r.errors.join('; '))
 })
 
+test('validateDraft normalizes padded go targets that match a node key', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].buttons = [[{ label: 'Go', go: 'welcome ' }]]
+  const r = validateDraft(d)
+  assert.equal(r.ok, true, r.errors.join('; '))
+  assert.equal(d.nodes[0].buttons[0][0].go, 'welcome')
+})
+
 test('validateDraft rejects go target that does not exist', () => {
   const d = structuredClone(baseDraft)
   d.nodes[0].buttons = [[{ label: 'X', go: 'missing_node' }]]

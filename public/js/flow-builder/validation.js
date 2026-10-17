@@ -399,6 +399,13 @@
               message: key + ': button "' + buttonName + '" needs exactly one of go|callback|url_from|url',
             }))
           }
+          // Write the trimmed key back when it names a node. A padded target
+          // such as "welcome " would otherwise pass a trim-only compare and
+          // miss the node at runtime.
+          if (btn.go && String(btn.go).trim()) {
+            const tujuan = String(btn.go).trim()
+            if (set.has(tujuan)) btn.go = tujuan
+          }
           if (btn.go && String(btn.go).trim() && !set.has(btn.go)) {
             errors.push(issue({
               code: 'go_target',
