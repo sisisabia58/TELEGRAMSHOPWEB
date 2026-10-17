@@ -173,16 +173,6 @@
         }))
       }
 
-      const mediaUrl = n.media_url != null ? String(n.media_url).trim() : ''
-      if (mediaUrl && !isHttpUrl(mediaUrl)) {
-        errors.push(issue({
-          code: 'media_url',
-          nodeKey: key,
-          field: 'media_url',
-          message: key + ': media_url must be http(s)',
-        }))
-      }
-
       const rows = Array.isArray(n.buttons) ? n.buttons : null
       if (!rows) {
         errors.push(issue({

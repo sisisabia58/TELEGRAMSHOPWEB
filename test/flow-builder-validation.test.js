@@ -220,12 +220,27 @@ test('http(s) button urls are accepted', () => {
   assert.equal(r.errors.some((e) => e.code === 'url_scheme'), false)
 })
 
-test('non-empty media_url that is not http(s) is a red error', () => {
+test('telegram file ids and local paths are accepted media_url values', () => {
+  for (const mediaUrl of ['AgACAgIAAxkBAAIB', './logo.jpg', '/var/bot/banner.png']) {
+    const d = structuredClone(baseDraft)
+    d.nodes[0].media_url = mediaUrl
+    const r = collectDraftIssues(d, { allowedActions: DEFAULT_FLOW_ACTIONS })
+    assert.equal(
+      r.errors.some((e) => e.field === 'media_url' || e.code === 'media_url'),
+      false,
+      mediaUrl
+    )
+    assert.equal(saveBlocked(r), false, mediaUrl + ' ' + r.errors.map((e) => e.message).join('; '))
+  }
+})
+
+test('button url validation still requires http(s) when media_url is a file id', () => {
   const d = structuredClone(baseDraft)
-  d.nodes[0].media_url = 'not-a-url'
+  d.nodes[0].media_url = 'AgACAgIAAxkBAAIB'
+  d.nodes[0].buttons = [[{ label: 'Site', url: 'ftp://files.example' }]]
   const r = collectDraftIssues(d)
-  assert.ok(r.errors.some((e) => e.field === 'media_url'))
-  assert.equal(saveBlocked(r), true)
+  assert.equal(r.errors.some((e) => e.code === 'media_url'), false)
+  assert.ok(r.errors.some((e) => e.code === 'url_scheme'))
 })
 
 test('empty media_url with default media_type is allowed (optional media)', () => {

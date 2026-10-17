@@ -297,12 +297,14 @@ test('validateDraft rejects non-http(s) button url (M6 spec red rule)', () => {
   assert.ok(r.errors.some((e) => /url must be http/.test(e)))
 })
 
-test('validateDraft rejects non-http(s) media_url (M6 spec red rule)', () => {
-  const d = structuredClone(baseDraft)
-  d.nodes[0].media_url = '/local/banner.png'
-  const r = validateDraft(d)
-  assert.equal(r.ok, false)
-  assert.ok(r.errors.some((e) => /media_url must be http/.test(e)))
+test('validateDraft accepts telegram file ids and local paths as media_url', () => {
+  for (const mediaUrl of ['AgACAgIAAxkBAAIB', './logo.jpg', '/local/banner.png']) {
+    const d = structuredClone(baseDraft)
+    d.nodes[0].media_url = mediaUrl
+    const r = validateDraft(d, { allowedActions: DEFAULT_FLOW_ACTIONS })
+    assert.equal(r.ok, true, mediaUrl + ' ' + r.errors.join('; '))
+    assert.equal(r.errors.some((e) => /media_url must be http/.test(e)), false)
+  }
 })
 
 test('validateDraft still accepts empty media_url (optional media)', () => {
