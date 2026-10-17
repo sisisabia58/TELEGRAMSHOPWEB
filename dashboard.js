@@ -27,6 +27,7 @@ const { redactSecrets, secretUpdateRow, selectSupabaseTestKey, supabaseOriginCha
 const { requireRole, requireWriteAccess } = require('./lib/dashboard-auth')
 const security = require('./lib/http-security')
 const { safeErrorHandler } = require('./lib/safe-error-handler')
+const { isAllowedInlineUrl } = require('./lib/inline-keyboard')
 
 const app = express()
 security.applyTrustProxy(app)
@@ -5785,6 +5786,7 @@ app.get('/settings/channel-contact', isAuthenticated, async (req, res) => {
       username: req.session?.username,
       req: req,
       settings,
+      isAllowedInlineUrl,
       currentPage: 'settings-channel-contact',
       pageTitle: 'Channel & Contact'
     })
@@ -5959,7 +5961,7 @@ async function loadActiveFlowBundle() {
 app.get('/settings/bot-flow', isAuthenticated, async (req, res) => {
   try {
     const channelSettings = await getChannelContactSettings()
-    const csMissing = !String(channelSettings.cs || '').trim()
+    const csMissing = !isAllowedInlineUrl(channelSettings.cs)
     res.render('settings-bot-flow', {
       title: `Bot Flow - ${NamaBot}`,
       namaBot: NamaBot,

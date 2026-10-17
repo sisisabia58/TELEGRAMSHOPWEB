@@ -45,6 +45,27 @@ test('sanitizeInlineKeyboard trims valid urls', () => {
   assert.equal(out[0][0].url, 'https://t.me/cs')
 })
 
+test('isAllowedInlineUrl accepts http(s) and tg://, rejects tg: without slashes', () => {
+  const { isAllowedInlineUrl } = muat()
+  assert.equal(isAllowedInlineUrl('https://t.me/cs'), true)
+  assert.equal(isAllowedInlineUrl('http://example.com/help'), true)
+  assert.equal(isAllowedInlineUrl('tg://resolve?domain=shopcs'), true)
+  assert.equal(isAllowedInlineUrl('TG://resolve?domain=shopcs'), true)
+  assert.equal(isAllowedInlineUrl('tg:resolve?domain=shopcs'), false)
+  assert.equal(isAllowedInlineUrl('ftp://example.com'), false)
+  assert.equal(isAllowedInlineUrl('javascript:alert(1)'), false)
+  assert.equal(isAllowedInlineUrl(''), false)
+})
+
+test('sanitizeInlineKeyboard skips tg: urls that lack the // prefix', () => {
+  const { sanitizeInlineKeyboard } = muat()
+  const out = sanitizeInlineKeyboard([
+    [{ text: 'BadTg', url: 'tg:resolve?domain=shopcs' }],
+    [{ text: 'Ok', callback_data: 'x' }],
+  ])
+  assert.deepEqual(out, [[{ text: 'Ok', callback_data: 'x' }]])
+})
+
 test('sanitizeInlineKeyboard warns once per skipped source, not every call', () => {
   const { sanitizeInlineKeyboard } = muat()
   const warnings = []
