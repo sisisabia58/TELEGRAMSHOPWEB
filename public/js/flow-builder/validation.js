@@ -14,6 +14,166 @@
     'product_list', 'product_card', 'kategori_menu', 'stok', 'riwayat', 'deposit_menu', 'noop',
   ]
 
+  // Telegram Bot API limits for parse_mode Markdown (see lib/flow.js dispatchFlowScreen):
+  // sendPhoto / sendDocument caption = 1024; sendMessage / editMessageText = 4096.
+  // A node with a non-empty media_url is sent as a photo caption; otherwise as plain text.
+  // Length is the raw template's UTF-16 length (JS string.length), not the post-parse
+  // visible length — slightly stricter than the API, and independent of {{var}} expansion.
+  const TELEGRAM_CAPTION_LIMIT = 1024
+  const TELEGRAM_TEXT_LIMIT = 4096
+  const MARKDOWN_ESCAPABLE = new Set(['_', '*', '`', '['])
+
+  function normalizeMediaUrl(value) {
+    if (typeof value !== 'string') return null
+    const trimmed = value.trim()
+    return trimmed || null
+  }
+
+  function nodeHasMedia(node) {
+    return !!normalizeMediaUrl(node && node.media_url)
+  }
+
+  // Legacy Markdown (`parse_mode: 'Markdown'`). Also exported via lib/telegram-markdown.js.
+  function validateTelegramMarkdown(text) {
+    if (typeof text !== 'string') {
+      return { ok: false, reason: 'message text must be a string' }
+    }
+
+    // {{placeholders}} are interpolated before Telegram sees the string. Fold
+    // them to a single safe letter so template names like {{first_name}} do not
+    // trip the `_` italic delimiter.
+    text = text.replace(/\{\{[^}]+\}\}/g, 'x')
+
+    let i = 0
+    const n = text.length
+    let mode = 'text'
+    let entityStart = -1
+
+    function fail(reason) {
+      return { ok: false, reason: reason }
+    }
+
+    while (i < n) {
+      if (mode === 'pre') {
+        if (text.startsWith('```', i)) {
+          if (i === entityStart) return fail('empty Markdown pre entity')
+          mode = 'text'
+          entityStart = -1
+          i += 3
+          continue
+        }
+        i += 1
+        continue
+      }
+
+      if (mode === 'code') {
+        if (text[i] === '`') {
+          if (i === entityStart) return fail('empty Markdown code entity')
+          mode = 'text'
+          entityStart = -1
+          i += 1
+          continue
+        }
+        i += 1
+        continue
+      }
+
+      // Escapes apply only outside entities. * / _ consume their interior
+      // below, and code / pre return before this point, so mode is text here.
+      if (text[i] === '\\' && i + 1 < n && MARKDOWN_ESCAPABLE.has(text[i + 1])) {
+        i += 2
+        continue
+      }
+
+      if (text.startsWith('```', i)) {
+        mode = 'pre'
+        entityStart = i + 3
+        i += 3
+        continue
+      }
+
+      if (text[i] === '`') {
+        mode = 'code'
+        entityStart = i + 1
+        i += 1
+        continue
+      }
+
+      // Legacy parse_mode Markdown does not parse inside * or _. The next
+      // same character closes the entity and everything between is literal,
+      // so *bold _italic_* is one bold entity, not a nested italic.
+      if (text[i] === '*' || text[i] === '_') {
+        const ch = text[i]
+        const close = text.indexOf(ch, i + 1)
+        if (close < 0) return fail('unbalanced Markdown ' + ch + ' entity')
+        if (close === i + 1) {
+          return fail('empty Markdown ' + (ch === '*' ? 'bold' : 'italic') + ' entity')
+        }
+        i = close + 1
+        continue
+      }
+
+      if (text[i] === '[') {
+        const closeLabel = text.indexOf('](', i + 1)
+        if (closeLabel < 0) return fail('unbalanced Markdown link')
+        if (closeLabel === i + 1) return fail('empty Markdown link label')
+        const closeUrl = text.indexOf(')', closeLabel + 2)
+        if (closeUrl < 0) return fail('unbalanced Markdown link')
+        const url = text.slice(closeLabel + 2, closeUrl)
+        if (!url.trim()) return fail('empty Markdown link URL')
+        i = closeUrl + 1
+        continue
+      }
+
+      i += 1
+    }
+
+    if (mode === 'code') return fail('unbalanced Markdown ` entity')
+    if (mode === 'pre') return fail('unbalanced Markdown pre entity')
+    return { ok: true, reason: null }
+  }
+
+  function appendScreenTextIssues(errors, node) {
+    const key = node.key
+    if (typeof node.body !== 'string') {
+      errors.push(issue({
+        code: 'body_type',
+        nodeKey: key,
+        field: 'body',
+        message: key + ': message text must be a string',
+      }))
+      return
+    }
+    if (!node.body.trim()) {
+      errors.push(issue({
+        code: 'empty_text',
+        nodeKey: key,
+        field: 'body',
+        message: key + ': message text is empty',
+      }))
+      return
+    }
+    const limit = nodeHasMedia(node) ? TELEGRAM_CAPTION_LIMIT : TELEGRAM_TEXT_LIMIT
+    if (node.body.length > limit) {
+      const kind = nodeHasMedia(node) ? 'caption' : 'text'
+      errors.push(issue({
+        code: 'body_length',
+        nodeKey: key,
+        field: 'body',
+        message: key + ': message text exceeds the ' + limit + '-character Telegram ' + kind + ' limit',
+      }))
+    }
+    const md = validateTelegramMarkdown(node.body)
+    if (!md.ok) {
+      errors.push(issue({
+        code: 'body_markdown',
+        nodeKey: key,
+        field: 'body',
+        message: key + ': ' + md.reason,
+      }))
+    }
+  }
+
   function clone(x) {
     return JSON.parse(JSON.stringify(x))
   }
@@ -154,14 +314,7 @@
         seenScreenKeys.add(n.screen_key)
       }
 
-      if (n.kind === 'screen' && !(typeof n.body === 'string' && n.body.trim())) {
-        errors.push(issue({
-          code: 'empty_body',
-          nodeKey: key,
-          field: 'body',
-          message: key + ': message body required',
-        }))
-      }
+      if (n.kind === 'screen') appendScreenTextIssues(errors, n)
 
       if (n.kind === 'action' && !n.action) {
         errors.push(issue({
@@ -357,6 +510,10 @@
 
   return {
     DEFAULT_FLOW_ACTIONS: DEFAULT_FLOW_ACTIONS,
+    TELEGRAM_CAPTION_LIMIT: TELEGRAM_CAPTION_LIMIT,
+    TELEGRAM_TEXT_LIMIT: TELEGRAM_TEXT_LIMIT,
+    normalizeMediaUrl: normalizeMediaUrl,
+    validateTelegramMarkdown: validateTelegramMarkdown,
     isHttpUrl: isHttpUrl,
     collectDraftIssues: collectDraftIssues,
     overlayNodePatch: overlayNodePatch,

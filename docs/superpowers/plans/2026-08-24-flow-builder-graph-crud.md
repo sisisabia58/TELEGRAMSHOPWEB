@@ -4,7 +4,7 @@
 
 **Goal:** Make Flow Builder canvas add/delete, action selection, media publish, and preview media work end-to-end through draft validation and publish — closing the Phase 12 UI/backend gap.
 
-**Architecture:** Replace Phase 6b fixed-key `validateDraft` with graph-integrity rules in `lib/flow-draft.js`. Add `diffPublishPlan(draft, publishedKeys, existingCopyKeys)` to compute INSERT/UPDATE/DELETE patches. Update `dashboard.js` publish route to apply node deletes, upserts (including `media_url`/`media_type`), BotCopy inserts for new screens, and `BotFlow.entry_key` sync. Extend inspector UI and preview mock for action picker, media type, entry node selector, and image preview.
+**Architecture:** Replace Phase 6b fixed-key `validateDraft` with graph-integrity rules in `lib/flow-draft.js`. Add `diffPublishPlan(draft, publishedKeys, existingCopyKeys)` to compute INSERT/UPDATE/DELETE patches. `POST /api/bot-flow/publish` validates the draft (graph + screen message text) and the RPC argument shapes, then applies the diff atomically through `supabase.rpc('publish_bot_flow_graph', payload)`. `POST /api/bot-flow/draft` uses the same draft validation. Extend inspector UI and preview mock for action picker, media type, entry node selector, and image preview.
 
 **Tech Stack:** Node.js 20, Express 5 + EJS, vanilla JS, Drawflow (CDN), Supabase (`BotFlow`, `BotFlowNode`, `BotCopy`), `node --test`, Railway deploy from `main`.
 
@@ -21,7 +21,7 @@
 - Keep EJS + vanilla JS + Drawflow CDN — **no React/Vue/build step**
 - Tests: pure functions via `node --test` only; no Telegram mocks; no browser automation for CI
 - `runtimeSettings.bump()` on Publish and enable toggle only (draft save does not bump)
-- No new DB migration — `BotFlowNode` already supports INSERT/DELETE; media columns exist from Phase 12
+- Publish is atomic via `public.publish_bot_flow_graph` (`SECURITY INVOKER`, `search_path` = `public`). Original function: `supabase/migrations/20260818000001_publish_bot_flow_graph.sql`. Payload-shape checks: `20261017225540_validate_publish_bot_flow_graph.sql` (`CREATE OR REPLACE`, same signature; does not change grants). Never apply graph changes as separate supabase-js writes — that reintroduces partial-publish risk. Handle the RPC error, including a failed `BotFlow` update, before `runtimeSettings.bump()`.
 
 ---
 
@@ -30,9 +30,11 @@
 | File | Responsibility |
 |------|----------------|
 | `docs/superpowers/specs/2026-08-24-flow-builder-graph-crud-design.md` | Locked decisions + non-goals |
-| `lib/flow-draft.js` | Graph `validateDraft`, `diffPublishPlan`, `DEFAULT_FLOW_ACTIONS` |
-| `test/flow-draft.test.js` | Unit tests for validation + diff |
-| `dashboard.js` | Draft/publish routes use new validation; apply INSERT/DELETE/upsert |
+| `lib/flow-draft.js` | Graph `validateDraft`, screen-text checks, `diffPublishPlan`, `buildPublishRpcPayload`, `validatePublishRpcPayload`, `DEFAULT_FLOW_ACTIONS` |
+| `test/flow-draft.test.js` | Unit tests for validation + diff + RPC payload shape |
+| `dashboard.js` | Draft/publish routes validate then call `publish_bot_flow_graph`. Draft failures return 400 `{ errors: string[] }` (same messages as `collectDraftIssues`). Payload-shape failures return 400 `{ errors: [{ key, reason }] }` |
+| `supabase/migrations/20260818000001_publish_bot_flow_graph.sql` | Atomic publish RPC (media columns + function) |
+| `supabase/migrations/20261017225540_validate_publish_bot_flow_graph.sql` | `CREATE OR REPLACE` with cheap payload-shape checks |
 | `public/js/flow-builder.js` | Action select, media type, entry picker, preview media |
 | `views/settings-bot-flow.ejs` | Entry node `<select>`, preview media container |
 | `public/css/flow-builder.css` | Entry highlight + preview image styles |
@@ -293,110 +295,36 @@ git commit -m "feat(phase13): graph validateDraft and diffPublishPlan for flow C
 ### Task 3: Dashboard draft + publish routes
 
 **Files:**
-- Modify: `dashboard.js` (~5974–6156)
+- Modify: `dashboard.js` (`POST /api/bot-flow/draft`, `POST /api/bot-flow/publish`)
 
 **Interfaces:**
-- Consumes: `flowDraft.validateDraft(draft, { allowedActions: FLOW_ACTIONS })`, `flowDraft.diffPublishPlan(draft, publishedKeys, Object.keys(copyByKey))`
-- Produces: working `POST /api/bot-flow/draft` and `POST /api/bot-flow/publish` that persist graph CRUD + media
+- Consumes: `flowDraft.validateDraft(draft, { allowedActions: FLOW_ACTIONS })`, `flowDraft.diffPublishPlan(draft, publishedKeys, existingCopies)`, `flowDraft.buildPublishRpcPayload(flow.id, draft, diff)`, `flowDraft.validatePublishRpcPayload(payload)`
+- Produces: working `POST /api/bot-flow/draft` and `POST /api/bot-flow/publish`. Publish applies the graph **atomically** via `publish_bot_flow_graph`. `validateDraft` failures return **400** `{ success: false, errors: string[] }` (Phase 14 message strings, including screen-text reasons). `validatePublishRpcPayload` failures return **400** `{ success: false, errors: [{ key, reason }] }`. Call `runtimeSettings.bump()` only after the RPC succeeds.
 
-- [ ] **Step 1: Update draft route validation**
-
-In `app.post('/api/bot-flow/draft', ...)` (~5974), replace:
-
-```javascript
-const publishedKeys = nodes.map((n) => n.key)
-const v = flowDraft.validateDraft(draft, publishedKeys)
-```
-
-with:
-
-```javascript
-const v = flowDraft.validateDraft(draft, { allowedActions: FLOW_ACTIONS })
-```
-
-- [ ] **Step 2: Rewrite publish route**
-
-Replace publish handler body after validation:
+Shipped publish path (do **not** reintroduce per-row supabase-js writes):
 
 ```javascript
 app.post('/api/bot-flow/publish', isAuthenticated, async (req, res) => {
   try {
-    const { flow, nodes, copyByKey } = await loadActiveFlowBundle()
+    const { flow, nodes, existingCopies } = await loadActiveFlowBundle()
     if (!flow) throw new Error('No active flow')
     const publishedKeys = nodes.map((n) => n.key)
     const draft = req.body.draft || flow.draft
     if (!draft) throw new Error('No draft to publish')
 
     const v = flowDraft.validateDraft(draft, { allowedActions: FLOW_ACTIONS })
-    if (!v.ok) return res.status(400).json({ success: false, errors: v.errors })
-
-    const diff = flowDraft.diffPublishPlan(draft, publishedKeys, Object.keys(copyByKey))
-
-    if (diff.nodeDeletes.length) {
-      const { error } = await supabase
-        .from('BotFlowNode')
-        .delete()
-        .eq('flow_id', flow.id)
-        .in('key', diff.nodeDeletes)
-      if (error) throw error
+    if (!v.ok) {
+      return res.status(400).json({ success: false, errors: v.errors })
     }
 
-    for (const patch of diff.nodeUpserts) {
-      const row = {
-        flow_id: flow.id,
-        key: patch.key,
-        kind: patch.kind,
-        screen_key: patch.screen_key,
-        action: patch.action,
-        description: patch.description,
-        buttons: patch.buttons,
-        pos_x: patch.pos_x,
-        pos_y: patch.pos_y,
-        media_url: patch.media_url,
-        media_type: patch.media_type,
-        updated_at: new Date().toISOString(),
-      }
-      const isNew = !publishedKeys.includes(patch.key)
-      if (isNew) {
-        const { error } = await supabase.from('BotFlowNode').insert(row)
-        if (error) throw error
-      } else {
-        const { error } = await supabase
-          .from('BotFlowNode')
-          .update(row)
-          .eq('flow_id', flow.id)
-          .eq('key', patch.key)
-        if (error) throw error
-      }
+    const diff = flowDraft.diffPublishPlan(draft, publishedKeys, existingCopies)
+    const payload = flowDraft.buildPublishRpcPayload(flow.id, draft, diff)
+    const rpcV = flowDraft.validatePublishRpcPayload(payload)
+    if (!rpcV.ok) {
+      return res.status(400).json({ success: false, errors: rpcV.errors })
     }
-
-    for (const c of diff.copyInserts) {
-      const { error } = await supabase.from('BotCopy').insert({
-        key: c.key,
-        kind: 'screen',
-        body: c.body,
-        description: c.description || '',
-        variables: '[]',
-      })
-      if (error) throw error
-    }
-
-    for (const c of diff.copyUpserts) {
-      const { error } = await supabase
-        .from('BotCopy')
-        .update({ body: c.body, updated_at: new Date().toISOString() })
-        .eq('key', c.key)
-      if (error) throw error
-    }
-
-    await supabase
-      .from('BotFlow')
-      .update({
-        draft,
-        draft_updated_at: new Date().toISOString(),
-        entry_key: diff.entryKey,
-      })
-      .eq('id', flow.id)
+    const { error } = await supabase.rpc('publish_bot_flow_graph', payload)
+    if (error) throw error
 
     await runtimeSettings.bump()
     res.json({ success: true })
@@ -407,19 +335,11 @@ app.post('/api/bot-flow/publish', isAuthenticated, async (req, res) => {
 })
 ```
 
-- [ ] **Step 3: Smoke-test publish path manually**
+`validateDraft` now also rejects screen nodes whose `body` is empty, exceeds Telegram's 1024-character **caption** limit when `media_url` is set (4096 for plain text with no media), or is invalid legacy Markdown (`parse_mode: 'Markdown'`). Those checks live in `collectDraftIssues`, so the canvas and the 400 response share one message list. The draft route returns that string list. Payload-shape failures stay `{ key, reason }` objects.
 
-Run: `npm run dashboard` (with local Supabase + `.env`)
-1. Open `http://localhost:3000/settings/bot-flow`
-2. Add Message Node → Save draft → expect 200 (not `unknown key` error)
-3. Publish → expect 200
+Draft save (`POST /api/bot-flow/draft`) runs the same `validateDraft` and returns the same 400 shape; it does not bump runtime settings.
 
-- [ ] **Step 4: Commit**
-
-```bash
-git add dashboard.js
-git commit -m "feat(phase13): publish INSERT/DELETE nodes, BotCopy insert, media fields, entry_key"
-```
+Empty, over-limit, or invalid-Markdown screen bodies must 400 before the RPC. The SQL function additionally rejects malformed upsert/copy JSON so a cast/constraint failure is not the first signal.
 
 ---
 

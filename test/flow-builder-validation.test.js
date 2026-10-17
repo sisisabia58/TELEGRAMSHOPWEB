@@ -63,7 +63,29 @@ test('empty message body is a red error that blocks save (M6)', () => {
   assert.ok(r.errors.some((e) => e.nodeKey === 'welcome' && e.field === 'body' && e.level === 'error'))
   assert.equal(nodeHighlightClass('welcome', r), 'is-error')
   assert.equal(saveBlocked(r), true)
-  assert.match(saveBlockTooltip(r), /body/i)
+  assert.match(saveBlockTooltip(r), /message text is empty/)
+})
+
+test('an invalid message body emits exactly one issue', () => {
+  function bodyIssues(body) {
+    const d = structuredClone(baseDraft)
+    d.nodes[0].body = body
+    return collectDraftIssues(d).errors.filter((e) => e.field === 'body')
+  }
+
+  const nonString = bodyIssues(12)
+  assert.equal(nonString.length, 1)
+  assert.equal(nonString[0].field, 'body')
+  assert.equal(nonString[0].nodeKey, 'welcome')
+  assert.equal(nonString[0].message, 'welcome: message text must be a string')
+
+  for (const blank of ['', '   ']) {
+    const issues = bodyIssues(blank)
+    assert.equal(issues.length, 1, JSON.stringify(issues))
+    assert.equal(issues[0].field, 'body')
+    assert.equal(issues[0].nodeKey, 'welcome')
+    assert.equal(issues[0].message, 'welcome: message text is empty')
+  }
 })
 
 test('fixing an empty body clears the red error without other changes (M6)', () => {
