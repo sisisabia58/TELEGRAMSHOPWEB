@@ -66,6 +66,25 @@
   font-weight: 600;
 }
 
+.history-controls {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0 4px;
+}
+
+.history-controls button {
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.flow-toolbar .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 .flow-toolbar .btn-primary {
   background: var(--sp-apply) !important;
   border-color: var(--sp-apply) !important;
