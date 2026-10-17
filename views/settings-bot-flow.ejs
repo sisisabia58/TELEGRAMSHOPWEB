@@ -17,6 +17,13 @@
                     <span class="flow-topbar-brand">Bot Flow</span>
                     <span class="flow-topbar-sep" aria-hidden="true">·</span>
                     <span id="flowName" class="flow-name" title="Flow name">Untitled flow</span>
+                    <div class="flow-validation" id="flowValidation" hidden>
+                        <button type="button" id="validationToggle" class="flow-validation-toggle" aria-expanded="false" aria-controls="validationList" title="Validation issues">
+                            <span id="validationWarnBadge" class="flow-validation-badge is-warning" hidden>⚠0</span>
+                            <span id="validationErrorBadge" class="flow-validation-badge is-error" hidden>⛔0</span>
+                        </button>
+                        <ul id="validationList" class="flow-validation-list hidden" role="list"></ul>
+                    </div>
                 </div>
                 <div class="flow-topbar-center">
                     <span id="flowStatus" class="flow-status" aria-live="polite"></span>
@@ -127,6 +134,7 @@
     <script src="/js/flow-builder/commands.js"></script>
     <script src="/js/flow-builder/clipboard.js"></script>
     <script src="/js/flow-builder/palette.js"></script>
+    <script src="/js/flow-builder/validation.js"></script>
     <script src="/js/flow-builder.js"></script>
 </body>
 </html>

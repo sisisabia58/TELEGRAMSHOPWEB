@@ -1,4 +1,4 @@
-/* global Drawflow, FlowBuilderState, FlowBuilderCommands, FlowBuilderPalette, FlowBuilderClipboard */
+/* global Drawflow, FlowBuilderState, FlowBuilderCommands, FlowBuilderPalette, FlowBuilderClipboard, FlowBuilderValidation */
 (function () {
   'use strict'
 
@@ -12,6 +12,7 @@
   const nodeClipboard = FlowBuilderClipboard.createClipboard()
   let lastCanvasPoint = null
   let historyLockCount = 0
+  let lastValidation = { ok: true, errors: [], warnings: [], issues: [] }
 
   function isHistoryLocked() {
     return historyLockCount > 0
@@ -59,6 +60,7 @@
     const next = editorState.applyCommand(mutator)
     state.draft = next
     updateHistoryButtons()
+    refreshValidation()
     return next
   }
 
@@ -91,6 +93,7 @@
       renderPanel()
     })
     updateHistoryButtons()
+    refreshValidation()
   }
 
   function undoDraft() {
@@ -394,10 +397,183 @@
 
     renderEntryKeySelect()
     })
+    refreshValidation()
   }
 
   function getNode(key) {
     return ((state.draft && state.draft.nodes) || []).find((n) => n.key === key)
+  }
+
+  function validationDraft() {
+    if (!state.draft) return { nodes: [], entry_key: '' }
+    const node = state.selectedKey ? getNode(state.selectedKey) : null
+    if (!node || !document.getElementById('panelApply')) return state.draft
+    const patch = readPanelPatch(node)
+    if (!patch) return state.draft
+    return FlowBuilderValidation.overlayNodePatch(state.draft, node.key, patch)
+  }
+
+  function applyNodeHighlights(result) {
+    if (!state.draft) return
+    for (const node of state.draft.nodes || []) {
+      const id = keyToId.get(node.key)
+      const el = id != null ? document.getElementById('node-' + id) : null
+      if (!el) continue
+      el.classList.remove('is-error', 'is-warning')
+      const cls = FlowBuilderValidation.nodeHighlightClass(node.key, result)
+      if (cls) el.classList.add(cls)
+    }
+  }
+
+  function insertFieldError(el, message) {
+    if (!el) return
+    el.classList.add('is-invalid')
+    const err = document.createElement('p')
+    err.className = 'field-error'
+    err.textContent = message
+    el.insertAdjacentElement('afterend', err)
+  }
+
+  function applyPanelFieldErrors(result) {
+    const panel = document.getElementById('flowPanel')
+    if (!panel) return
+    panel.querySelectorAll('.field-error').forEach((el) => el.remove())
+    panel.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid'))
+    const key = state.selectedKey
+    if (!key || !result) return
+    for (const item of result.errors || []) {
+      if (item.nodeKey !== key) continue
+      if (item.field === 'body') insertFieldError(document.getElementById('panelBody'), item.message)
+      else if (item.field === 'action') insertFieldError(document.getElementById('panelAction'), item.message)
+      else if (item.field === 'media_url') insertFieldError(document.getElementById('panelMediaUrl'), item.message)
+      else if (item.buttonIndex != null) {
+        const row = panel.querySelector('.sp-btn-row[data-flat-index="' + item.buttonIndex + '"]')
+        if (!row) continue
+        row.classList.add('is-invalid')
+        if (item.field === 'label') {
+          const labelEl = row.querySelector('.btn-label')
+          if (labelEl) labelEl.classList.add('is-invalid')
+        } else if (item.field === 'url' || item.field === 'go') {
+          const targetEl = row.querySelector('.btn-target')
+          if (targetEl) targetEl.classList.add('is-invalid')
+        } else if (item.field === 'mode') {
+          const modeEl = row.querySelector('.btn-mode')
+          if (modeEl) modeEl.classList.add('is-invalid')
+        }
+        const existing = row.querySelector('.field-error')
+        if (existing) {
+          existing.textContent = existing.textContent + '; ' + item.message
+        } else {
+          const err = document.createElement('p')
+          err.className = 'field-error'
+          err.textContent = item.message
+          row.appendChild(err)
+        }
+      }
+    }
+  }
+
+  function updateSaveButtons(result) {
+    const blocked = FlowBuilderValidation.saveBlocked(result)
+    const tip = FlowBuilderValidation.saveBlockTooltip(result)
+    const draftBtn = document.getElementById('btnSaveDraft')
+    const pubBtn = document.getElementById('btnPublish')
+    const menuBtn = document.getElementById('btnSaveMenu')
+    if (draftBtn) {
+      draftBtn.disabled = blocked
+      draftBtn.title = blocked ? tip : 'Save draft'
+    }
+    if (pubBtn) {
+      pubBtn.disabled = blocked
+      pubBtn.title = blocked ? tip : 'Publish'
+    }
+    if (menuBtn) menuBtn.title = blocked ? tip : 'Save'
+  }
+
+  function closeValidationList() {
+    const list = document.getElementById('validationList')
+    const toggle = document.getElementById('validationToggle')
+    if (list) list.classList.add('hidden')
+    if (toggle) toggle.setAttribute('aria-expanded', 'false')
+  }
+
+  function renderValidationList(result) {
+    const list = document.getElementById('validationList')
+    const errBadge = document.getElementById('validationErrorBadge')
+    const warnBadge = document.getElementById('validationWarnBadge')
+    const wrap = document.getElementById('flowValidation')
+    const errors = (result && result.errors) || []
+    const warnings = (result && result.warnings) || []
+    if (errBadge) {
+      errBadge.hidden = errors.length === 0
+      errBadge.textContent = '⛔' + errors.length
+    }
+    if (warnBadge) {
+      warnBadge.hidden = warnings.length === 0
+      warnBadge.textContent = '⚠' + warnings.length
+    }
+    if (wrap) wrap.hidden = errors.length === 0 && warnings.length === 0
+    if (!list) return
+    list.innerHTML = ''
+    const items = (result && result.issues) || []
+    items.forEach((item) => {
+      const li = document.createElement('li')
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'flow-validation-item is-' + item.level
+      if (item.nodeKey) btn.setAttribute('data-node-key', item.nodeKey)
+      btn.textContent = (item.level === 'error' ? '⛔ ' : '⚠ ') + item.message
+      btn.addEventListener('click', function () {
+        focusValidationIssue(item)
+      })
+      li.appendChild(btn)
+      list.appendChild(li)
+    })
+  }
+
+  function centerOnNode(key) {
+    if (!editor || !key) return
+    syncPositionsFromEditor()
+    const node = getNode(key)
+    const id = keyToId.get(key)
+    const nodeEl = id != null ? document.getElementById('node-' + id) : null
+    const container = document.getElementById('drawflow')
+    if (!container || !node) return
+    const pan = FlowBuilderValidation.canvasPanToCenter(
+      { width: container.clientWidth, height: container.clientHeight },
+      {
+        x: Number(node.pos_x) || 0,
+        y: Number(node.pos_y) || 0,
+        width: nodeEl ? nodeEl.offsetWidth : 240,
+        height: nodeEl ? nodeEl.offsetHeight : 120,
+      },
+      editor.zoom || 1
+    )
+    editor.canvas_x = pan.canvas_x
+    editor.canvas_y = pan.canvas_y
+    if (editor.precanvas) {
+      editor.precanvas.style.transform = 'translate(' + pan.canvas_x + 'px, ' + pan.canvas_y + 'px) scale(' + (editor.zoom || 1) + ')'
+    }
+    positionSelectionToolbar()
+  }
+
+  function focusValidationIssue(item) {
+    if (item && item.nodeKey) {
+      selectNodeByKey(item.nodeKey)
+      centerOnNode(item.nodeKey)
+    }
+    closeValidationList()
+  }
+
+  function refreshValidation() {
+    if (typeof FlowBuilderValidation === 'undefined') return
+    lastValidation = FlowBuilderValidation.collectDraftIssues(validationDraft(), {
+      allowedActions: state.actions && state.actions.length ? state.actions : FlowBuilderValidation.DEFAULT_FLOW_ACTIONS,
+    })
+    applyNodeHighlights(lastValidation)
+    renderValidationList(lastValidation)
+    updateSaveButtons(lastValidation)
+    applyPanelFieldErrors(lastValidation)
   }
 
   function renderTelegramMarkdown(text) {
@@ -682,13 +858,11 @@
     if (btnDeleteNode) {
       btnDeleteNode.addEventListener('click', requestDeleteSelectedNode)
     }
+    refreshValidation()
   }
 
-  function applyPanelToDraft() {
-    const key = state.selectedKey
-    const node = getNode(key)
-    if (!node) return
-
+  function readPanelPatch(node) {
+    if (!node) return null
     const patch = {}
     const descEl = document.getElementById('panelDescription')
     if (descEl) patch.description = descEl.value
@@ -740,6 +914,15 @@
       }
       patch.buttons = rebuilt
     }
+    return patch
+  }
+
+  function applyPanelToDraft() {
+    const key = state.selectedKey
+    const node = getNode(key)
+    if (!node) return
+    const patch = readPanelPatch(node)
+    if (!patch) return
 
     applyCommand((draft) => FlowBuilderCommands.patchNode(draft, key, patch))
 
@@ -844,8 +1027,20 @@
     })
   }
 
+  function syncPanelIntoDraft() {
+    if (!state.selectedKey || !getNode(state.selectedKey)) return
+    if (!document.getElementById('panelApply')) return
+    applyPanelToDraft()
+  }
+
   async function saveDraft() {
     syncPositionsFromEditor()
+    syncPanelIntoDraft()
+    refreshValidation()
+    if (FlowBuilderValidation.saveBlocked(lastValidation)) {
+      setStatus(FlowBuilderValidation.saveBlockTooltip(lastValidation) || 'Fix validation errors before saving', 'err')
+      return
+    }
     setStatus('Saving draft…')
     const res = await fetch('/api/bot-flow/draft', {
       method: 'POST',
@@ -864,6 +1059,12 @@
   async function publishDraft() {
     if (!window.confirm('Publish this draft to the live bot? Buyers will see changes after ~10 seconds.')) return
     syncPositionsFromEditor()
+    syncPanelIntoDraft()
+    refreshValidation()
+    if (FlowBuilderValidation.saveBlocked(lastValidation)) {
+      setStatus(FlowBuilderValidation.saveBlockTooltip(lastValidation) || 'Fix validation errors before publishing', 'err')
+      return
+    }
     setStatus('Publishing…')
     const res = await fetch('/api/bot-flow/publish', {
       method: 'POST',
@@ -1449,6 +1650,7 @@
     document.querySelectorAll('.flow-dropdown > button[aria-expanded]').forEach((el) => {
       el.setAttribute('aria-expanded', 'false')
     })
+    closeValidationList()
   }
 
   function bindDropdown(toggleId, menuId) {
@@ -1485,6 +1687,28 @@
       closeAllMenus()
       publishDraft()
     })
+    const validationToggle = document.getElementById('validationToggle')
+    if (validationToggle) {
+      validationToggle.addEventListener('click', function (ev) {
+        ev.stopPropagation()
+        const list = document.getElementById('validationList')
+        if (!list) return
+        const willOpen = list.classList.contains('hidden')
+        closeAllMenus()
+        if (willOpen) {
+          list.classList.remove('hidden')
+          validationToggle.setAttribute('aria-expanded', 'true')
+        } else {
+          closeValidationList()
+        }
+      })
+    }
+    document.addEventListener('click', closeValidationList)
+    const flowPanel = document.getElementById('flowPanel')
+    if (flowPanel) {
+      flowPanel.addEventListener('input', refreshValidation)
+      flowPanel.addEventListener('change', refreshValidation)
+    }
     document.getElementById('btnPreview').addEventListener('click', openPreview)
     document.getElementById('previewClose').addEventListener('click', closePreview)
     document.getElementById('previewBackdrop').addEventListener('click', closePreview)
@@ -1591,12 +1815,14 @@
       setStatus('No flow nodes configured — drag Message or Action onto the canvas, or click to add', 'ok')
       renderEntryKeySelect()
       renderPanel()
+      refreshValidation()
       return
     }
 
     renderCanvas()
 
     selectNodeByKey(effectiveEntryKey())
+    refreshValidation()
     setStatus('Click a card to edit · Apply · Save draft · Preview', 'ok')
   }
 

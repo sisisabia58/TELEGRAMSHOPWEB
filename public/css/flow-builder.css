@@ -136,6 +136,110 @@
   line-height: 1;
 }
 
+.flow-validation {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.flow-validation-toggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  background: var(--sp-toolbar-hover);
+  color: #e8f1f6;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.flow-validation-toggle:hover {
+  background: #1c4660;
+}
+
+.flow-validation-badge.is-warning {
+  color: #facc15;
+}
+
+.flow-validation-badge.is-error {
+  color: #fca5a5;
+}
+
+.flow-validation-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 280px;
+  max-width: 420px;
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: #fff;
+  color: var(--sp-text);
+  border: 1px solid var(--sp-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(15, 42, 58, 0.22);
+}
+
+.flow-validation-list.hidden {
+  display: none;
+}
+
+.flow-validation-item {
+  display: block;
+  width: 100%;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.flow-validation-item:hover {
+  background: #f4f7f9;
+}
+
+.flow-validation-item.is-error {
+  color: #b91c1c;
+}
+
+.flow-validation-item.is-warning {
+  color: #a16207;
+}
+
+.field-error {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #dc2626;
+}
+
+.sp-btn-row.is-invalid {
+  outline: 1px solid #dc2626;
+  border-radius: 8px;
+}
+
+#panelBody.is-invalid,
+#panelAction.is-invalid,
+#panelMediaUrl.is-invalid,
+.btn-label.is-invalid,
+.btn-target.is-invalid,
+.btn-mode.is-invalid {
+  border-color: #dc2626;
+}
+
 .history-controls {
   display: inline-flex;
   gap: 4px;
@@ -188,6 +292,11 @@
 .flow-dropdown-menu button:hover,
 .flow-dropdown-menu .flow-toggle:hover {
   background: #f4f7f9;
+}
+
+.flow-dropdown-menu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .flow-toggle {
@@ -782,6 +891,18 @@
 .drawflow-node.flow-node-action.selected .sp-card {
   border-color: var(--sp-action);
   box-shadow: 0 0 0 3px rgba(139, 124, 246, 0.25), 0 8px 20px rgba(30, 50, 70, 0.1);
+}
+
+.drawflow-node.is-warning .sp-card,
+.drawflow-node.selected.is-warning .sp-card {
+  border-color: #eab308;
+  box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.35), 0 8px 20px rgba(30, 50, 70, 0.1);
+}
+
+.drawflow-node.is-error .sp-card,
+.drawflow-node.selected.is-error .sp-card {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.3), 0 8px 20px rgba(30, 50, 70, 0.1);
 }
 
 .sp-card-header {

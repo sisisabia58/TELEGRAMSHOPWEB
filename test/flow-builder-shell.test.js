@@ -62,7 +62,7 @@ test('Bot Flow page renders the Phase 14 PR3 layout shell (M2)', async () => {
   assert.match(html, /id="btnDuplicateNode"/)
   assert.match(html, /id="btnCopyNode"/)
   assert.match(html, /id="btnToolbarDeleteNode"/)
-  assert.equal(html.includes('id="validationList"'), false)
+  assert.match(html, /id="validationList"/)
   assert.equal(html.includes('id="flowMinimap"'), false)
   assert.equal(html.includes('id="btnAddNoteNode"'), false)
 })
