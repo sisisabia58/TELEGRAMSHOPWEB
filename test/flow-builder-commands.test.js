@@ -17,6 +17,7 @@ const {
   applyWire,
   clearWire,
   patchNode,
+  patchChangesNode,
   inboundGoCount,
   defaultMessageButtons,
   diffStringMap,
@@ -369,6 +370,45 @@ test('addNode replaces an invalid entry_key with the added node', () => {
 test('addNode keeps a valid entry_key', () => {
   const next = addNode(baseDraft, { key: 'screen.custom_1', kind: 'screen' })
   assert.equal(next.entry_key, 'welcome')
+})
+
+test('patchChangesNode is false when the panel patch matches the node', () => {
+  const node = baseDraft.nodes[0]
+  const patch = {
+    description: node.description,
+    media_url: node.media_url,
+    media_type: node.media_type,
+    body: node.body,
+    buttons: node.buttons,
+  }
+  assert.equal(patchChangesNode(node, patch), false)
+  assert.equal(draftsEqual(baseDraft, patchNode(baseDraft, node.key, patch)), true)
+})
+
+test('patchChangesNode is true when a panel field differs', () => {
+  const node = baseDraft.nodes[0]
+  const patch = { body: 'Changed copy' }
+  assert.equal(patchChangesNode(node, patch), true)
+  const next = patchNode(baseDraft, node.key, patch)
+  assert.equal(draftsEqual(baseDraft, next), false)
+  assert.equal(next.nodes[0].body, 'Changed copy')
+  assert.equal(next.nodes[0].key, node.key)
+})
+
+test('patchChangesNode ignores a key rename and an empty patch', () => {
+  const node = baseDraft.nodes[0]
+  assert.equal(patchChangesNode(node, { key: 'other' }), false)
+  assert.equal(patchChangesNode(node, {}), false)
+  assert.equal(patchChangesNode(null, { body: 'x' }), false)
+})
+
+test('a no-op panel patch does not push an undo entry', () => {
+  const state = sessionFrom(baseDraft)
+  const node = state.getDraft().nodes[0]
+  const patch = { body: node.body, description: node.description }
+  assert.equal(patchChangesNode(node, patch), false)
+  state.applyCommand((draft) => patchNode(draft, node.key, patch))
+  assert.equal(state.canUndo(), false)
 })
 
 test('undo of first-node add restores the previous entry_key', () => {

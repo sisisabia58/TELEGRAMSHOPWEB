@@ -273,6 +273,54 @@ test('validateDraft empty go falls back to row/col when the button has no label'
   )
 })
 
+test('validateDraft rejects empty message body (M6 spec red rule)', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].body = ''
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => /welcome: message body required/.test(e)))
+})
+
+test('validateDraft rejects empty button label (M6 spec red rule)', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].buttons = [[{ label: '', go: 'product_list' }]]
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => /button .* needs a label/.test(e)))
+})
+
+test('validateDraft rejects non-http(s) button url (M6 spec red rule)', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].buttons = [[{ label: 'Site', url: 'javascript:alert(1)' }]]
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => /url must be http/.test(e)))
+})
+
+test('validateDraft accepts tg:// button urls that Telegram inline buttons allow', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].buttons = [[{ label: 'Profile', url: 'tg://user?id=42' }]]
+  const r = validateDraft(d, { allowedActions: DEFAULT_FLOW_ACTIONS })
+  assert.equal(r.ok, true, r.errors.join('; '))
+})
+
+test('validateDraft accepts telegram file ids and local paths as media_url', () => {
+  for (const mediaUrl of ['AgACAgIAAxkBAAIB', './logo.jpg', '/local/banner.png']) {
+    const d = structuredClone(baseDraft)
+    d.nodes[0].media_url = mediaUrl
+    const r = validateDraft(d, { allowedActions: DEFAULT_FLOW_ACTIONS })
+    assert.equal(r.ok, true, mediaUrl + ' ' + r.errors.join('; '))
+    assert.equal(r.errors.some((e) => /media_url must be http/.test(e)), false)
+  }
+})
+
+test('validateDraft still accepts empty media_url (optional media)', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].media_url = ''
+  const r = validateDraft(d, { allowedActions: DEFAULT_FLOW_ACTIONS })
+  assert.equal(r.ok, true, r.errors.join('; '))
+})
+
 test('draftFromPublished hydrates body from copy map', () => {
   const nodes = [
     { key: 'welcome', kind: 'screen', screen_key: 'screen.welcome', action: null, buttons: [], description: '', pos_x: 1, pos_y: 2 },

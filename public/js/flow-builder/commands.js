@@ -147,6 +147,13 @@
     return next
   }
 
+  function patchChangesNode(node, patch) {
+    if (!node || patch == null || typeof patch !== 'object') return false
+    const merged = Object.assign({}, clone(node), clone(patch))
+    merged.key = node.key
+    return JSON.stringify(clone(node)) !== JSON.stringify(merged)
+  }
+
   return {
     addNode: addNode,
     deleteNode: deleteNode,
@@ -155,6 +162,7 @@
     applyWire: applyWire,
     clearWire: clearWire,
     patchNode: patchNode,
+    patchChangesNode: patchChangesNode,
     inboundGoCount: inboundGoCount,
     defaultMessageButtons: defaultMessageButtons,
     diffStringMap: diffStringMap,
