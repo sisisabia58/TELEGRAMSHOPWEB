@@ -253,9 +253,11 @@ test('helmet sets X-Content-Type-Options nosniff', async () => {
 
 test('unauthenticated /api/* requests return 401 JSON instead of a login redirect', async () => {
   const app = sessionApp((a) => {
+    a.use(security.csrfProtection)
     a.get('/api/stats', security.requireAuth, (req, res) => res.json({ ok: true }))
+    a.post('/api/notifications/read-all', security.requireAuth, (req, res) => res.json({ success: true }))
     a.get('/produk', security.requireAuth, (req, res) => res.status(200).send('produk'))
-    a.post('/login', (req, res) => {
+    a.get('/session-login', (req, res) => {
       req.session.isLoggedIn = true
       res.sendStatus(204)
     })
@@ -269,11 +271,23 @@ test('unauthenticated /api/* requests return 401 JSON instead of a login redirec
     assert.equal(payload.success, false)
     assert.match(String(payload.error), /unauthorized/i)
 
+    const unauthPost = await fetch(`${url}/api/notifications/read-all`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    assert.equal(unauthPost.status, 401)
+    assert.equal(unauthPost.headers.get('location'), null)
+    const postPayload = await unauthPost.json()
+    assert.equal(postPayload.success, false)
+    assert.match(String(postPayload.error), /unauthorized/i)
+
     const page = await fetch(`${url}/produk`, { redirect: 'manual' })
     assert.equal(page.status, 302)
     assert.match(page.headers.get('location') || '', /\/login/)
 
-    const login = await fetch(`${url}/login`, { method: 'POST' })
+    const login = await fetch(`${url}/session-login`)
     const cookie = cookieHeader(login)
     const auth = await fetch(`${url}/api/stats`, { headers: { Cookie: cookie } })
     assert.equal(auth.status, 200)
