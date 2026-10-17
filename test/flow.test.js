@@ -416,7 +416,8 @@ test('SIS-55: product_list action on /start runs with message context instead of
   assert.equal(result.type, 'run')
   assert.equal(result.action, 'product_list')
   assert.equal(result.query.from.id, 9)
-  assert.equal(result.query.message.message_id, 77)
+  assert.equal(result.query.message.message_id, null)
+  assert.equal(result.query.message.chat.id, 9)
   assert.equal(result.query.id, null)
 })
 
@@ -472,6 +473,9 @@ test('SIS-59: deposit_menu as /start entry also runs with message context', () =
   const result = flow.resolveFlowAction('deposit_menu', { msg: startMsg() })
   assert.equal(result.type, 'run')
   assert.equal(result.action, 'deposit_menu')
+  assert.equal(result.query.id, null)
+  assert.equal(result.query.message.message_id, null)
+  assert.equal(result.query.message.chat.id, 9)
 })
 
 test('SIS-59: noop from a button answers the callback query', () => {
@@ -766,41 +770,34 @@ function sliceFn(src, startNeedle, endNeedle) {
   return src.slice(start, end)
 }
 
-test('rejected second answerCallbackQuery still renders the action result', async () => {
+test('answerCallbackQuerySafe resolves when Telegram rejects the answer', async () => {
   const flow = muatFlow({ nodes: sampleNodes })
-  const calls = []
+  let answers = 0
   const bot = {
     async answerCallbackQuery(id, extra) {
-      calls.push({ method: 'answerCallbackQuery', id, extra })
-      if (calls.filter((c) => c.method === 'answerCallbackQuery').length > 1) {
-        throw new Error('Bad Request: query is too old and response timeout expired or query ID is invalid')
-      }
-    },
-    async sendMessage(chatId, text) {
-      calls.push({ method: 'sendMessage', chatId, text })
+      answers += 1
+      assert.equal(id, 'cbq-1')
+      assert.ok(extra === undefined || extra.show_alert === true)
+      throw new Error('Bad Request: query is too old and response timeout expired or query ID is invalid')
     },
   }
 
-  // Wrapper answers first, then the handler answers the same query ID.
-  await bot.answerCallbackQuery('cbq-1').catch(() => {})
-  await assert.rejects(
-    () => bot.answerCallbackQuery('cbq-1'),
-    /query is too old|query ID is invalid/,
-  )
   await flow.answerCallbackQuerySafe(bot, 'cbq-1')
-  await bot.sendMessage(9, '📂 PILIH KATEGORI')
+  await flow.answerCallbackQuerySafe(bot, 'cbq-1', { text: 'notice', show_alert: true })
+  await flow.answerCallbackQuerySafe(bot, null)
+  await flow.answerCallbackQuerySafe({ }, 'cbq-1')
 
-  assert.equal(calls.filter((c) => c.method === 'answerCallbackQuery').length, 3)
-  assert.equal(calls.some((c) => c.method === 'sendMessage' && c.text === '📂 PILIH KATEGORI'), true)
+  assert.equal(answers, 2)
 })
 
-test('product_list, kategori_menu, and stok handler answers are non-fatal', () => {
+test('product_list, kategori_menu, stok, and deposit_menu handler answers are non-fatal', () => {
   const indexSrc = fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8')
   const productPage = sliceFn(indexSrc, 'async function sendProductPage', 'async function sendProductCard')
   const kategori = sliceFn(indexSrc, 'async function openKategoriMenu', 'async function openStokBuyer')
   const stok = sliceFn(indexSrc, 'async function openStokBuyer', 'async function openRiwayat')
   const productList = sliceFn(indexSrc, 'async function openProductList', 'async function openKategoriMenu')
   const riwayat = sliceFn(indexSrc, 'async function openRiwayat', 'function depositMenuPayload')
+  const deposit = sliceFn(indexSrc, 'async function openDepositMenu', 'async function handleFlowResult')
   const wrapper = sliceFn(indexSrc, 'if (flow.isEnabled())', 'if (cmd.startsWith(\'bulan_\')')
 
   assert.match(productPage, /flow\.answerCallbackQuerySafe\(/)
@@ -810,6 +807,11 @@ test('product_list, kategori_menu, and stok handler answers are non-fatal', () =
   assert.match(stok, /flow\.answerCallbackQuerySafe\(/)
   assert.doesNotMatch(stok, /await bot\.answerCallbackQuery\(/)
   assert.equal((stok.match(/flow\.answerCallbackQuerySafe\(/g) || []).length, 2)
+  assert.match(deposit, /if \(query\.id\) await flow\.answerCallbackQuerySafe\(bot, query\.id\)/)
+  assert.doesNotMatch(deposit, /await bot\.answerCallbackQuery\(/)
+  const answerAt = deposit.indexOf('answerCallbackQuerySafe')
+  const editAt = deposit.indexOf('editMessageCaption')
+  assert.ok(answerAt >= 0 && editAt > answerAt, 'deposit answer must not sit after the menu edit')
 
   const emptyList = productList.slice(
     productList.indexOf('if (!Produk || Produk.length === 0)'),
@@ -819,5 +821,33 @@ test('product_list, kategori_menu, and stok handler answers are non-fatal', () =
   assert.doesNotMatch(riwayat, /answerCallbackQuery/)
   assert.match(wrapper, /flow\.flowCallbackNeedsCustomAnswer\(node\)/)
   assert.match(wrapper, /answerCallbackQuery\(query\.id\)\.catch\(/)
+})
+
+test('synthetic /start context sends a new screen instead of editing the user message', () => {
+  const indexSrc = fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8')
+  const productList = sliceFn(indexSrc, 'async function openProductList', 'async function openKategoriMenu')
+  const productPage = sliceFn(indexSrc, 'async function sendProductPage', 'async function sendProductCard')
+  const kategori = sliceFn(indexSrc, 'async function openKategoriMenu', 'async function openStokBuyer')
+  const stok = sliceFn(indexSrc, 'async function openStokBuyer', 'async function openRiwayat')
+  const riwayat = sliceFn(indexSrc, 'async function openRiwayat', 'function depositMenuPayload')
+  const deposit = sliceFn(indexSrc, 'async function openDepositMenu', 'async function handleFlowResult')
+  const editOrSend = sliceFn(indexSrc, 'async function editOrSendBannerMessage', 'async function generateQRBuffer')
+
+  assert.match(productList, /if \(query\.message && query\.message\.message_id\) \{\s*await bot\.deleteMessage/)
+  assert.match(productPage, /if \(msgId\) \{/)
+  assert.match(productPage, /await sendBannerMessage\(chatId, text, \{ reply_markup \}\)/)
+
+  assert.match(kategori, /editOrSendBannerMessage\(query\.from\.id, query\.message\.message_id/)
+  assert.match(editOrSend, /if \(messageId\) \{/)
+  assert.match(editOrSend, /return await sendBannerMessage\(chatId, captionText, options\)/)
+
+  assert.doesNotMatch(stok, /message_id|deleteMessage|editMessageCaption|editOrSendBannerMessage/)
+  assert.match(stok, /bot\.sendMessage\(query\.from\.id/)
+
+  assert.match(riwayat, /if \(query\.message && query\.message\.message_id\)/)
+  assert.match(riwayat, /await sendPage\(Trx, query\.from\.id, 0\)/)
+
+  assert.match(deposit, /if \(!msgId\) \{\s*await sendBannerMessage\(query\.from\.id, text, \{ reply_markup \}\)/)
+  assert.match(deposit, /if \(msgId\) await bot\.deleteMessage\(chatId, msgId\)/)
 })
 

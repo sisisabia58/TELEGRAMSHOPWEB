@@ -2322,7 +2322,9 @@ async function openProductList(query) {
   const { data: Produk } = await supabase.from('Produk').select('*')
 
   try {
-    await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    if (query.message && query.message.message_id) {
+      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    }
   } catch (e) {
     // Ignore if message already deleted
   }
@@ -2565,10 +2567,14 @@ function depositMenuPayload() {
 }
 
 async function openDepositMenu(query) {
-  if (query.id) await bot.answerCallbackQuery(query.id)
+  if (query.id) await flow.answerCallbackQuerySafe(bot, query.id)
   const { text, reply_markup } = depositMenuPayload()
   const chatId = (query.message && query.message.chat && query.message.chat.id) || query.from.id
   const msgId = query.message && query.message.message_id
+  if (!msgId) {
+    await sendBannerMessage(query.from.id, text, { reply_markup })
+    return
+  }
   await bot.editMessageCaption(text, {
     chat_id: chatId,
     message_id: msgId,
