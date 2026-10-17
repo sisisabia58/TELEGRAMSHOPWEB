@@ -29,10 +29,19 @@ test.after(async () => {
   if (harness) await harness.stop()
 })
 
-test.beforeEach(() => {
+test.beforeEach(async () => {
   setFlowEngine(false)
   harness.api.setFailCaptionEdits(false)
+  // Drain a late /start sendMessage so it cannot leak into the next test's wait.
+  await harness.api.waitIdle(200, 4000)
   harness.api.clearOutgoing()
+})
+
+test('a second startBotHarness() is rejected while one is already running', async () => {
+  await assert.rejects(
+    () => startBotHarness({ flowEnabled: false }),
+    /already running/
+  )
 })
 
 test('/start with flow engine off sends legacy welcome caption and inline keyboard', { timeout: 15000 }, async () => {

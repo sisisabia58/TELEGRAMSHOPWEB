@@ -7,6 +7,35 @@ const { createMemorySupabase, defaultBotFixtures } = require('./memory-supabase'
 const USER_ID = 4242
 const ROOT = path.join(__dirname, '..', '..')
 
+let activeHarness = null
+
+const HARNESS_RELOAD_MODULES = [
+  'index.js',
+  'settings.js',
+  'pakasir.js',
+  'lib/runtime-settings.js',
+  'lib/copy.js',
+  'lib/flow.js',
+  'lib/fx.js',
+  'lib/session.js',
+  'lib/cart.js',
+  'lib/catalog.js',
+  'lib/pricing.js',
+  'lib/sourcing.js',
+  'lib/fulfillment.js',
+  'lib/supplier-sync.js',
+  'lib/stock.js',
+  'lib/retired-commands.js',
+]
+
+function evictHarnessModules() {
+  for (const rel of HARNESS_RELOAD_MODULES) {
+    try {
+      delete require.cache[require.resolve('../../' + rel)]
+    } catch (_) { /* not loaded yet */ }
+  }
+}
+
 function applyTestEnv(apiBaseUrl) {
   process.env.BOT_TEST_HARNESS = '1'
   process.env.TOKEN_BOT = process.env.TOKEN_BOT || '123456:TESTTOKEN'
@@ -44,51 +73,76 @@ async function waitUntil(fn, timeoutMs, label) {
   throw new Error(`timeout waiting for ${label}`)
 }
 
+async function cleanupFailedStart(botModule, api) {
+  if (botModule && typeof botModule.stopBot === 'function') {
+    try { await botModule.stopBot() } catch (_) { /* ignore */ }
+  }
+  try { await api.close() } catch (_) { /* ignore */ }
+}
+
 async function startBotHarness(options = {}) {
+  if (activeHarness) {
+    throw new Error('startBotHarness() already running in this process; call stop() first')
+  }
+
   const api = createFakeTelegram({ userId: USER_ID, firstName: 'Ada' })
+  const startupTimeoutMs = options.startupTimeoutMs == null ? 8000 : options.startupTimeoutMs
+  let botModule = null
   const baseUrl = await api.listen()
-  applyTestEnv(baseUrl)
-  if (options.flowEnabled === true) process.env.FLOW_ENGINE_ENABLED = 'true'
-  if (options.flowEnabled === false) process.env.FLOW_ENGINE_ENABLED = 'false'
+  try {
+    applyTestEnv(baseUrl)
+    if (options.flowEnabled === true) process.env.FLOW_ENGINE_ENABLED = 'true'
+    if (options.flowEnabled === false) process.env.FLOW_ENGINE_ENABLED = 'false'
 
-  const supabase = createMemorySupabase(options.fixtures || defaultBotFixtures())
-  stubSupabase(supabase)
+    const supabase = createMemorySupabase(options.fixtures || defaultBotFixtures())
+    evictHarnessModules()
+    stubSupabase(supabase)
 
-  const botModule = require('../../index.js')
-  const runtimeSettings = require('../../lib/runtime-settings')
-  const copy = require('../../lib/copy')
-  const flow = require('../../lib/flow')
-  const fx = require('../../lib/fx')
-  fx.__setHttp({
-    get: async () => { throw new Error('fx blocked in bot harness') },
-  })
+    botModule = require('../../index.js')
+    const runtimeSettings = require('../../lib/runtime-settings')
+    const copy = require('../../lib/copy')
+    const flow = require('../../lib/flow')
+    const fx = require('../../lib/fx')
+    fx.__setHttp({
+      get: async () => { throw new Error('fx blocked in bot harness') },
+    })
 
-  await waitUntil(
-    () => runtimeSettings.isReady() && copy.isReady() && flow.isReady(),
-    8000,
-    'runtime/copy/flow ready'
-  )
-  await waitUntil(
-    () => api.calls.some((c) => c.method === 'getUpdates' || c.method === 'setMyCommands'),
-    8000,
-    'telegram polling'
-  )
+    await waitUntil(
+      () => runtimeSettings.isReady() && copy.isReady() && flow.isReady(),
+      startupTimeoutMs,
+      'runtime/copy/flow ready'
+    )
+    await waitUntil(
+      () => api.calls.some((c) => c.method === 'getUpdates' || c.method === 'setMyCommands'),
+      startupTimeoutMs,
+      'telegram polling'
+    )
 
-  return {
-    api,
-    supabase,
-    db: supabase._db,
-    bot: botModule.bot,
-    stopBot: botModule.stopBot,
-    flow,
-    copy,
-    runtimeSettings,
-    async stop() {
-      if (typeof botModule.stopBot === 'function') {
-        await botModule.stopBot()
-      }
-      await api.close()
-    },
+    const harness = {
+      api,
+      supabase,
+      db: supabase._db,
+      bot: botModule.bot,
+      stopBot: botModule.stopBot,
+      flow,
+      copy,
+      runtimeSettings,
+      async stop() {
+        try {
+          if (typeof botModule.stopBot === 'function') {
+            await botModule.stopBot()
+          }
+        } finally {
+          await api.close()
+          if (activeHarness === harness) activeHarness = null
+        }
+      },
+    }
+    activeHarness = harness
+    return harness
+  } catch (err) {
+    await cleanupFailedStart(botModule, api)
+    throw err
   }
 }
 
