@@ -111,7 +111,7 @@ Salin `.env.example` ke `.env` dan isi nilai berikut:
 | `TELEGRAM_API_URL` | (Opsional) Override API Telegram | default: `https://api.telegram.org` |
 
 **Penting:**
-- Login dashboard memakai tabel `Admin` (Supabase) terlebih dahulu. Jika tidak ada row yang cocok, fallback ke `ADMIN_USERNAME` dan `ADMIN_PASSWORD`. Kedua variabel itu **tidak punya default**; jika tidak di-set, fallback ditolak (fail closed) dan server menulis log error.
+- Login dashboard memakai tabel `Admin` (Supabase) terlebih dahulu. Jika tidak ada row yang cocok, fallback ke `ADMIN_USERNAME` dan `ADMIN_PASSWORD`. Selalu set kedua variabel itu, atau buat row Admin; jangan biarkan keduanya kosong. Perilaku fail closed (env kosong menolak fallback) datang bersama hardening PR #47.
 - Di production wajib set `SESSION_SECRET` yang kuat dan jangan commit `.env`.
 - `SUPABASE_KEY` wajib **service-role** key. `POST /api/bot-flow/publish` memanggil RPC `publish_bot_flow_graph`, dan `EXECUTE` fungsi itu hanya di-GRANT ke `service_role`. Key anon/public membuat publish gagal. Ketentuan yang sama ada di `docs/runbooks/phase13-supplier-sourcing.md`.
 
@@ -198,7 +198,7 @@ TELEGRAMSHOPWEB/
 1. Buka browser: `http://localhost:3000`
 2. Login dengan:
    - **Admin dari database**: username & password yang sudah didaftarkan di tabel `Admin`.
-   - **Fallback**: `ADMIN_USERNAME` dan `ADMIN_PASSWORD` dari environment (wajib di-set; tidak ada default).
+   - **Fallback**: `ADMIN_USERNAME` dan `ADMIN_PASSWORD` dari environment (selalu set keduanya, atau buat row Admin). Fail closed tiba di PR #47.
 
 ### Menu utama
 
@@ -248,7 +248,7 @@ Setelah migrasi, buat admin pertama lewat **Dashboard** (jika ada fitur tambah a
 | Masalah | Solusi |
 |--------|--------|
 | Bot tidak merespons | Cek `TOKEN_BOT`, koneksi internet, dan log di konsol (`index.js`). |
-| Dashboard tidak bisa login | Pastikan migrasi Supabase sudah dijalankan dan ada row di `Admin`, atau set `ADMIN_USERNAME` dan `ADMIN_PASSWORD`. Tidak ada kredensial default. |
+| Dashboard tidak bisa login | Pastikan migrasi Supabase sudah dijalankan dan ada row di `Admin`, atau set `ADMIN_USERNAME` dan `ADMIN_PASSWORD`. Jangan biarkan env kosong. Fail closed tiba di PR #47. |
 | Error Supabase / "relation does not exist" | Jalankan ulang file migrasi `20250207000000_complete_teleshop_schema.sql` di SQL Editor. |
 | Port 3000 sudah dipakai | Set `PORT=3001` (atau lain) di `.env`. |
 | Session hilang / logout terus | Set `SESSION_SECRET` di `.env`; di production pastikan nilainya unik dan rahasia. |

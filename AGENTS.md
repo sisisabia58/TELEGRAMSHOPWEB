@@ -82,7 +82,7 @@ ADMIN_PASSWORD=
 SESSION_SECRET=dev-local-session-secret-change-me
 ```
 
-Dashboard login uses the `Admin` table first, then falls back to `ADMIN_USERNAME`/`ADMIN_PASSWORD` when no matching admin row exists. There is **no hardcoded default**; if those env vars are unset, env-fallback login is refused. Set them in `.env` for local dashboard login on a fresh DB.
+Dashboard login uses the `Admin` table first, then falls back to `ADMIN_USERNAME`/`ADMIN_PASSWORD` when no matching admin row exists. Always set those env vars, or create an Admin row, for local dashboard login on a fresh DB; do not leave them empty. Fail-closed behaviour (unset env vars refuse env-fallback login) arrives with hardening PR #47.
 
 ### Running the Telegram bot
 

@@ -16,6 +16,9 @@ const EKSTENSI = new Set([
   '.txt',
   '.sh',
 ])
+// Leading horizontal whitespace; a single non-whitespace value on the same line.
+const POLA_ASSIGN_ADMIN_USERNAME = /^[ \t]*ADMIN_USERNAME=\S/m
+const POLA_ASSIGN_ADMIN_PASSWORD = /^[ \t]*ADMIN_PASSWORD=\S/m
 
 function baca(...bagian) {
   return fs.readFileSync(path.join(AKAR, ...bagian), 'utf8')
@@ -41,14 +44,29 @@ test('.env.example leaves ADMIN_USERNAME and ADMIN_PASSWORD empty', () => {
   const teks = baca('.env.example')
   assert.match(teks, /^ADMIN_USERNAME=\s*$/m)
   assert.match(teks, /^ADMIN_PASSWORD=\s*$/m)
+  assert.match(teks, /Always set ADMIN_USERNAME and ADMIN_PASSWORD, or create an Admin row/)
+  assert.match(teks, /hardening PR #47/)
 })
 
-test('README and AGENTS.md say env-fallback login has no default', () => {
+test('README and AGENTS.md tell operators to set env credentials until #47', () => {
   const readme = baca('README.md')
   const agents = baca('AGENTS.md')
-  assert.match(readme, /tidak punya default/i)
-  assert.match(readme, /Tidak ada kredensial default/)
-  assert.match(agents, /no hardcoded default/i)
+  assert.match(readme, /Selalu set kedua variabel itu, atau buat row Admin/)
+  assert.match(readme, /hardening PR #47/)
+  assert.match(agents, /Always set those env vars, or create an Admin row/)
+  assert.match(agents, /hardening PR #47/)
+})
+
+test('ADMIN_* assignment regex matches single-character and indented values', () => {
+  assert.match('ADMIN_USERNAME=a', POLA_ASSIGN_ADMIN_USERNAME)
+  assert.match('ADMIN_PASSWORD=x', POLA_ASSIGN_ADMIN_PASSWORD)
+  assert.match('  ADMIN_USERNAME=foo', POLA_ASSIGN_ADMIN_USERNAME)
+  assert.match('\tADMIN_PASSWORD=bar', POLA_ASSIGN_ADMIN_PASSWORD)
+  assert.match(' \tADMIN_USERNAME=z', POLA_ASSIGN_ADMIN_USERNAME)
+  assert.doesNotMatch('ADMIN_USERNAME=', POLA_ASSIGN_ADMIN_USERNAME)
+  assert.doesNotMatch('ADMIN_PASSWORD=', POLA_ASSIGN_ADMIN_PASSWORD)
+  assert.doesNotMatch('ADMIN_USERNAME=  ', POLA_ASSIGN_ADMIN_USERNAME)
+  assert.doesNotMatch('# ADMIN_USERNAME=a', POLA_ASSIGN_ADMIN_USERNAME)
 })
 
 test('docs and examples do not show a default username/password pair', () => {
@@ -67,12 +85,12 @@ test('docs do not assign a concrete ADMIN_USERNAME or ADMIN_PASSWORD value', () 
     const teks = baca(berkas)
     assert.doesNotMatch(
       teks,
-      /^ADMIN_USERNAME=.+\S/m,
+      POLA_ASSIGN_ADMIN_USERNAME,
       `${berkas} must not ship a concrete ADMIN_USERNAME`
     )
     assert.doesNotMatch(
       teks,
-      /^ADMIN_PASSWORD=.+\S/m,
+      POLA_ASSIGN_ADMIN_PASSWORD,
       `${berkas} must not ship a concrete ADMIN_PASSWORD`
     )
   }
