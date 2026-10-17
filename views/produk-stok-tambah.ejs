@@ -34,6 +34,7 @@
                     <% } %>
 
                     <form method="POST" action="<%= stokBase %>/tambah">
+                        <%- include('partials/csrf') %>
                         <div class="form-group">
                             <label class="form-label">
                                 Data Stok (Satu Item Per Baris) <span class="required">*</span>

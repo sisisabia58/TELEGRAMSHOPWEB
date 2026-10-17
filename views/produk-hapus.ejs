@@ -84,6 +84,7 @@
             </div>
 
             <form method="POST" action="/produk/hapus/<%= produk.id %>">
+                <%- include('partials/csrf') %>
             <div class="form-actions">
             <button type="submit" class="btn-delete">
             🗑️ Ya, Hapus Produk

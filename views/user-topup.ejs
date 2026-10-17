@@ -42,6 +42,7 @@
                         <% } %>
 
                         <form method="POST" action="/user/<%= user.id %>/topup" data-loading>
+                            <%- include('partials/csrf') %>
                             <div class="form-group">
                                 <label class="form-label" for="jumlah">Jumlah Top Up (Rp) <span class="required">*</span></label>
                                 <input

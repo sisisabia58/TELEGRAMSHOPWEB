@@ -38,6 +38,7 @@
                     </div>
 
                     <form method="POST" action="/communication/broadcast" id="broadcastForm" onsubmit="return confirmBroadcast(event)">
+                        <%- include('partials/csrf') %>
                         <!-- Template Selection -->
                         <div class="form-group">
                             <label for="template_id" class="form-label">

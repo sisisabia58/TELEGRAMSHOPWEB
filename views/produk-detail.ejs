@@ -69,6 +69,7 @@
                 </div>
                 <div class="card-body">
                     <form method="POST" action="/produk/<%= produk.id %>" data-loading>
+                        <%- include('partials/csrf') %>
                         <div class="form-group">
                             <label class="form-label">Nama Produk <span class="required">*</span></label>
                             <input type="text" name="nama" class="form-input" value="<%= produk.nama %>" required>

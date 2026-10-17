@@ -34,6 +34,7 @@
                     <% } %>
 
                     <form method="POST" action="<%= stokBase %>/edit/<%= stokItem.id %>">
+                        <%- include('partials/csrf') %>
                         <div class="form-group">
                             <label class="form-label">
                                 Data Stok <span class="required">*</span>

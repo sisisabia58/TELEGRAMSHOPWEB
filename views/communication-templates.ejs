@@ -69,6 +69,7 @@
             ✏️ Edit
             </a>
             <form method="POST" action="/communication/templates/hapus/<%= t.id %>" style="display: inline;" onsubmit="return confirm('Yakin ingin menghapus template ini?')">
+                <%- include('partials/csrf') %>
             <button type="submit" style="padding: 5px 10px; background: #dc3545; color: white; border: none; border-radius: 4px; font-size: 12px; cursor: pointer;">
             🗑️ Hapus
             </button>

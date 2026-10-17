@@ -59,6 +59,7 @@
                         <% } %>
 
                         <form method="POST" action="<%= action === 'tambah' ? '/admin/users/tambah' : '/admin/users/edit/' + admin.id %>" data-loading>
+                            <%- include('partials/csrf') %>
                             <div class="form-group">
                                 <label class="form-label" for="username">Username <span class="required">*</span></label>
                                 <input

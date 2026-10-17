@@ -63,7 +63,7 @@ class NotificationCenter {
 
   async markAllRead() {
     try {
-      await fetch('/api/notifications/read-all', { method: 'POST' })
+      await fetch('/api/notifications/read-all', { method: 'POST', headers: csrfHeaders() })
       await this.loadInbox()
     } catch (error) {
       console.error('Error marking notifications read:', error)

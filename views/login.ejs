@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <title><%= title %></title>
+    <meta name="csrf-token" content="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
     <link rel="stylesheet" href="/css/login.css">
+    <script src="/js/csrf.js"></script>
 </head>
 <body>
     <div class="login-container">
@@ -29,6 +31,7 @@
             <% } %>
             
             <form method="POST" action="/login" class="login-form">
+                <%- include('partials/csrf') %>
                 <div class="form-group">
                     <label for="username">Username</label>
                     <input 

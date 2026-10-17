@@ -35,6 +35,7 @@
                     </div>
                     <div class="card-body">
                         <form method="POST" action="/produk/tambah" data-loading>
+                            <%- include('partials/csrf') %>
                             <h3 style="margin:0 0 16px;font-size:16px;color:#333;">Informasi Produk</h3>
                             <div class="form-group">
                                 <label class="form-label">Nama Produk <span class="required">*</span></label>

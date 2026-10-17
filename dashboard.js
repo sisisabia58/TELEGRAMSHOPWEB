@@ -25,8 +25,11 @@ const { formatrupiah, formatTanggal } = require('./lib/format')
 const { buildOverviewModel, summarizeStock } = require('./lib/dashboard-overview')
 const { redactSecrets, secretUpdateRow, selectSupabaseTestKey, supabaseOriginChangeError } = require('./lib/secret-mask')
 const { requireRole, requireWriteAccess } = require('./lib/dashboard-auth')
+const security = require('./lib/http-security')
 
 const app = express()
+security.applyTrustProxy(app)
+security.applyHttpHardening(app)
 
 // Set view engine
 app.set('view engine', 'ejs')
@@ -72,7 +75,6 @@ if (!sessionSecret && process.env.NODE_ENV === 'production') {
   console.error('FATAL: SESSION_SECRET is required in production')
   process.exit(1)
 }
-app.set('trust proxy', 1)
 app.use(session({
   secret: sessionSecret || 'dev-only-change-me',
   resave: false,
@@ -84,14 +86,11 @@ app.use(session({
     maxAge: 24 * 60 * 60 * 1000,
   },
 }))
+app.use(security.csrfLocals)
+app.use(security.csrfProtection)
 
 // Middleware untuk check authentication
-const isAuthenticated = (req, res, next) => {
-  if (req.session && req.session.isLoggedIn) {
-    return next()
-  }
-  res.redirect('/login')
-}
+const isAuthenticated = security.requireAuth
 
 // Middleware untuk check jika sudah login (redirect ke dashboard)
 const redirectIfAuthenticated = (req, res, next) => {
@@ -331,12 +330,9 @@ async function comparePassword(password, hash) {
   return await bcrypt.compare(password, hash)
 }
 
-// Helper: Get client IP
+// Helper: Get client IP (req.ip honors trust proxy; do not read X-Forwarded-For raw)
 function getClientIP(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0] || 
-         req.connection.remoteAddress || 
-         req.socket.remoteAddress ||
-         'unknown'
+  return security.clientIp(req)
 }
 
 // Helper: Log activity
@@ -358,35 +354,7 @@ async function logActivity(req, action, entityType = null, entityId = null, deta
   }
 }
 
-// Middleware: Rate limiting sederhana
-const rateLimitMap = new Map()
-const rateLimit = (maxRequests = 5, windowMs = 15 * 60 * 1000) => {
-  return (req, res, next) => {
-    const ip = getClientIP(req)
-    const key = `${ip}-${req.path}`
-    const now = Date.now()
-    
-    if (!rateLimitMap.has(key)) {
-      rateLimitMap.set(key, { count: 1, resetTime: now + windowMs })
-      return next()
-    }
-    
-    const record = rateLimitMap.get(key)
-    
-    if (now > record.resetTime) {
-      record.count = 1
-      record.resetTime = now + windowMs
-      return next()
-    }
-    
-    if (record.count >= maxRequests) {
-      return res.status(429).send('Too many requests. Please try again later.')
-    }
-    
-    record.count++
-    next()
-  }
-}
+const loginRateLimit = security.createLoginRateLimiter({ max: 5, windowMs: 15 * 60 * 1000 })
 
 // Route: Login Page
 app.get('/login', redirectIfAuthenticated, (req, res) => {
@@ -398,7 +366,7 @@ app.get('/login', redirectIfAuthenticated, (req, res) => {
 })
 
 // Route: Login Process
-app.post('/login', redirectIfAuthenticated, rateLimit(5, 15 * 60 * 1000), async (req, res) => {
+app.post('/login', redirectIfAuthenticated, loginRateLimit, async (req, res) => {
   const { username, password } = req.body
   const ip = getClientIP(req)
   const userAgent = req.headers['user-agent'] || 'unknown'
@@ -411,11 +379,15 @@ app.post('/login', redirectIfAuthenticated, rateLimit(5, 15 * 60 * 1000), async 
       .eq('username', username.toLowerCase().trim())
       .single()
 
-    // Fallback ke .env jika tidak ada admin di database
+    // Fallback ke .env jika tidak ada admin di database (fail closed: no hardcoded defaults)
     if (!admin || error) {
-      const adminUsername = process.env.ADMIN_USERNAME || 'admin'
-      const adminPassword = process.env.ADMIN_PASSWORD || 'admin123'
-      
+      const envAdmin = security.resolveEnvAdminCredentials()
+      if (!envAdmin) {
+        return res.redirect('/login?error=invalid')
+      }
+      const adminUsername = envAdmin.username
+      const adminPassword = envAdmin.password
+
       if (username === adminUsername && password === adminPassword) {
         req.session.isLoggedIn = true
         req.session.username = username

@@ -56,6 +56,7 @@
                             </div>
                         <% } else { %>
                             <form method="POST" action="/user/<%= user.id %>/kurangi" data-loading>
+                                <%- include('partials/csrf') %>
                                 <div class="form-group">
                                     <label class="form-label" for="jumlah">Jumlah yang Dikurangi (Rp) <span class="required">*</span></label>
                                     <input

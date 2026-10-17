@@ -79,6 +79,7 @@
             </div>
 
             <form method="POST" action="/voucher/hapus/<%= voucher.id %>">
+                <%- include('partials/csrf') %>
             <div class="form-actions">
             <button type="submit" class="btn-delete">
             🗑️ Ya, Hapus Voucher

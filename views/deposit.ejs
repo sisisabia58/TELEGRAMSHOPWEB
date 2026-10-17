@@ -276,9 +276,11 @@
                                                     <% if (d.status === 'pending') { %>
                                                         <div class="deposit-approve-reject">
                                                             <form method="POST" action="/deposit/<%= d.id %>/approve" onsubmit="return confirm('Yakin approve deposit ini?')">
+                                                                <%- include('partials/csrf') %>
                                                                 <button type="submit" class="deposit-action-btn deposit-action-approve" title="Approve"><svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg><span class="deposit-action-label"> Approve</span></button>
                                                             </form>
                                                             <form method="POST" action="/deposit/<%= d.id %>/reject" onsubmit="return confirm('Yakin reject deposit ini?')">
+                                                                <%- include('partials/csrf') %>
                                                                 <button type="submit" class="deposit-action-btn deposit-action-reject" title="Reject"><svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg><span class="deposit-action-label"> Reject</span></button>
                                                             </form>
                                                         </div>
