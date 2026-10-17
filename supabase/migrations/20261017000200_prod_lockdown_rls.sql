@@ -32,7 +32,13 @@ GRANT EXECUTE ON FUNCTION public.publish_bot_flow_graph(uuid, jsonb, text, text[
 -- ---------------------------------------------------------------------------
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
-REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated;
+-- Postgres grants EXECUTE to PUBLIC by default. Revoking only anon/authenticated
+-- would leave PUBLIC EXECUTE, so those roles could still call functions.
+-- Safe as a blanket public-schema revoke: the only functions this repo creates
+-- in public are update_updated_at_column (trigger; runs as table-owner context,
+-- EXECUTE is not re-checked when the trigger fires) and publish_bot_flow_graph
+-- (already REVOKE FROM PUBLIC above). The app uses the service_role key only.
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC, anon, authenticated;
 
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
@@ -41,19 +47,23 @@ GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO service_role;
 -- Future objects: stop auto-granting to client roles.
 -- Hosted Supabase creates objects as postgres and (often) supabase_admin.
 -- The local CLI image has postgres but not supabase_admin; skip that role there.
+-- ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin requires membership (or
+-- superuser). Skip when current_user is not a member, even if the role exists.
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   REVOKE ALL ON TABLES FROM anon, authenticated;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   REVOKE ALL ON SEQUENCES FROM anon, authenticated;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
-  REVOKE ALL ON FUNCTIONS FROM anon, authenticated;
+  REVOKE ALL ON FUNCTIONS FROM PUBLIC, anon, authenticated;
 
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin') THEN
-    EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated';
-    EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated';
-    EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon, authenticated';
+    IF pg_has_role(current_user, 'supabase_admin', 'MEMBER') THEN
+      EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated';
+      EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated';
+      EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM PUBLIC, anon, authenticated';
+    END IF;
   END IF;
 END $$;
 
