@@ -196,7 +196,137 @@ test('null and non-object buttons are shape errors and do not throw', () => {
   const mode = js.slice(js.indexOf('function buttonMode'), js.indexOf('function goFlatIndices'))
   assert.match(mode, /if\s*\(\s*!btn\s*\|\|\s*typeof btn !== 'object'\s*\)\s*return ''/)
   const panel = js.slice(js.indexOf('function renderPanel'), js.indexOf('function readPanelPatch'))
-  assert.match(panel, /if\s*\(\s*!btn\s*\|\|\s*typeof btn !== 'object'\s*\)\s*return/)
+  assert.match(panel, /if\s*\(\s*!btn\s*\|\|\s*typeof btn !== 'object'\s*\)\s*\{/)
+  assert.match(panel, /Invalid button entry/)
+  assert.match(panel, /data-flat-index="' \+ idx \+ '"/)
+  assert.match(panel, /class="btn-row-delete" data-delete="' \+ idx \+ '"/)
+  const patchFn = js.slice(js.indexOf('function readPanelPatch'), js.indexOf('function applyPanelToDraft'))
+  assert.match(patchFn, /const labelEl = row\.querySelector\('\.btn-label'\)/)
+  assert.match(patchFn, /if\s*\(\s*!labelEl\s*\)\s*return/)
+})
+
+function extractArrowBlock(source, marker) {
+  const start = source.indexOf(marker)
+  if (start < 0) throw new Error('missing ' + marker)
+  const open = source.indexOf('{', start)
+  let end = endOfBalanced(source, open)
+  let j = end
+  while (source[j] === ' ' || source[j] === '\n' || source[j] === '\r' || source[j] === '\t') j++
+  if (source[j] === ')') end = j + 1
+  return source.slice(start, end)
+}
+
+function renderButtonRows(node) {
+  const js = fs.readFileSync(jsFile, 'utf8')
+  return new Function(
+    'node',
+    [
+      "'use strict'",
+      'function escapeHtml(s) {',
+      '  return String(s || "")',
+      '    .replace(/&/g, "&amp;")',
+      '    .replace(/</g, "&lt;")',
+      '    .replace(/>/g, "&gt;")',
+      '    .replace(/"/g, "&quot;")',
+      '}',
+      extractFunction(js, 'flattenButtons'),
+      extractFunction(js, 'buttonMode'),
+      'let html = ""',
+      'const flat = flattenButtons(node.buttons)',
+      extractArrowBlock(js, 'flat.forEach((btn, idx) => {'),
+      'return html',
+    ].join('\n')
+  )(node)
+}
+
+test('invalid button entries render a deletable placeholder and valid rows stay editable', () => {
+  const html = renderButtonRows({
+    buttons: [[null, { label: 'Go <shop>', go: 'product_list', label_key: 'btn.go' }], ['nope']],
+  })
+  const rows = html.split('<div class="sp-btn-row"').slice(1)
+  assert.equal(rows.length, 3)
+
+  assert.match(rows[0], /data-flat-index="0"/)
+  assert.match(rows[0], /Invalid button entry/)
+  assert.match(rows[0], /class="btn-row-delete" data-delete="0"/)
+  assert.doesNotMatch(rows[0], /btn-label/)
+  assert.doesNotMatch(rows[0], /btn-mode/)
+  assert.doesNotMatch(rows[0], /btn-target/)
+
+  assert.match(rows[1], /data-flat-index="1"/)
+  assert.match(rows[1], /class="btn-label"/)
+  assert.match(rows[1], /value="Go &lt;shop&gt;"/)
+  assert.match(rows[1], /class="btn-row-delete" data-delete="1"/)
+  assert.match(rows[1], /value="go" selected/)
+
+  assert.match(rows[2], /data-flat-index="2"/)
+  assert.match(rows[2], /Invalid button entry/)
+  assert.match(rows[2], /data-delete="2"/)
+  assert.doesNotMatch(rows[2], /btn-label/)
+})
+
+test('readPanelPatch skips placeholder rows and still rebuilds valid buttons', () => {
+  const js = fs.readFileSync(jsFile, 'utf8')
+  const list = new ButtonRowEl('sp-btn-list')
+  list.id = 'panelButtonsBody'
+
+  const invalid = new ButtonRowEl('sp-btn-row')
+  invalid.setAttribute('data-flat-index', '0')
+  invalid.appendChild(new ButtonRowEl('flow-panel-hint'))
+
+  const valid = new ButtonRowEl('sp-btn-row')
+  valid.setAttribute('data-flat-index', '1')
+  const label = new ButtonRowEl('btn-label')
+  label.value = ' Shop '
+  const mode = new ButtonRowEl('btn-mode')
+  mode.value = 'url'
+  const target = new ButtonRowEl('btn-target')
+  target.value = ' tg://user?id=7 '
+  valid.appendChild(label)
+  valid.appendChild(mode)
+  valid.appendChild(target)
+  list.appendChild(invalid)
+  list.appendChild(valid)
+
+  const document = {
+    getElementById(id) {
+      return id === 'panelButtonsBody' ? list : null
+    },
+  }
+  const readPanelPatch = new Function(
+    'document',
+    "'use strict'\n" +
+      extractFunction(js, 'flattenButtons') + '\n' +
+      extractFunction(js, 'readPanelPatch') + '\n' +
+      'return readPanelPatch\n'
+  )(document)
+
+  const node = {
+    kind: 'screen',
+    buttons: [[null, { label: 'Old', go: 'welcome', extra: 1 }]],
+  }
+  const patch = readPanelPatch(node)
+  assert.equal(patch.buttons[0][0], null)
+  assert.deepEqual(patch.buttons[0][1], { label: 'Shop', url: 'tg://user?id=7' })
+
+  const onlyInvalid = new ButtonRowEl('sp-btn-row')
+  onlyInvalid.setAttribute('data-flat-index', '0')
+  const onlyList = new ButtonRowEl('sp-btn-list')
+  onlyList.id = 'panelButtonsBody'
+  onlyList.appendChild(onlyInvalid)
+  const readOnly = new Function(
+    'document',
+    "'use strict'\n" +
+      extractFunction(js, 'flattenButtons') + '\n' +
+      extractFunction(js, 'readPanelPatch') + '\n' +
+      'return readPanelPatch\n'
+  )({
+    getElementById(id) {
+      return id === 'panelButtonsBody' ? onlyList : null
+    },
+  })
+  const stringNode = { kind: 'action', buttons: [['nope']] }
+  assert.deepEqual(readOnly(stringNode).buttons, [['nope']])
 })
 
 test('go target that does not exist is a red error', () => {

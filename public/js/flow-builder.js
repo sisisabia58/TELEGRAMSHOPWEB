@@ -738,7 +738,13 @@
 
     const flat = flattenButtons(node.buttons)
     flat.forEach((btn, idx) => {
-      if (!btn || typeof btn !== 'object') return
+      if (!btn || typeof btn !== 'object') {
+        html += '<div class="sp-btn-row" data-flat-index="' + idx + '">'
+        html += '<div class="sp-btn-grid"><span class="flow-panel-hint">Invalid button entry</span>'
+        html += '<div class="btn-row-actions"><button type="button" class="btn-row-delete" data-delete="' + idx + '" title="Delete Button">×</button></div>'
+        html += '</div></div>'
+        return
+      }
       const mode = buttonMode(btn)
       const target = btn.go || btn.callback || btn.url_from || btn.url || ''
       html += '<div class="sp-btn-row" data-flat-index="' + idx + '">'
@@ -920,7 +926,9 @@
       const flat = flattenButtons(node.buttons)
       rows.forEach((row) => {
         const idx = Number(row.getAttribute('data-flat-index'))
-        const label = row.querySelector('.btn-label').value.trim()
+        const labelEl = row.querySelector('.btn-label')
+        if (!labelEl) return
+        const label = labelEl.value.trim()
         const mode = row.querySelector('.btn-mode').value
         const target = row.querySelector('.btn-target').value.trim()
         const prev = flat[idx] || {}
