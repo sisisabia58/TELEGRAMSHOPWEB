@@ -975,16 +975,118 @@
     setStatus('Added Message node: ' + key, 'ok')
   }
 
+  const PALETTE_DRAG_THRESHOLD = 8
+  let palettePointer = null
+  let paletteGhost = null
+  let skipPaletteClick = false
+  let html5DropJustPlaced = false
+
   function addMessageNode() {
+    if (skipPaletteClick) return
     addPaletteNode('message', placementFromViewportCenter())
   }
 
   function addActionNode() {
+    if (skipPaletteClick) return
     addPaletteNode('action', placementFromViewportCenter())
+  }
+
+  function dropNodeAtClient(kind, clientX, clientY) {
+    const geo = getCanvasGeometry()
+    if (!geo) {
+      addPaletteNode(kind, placementFromViewportCenter())
+      return
+    }
+    const pos = FlowBuilderPalette.canvasPositionFromClient(clientX, clientY, geo.precanvasRect, geo.zoom)
+    addPaletteNode(kind, pos)
+  }
+
+  function pointOverCanvas(clientX, clientY) {
+    const canvas = document.getElementById('drawflow')
+    if (!canvas) return false
+    const el = document.elementFromPoint(clientX, clientY)
+    return !!(el && (el === canvas || canvas.contains(el)))
+  }
+
+  function setCanvasDragOver(on) {
+    const canvas = document.getElementById('drawflow')
+    if (!canvas) return
+    canvas.classList.toggle('is-drop-target', on)
+    canvas.classList.toggle('is-drag-over', on)
+  }
+
+  function hidePaletteGhost() {
+    if (paletteGhost && paletteGhost.parentNode) paletteGhost.parentNode.removeChild(paletteGhost)
+    paletteGhost = null
+  }
+
+  function showPaletteGhost(item, clientX, clientY) {
+    if (!paletteGhost) {
+      paletteGhost = item.cloneNode(true)
+      paletteGhost.removeAttribute('id')
+      paletteGhost.classList.add('flow-palette-ghost')
+      paletteGhost.setAttribute('aria-hidden', 'true')
+      document.body.appendChild(paletteGhost)
+    }
+    paletteGhost.style.left = Math.round(clientX - 36) + 'px'
+    paletteGhost.style.top = Math.round(clientY - 28) + 'px'
+  }
+
+  function endPalettePointer(place, clientX, clientY) {
+    const session = palettePointer
+    palettePointer = null
+    hidePaletteGhost()
+    setCanvasDragOver(false)
+    document.querySelectorAll('.flow-palette-item.is-dragging').forEach((el) => {
+      el.classList.remove('is-dragging')
+    })
+    if (!session || !session.active) return
+    skipPaletteClick = true
+    setTimeout(function () { skipPaletteClick = false }, 0)
+    if (!place || html5DropJustPlaced) return
+    if (!pointOverCanvas(clientX, clientY)) return
+    dropNodeAtClient(session.kind, clientX, clientY)
   }
 
   function bindPaletteDrag() {
     document.querySelectorAll('.flow-palette-item').forEach((item) => {
+      item.addEventListener('pointerdown', function (ev) {
+        if (ev.button != null && ev.button !== 0) return
+        const kind = item.getAttribute('data-kind')
+        if (kind !== 'message' && kind !== 'action') return
+        html5DropJustPlaced = false
+        palettePointer = {
+          kind: kind,
+          pointerId: ev.pointerId,
+          startX: ev.clientX,
+          startY: ev.clientY,
+          active: false,
+        }
+        try { item.setPointerCapture(ev.pointerId) } catch (err) { /* ignore */ }
+      })
+      item.addEventListener('pointermove', function (ev) {
+        if (!palettePointer || palettePointer.pointerId !== ev.pointerId) return
+        const dx = ev.clientX - palettePointer.startX
+        const dy = ev.clientY - palettePointer.startY
+        if (!palettePointer.active) {
+          if ((dx * dx + dy * dy) < PALETTE_DRAG_THRESHOLD * PALETTE_DRAG_THRESHOLD) return
+          palettePointer.active = true
+          item.classList.add('is-dragging')
+          FlowBuilderPalette.setActivePaletteKind(palettePointer.kind)
+        }
+        ev.preventDefault()
+        showPaletteGhost(item, ev.clientX, ev.clientY)
+        setCanvasDragOver(pointOverCanvas(ev.clientX, ev.clientY))
+      })
+      item.addEventListener('pointerup', function (ev) {
+        if (!palettePointer || palettePointer.pointerId !== ev.pointerId) return
+        try { item.releasePointerCapture(ev.pointerId) } catch (err) { /* ignore */ }
+        endPalettePointer(true, ev.clientX, ev.clientY)
+      })
+      item.addEventListener('pointercancel', function (ev) {
+        if (!palettePointer || palettePointer.pointerId !== ev.pointerId) return
+        endPalettePointer(false, ev.clientX, ev.clientY)
+      })
       item.addEventListener('dragstart', function (ev) {
         const kind = item.getAttribute('data-kind')
         if (!FlowBuilderPalette.setPaletteDragData(ev.dataTransfer, kind)) {
@@ -992,14 +1094,14 @@
           return
         }
         item.classList.add('is-dragging')
-        const canvas = document.getElementById('drawflow')
-        if (canvas) canvas.classList.add('is-drop-target')
+        setCanvasDragOver(true)
       })
       item.addEventListener('dragend', function () {
         item.classList.remove('is-dragging')
         FlowBuilderPalette.setActivePaletteKind(null)
-        const canvas = document.getElementById('drawflow')
-        if (canvas) canvas.classList.remove('is-drop-target', 'is-drag-over')
+        hidePaletteGhost()
+        setCanvasDragOver(false)
+        palettePointer = null
       })
     })
 
@@ -1024,7 +1126,14 @@
       canvas.classList.remove('is-drag-over', 'is-drop-target')
       const resolved = FlowBuilderPalette.resolvePaletteDrop(ev, getCanvasGeometry())
       FlowBuilderPalette.setActivePaletteKind(null)
+      hidePaletteGhost()
       if (!resolved) return
+      html5DropJustPlaced = true
+      skipPaletteClick = true
+      setTimeout(function () {
+        skipPaletteClick = false
+        html5DropJustPlaced = false
+      }, 0)
       addPaletteNode(resolved.kind, { x: resolved.pos_x, y: resolved.pos_y })
     })
   }

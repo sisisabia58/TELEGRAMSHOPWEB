@@ -189,5 +189,8 @@ test('flow-builder JS creates palette drops through applyCommand and selects the
   assert.match(js, /applyCommand\(\(draft\) => FlowBuilderCommands\.addNode/)
   assert.match(js, /selectNodeByKey\(key\)/)
   assert.match(js, /addEventListener\('drop'/)
+  assert.match(js, /addEventListener\('pointerdown'/)
+  assert.match(js, /addEventListener\('pointerup'/)
+  assert.match(js, /dropNodeAtClient/)
   assert.equal(js.includes('length * 40) % 400'), false, 'click-to-add no longer uses staggered offsets')
 })

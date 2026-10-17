@@ -267,6 +267,7 @@
   font-family: inherit;
   user-select: none;
   -webkit-user-select: none;
+  touch-action: none;
 }
 
 .flow-palette-item:hover {
@@ -280,6 +281,15 @@
 
 .flow-palette-item.is-dragging {
   opacity: 0.45;
+}
+
+.flow-palette-ghost {
+  position: fixed;
+  z-index: 80;
+  width: 72px;
+  pointer-events: none;
+  opacity: 0.92;
+  box-shadow: 0 0 0 3px rgba(74, 163, 255, 0.18);
 }
 
 .flow-palette-swatch {
