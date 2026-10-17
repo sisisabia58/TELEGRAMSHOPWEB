@@ -7,8 +7,35 @@ const {
   publishPlan,
   diffPublishPlan,
   buildPublishRpcPayload,
+  validatePublishRpcPayload,
   DEFAULT_FLOW_ACTIONS,
+  TELEGRAM_CAPTION_LIMIT,
+  TELEGRAM_TEXT_LIMIT,
 } = require('../lib/flow-draft')
+
+function errorTexts(result) {
+  return (result.errors || []).map((e) => {
+    if (e && typeof e === 'object' && e.reason != null) {
+      return e.key ? `${e.key}: ${e.reason}` : e.reason
+    }
+    return String(e)
+  })
+}
+
+// Phase 14 validateDraft returns message strings (`key: reason`). The publish
+// payload checker returns { key, reason }. Accept either shape.
+function hasScreenReason(result, key, reason) {
+  const pattern = reason instanceof RegExp ? reason : null
+  return (result.errors || []).some((e) => {
+    if (e && typeof e === 'object' && e.reason != null) {
+      const reasonOk = pattern ? pattern.test(e.reason) : e.reason === reason
+      return e.key === key && reasonOk
+    }
+    const text = String(e)
+    const reasonOk = pattern ? pattern.test(text) : text.includes(reason)
+    return text.startsWith(key + ':') && reasonOk
+  })
+}
 
 const KEYS = ['welcome', 'product_list', 'saldo_menu']
 
@@ -71,7 +98,7 @@ test('validateDraft rejects missing entry_key', () => {
   delete d.entry_key
   const r = validateDraft(d)
   assert.equal(r.ok, false)
-  assert.ok(r.errors.some((e) => e === 'entry_key required'))
+  assert.ok(errorTexts(r).some((e) => e === 'entry_key required'))
 })
 
 test('validateDraft rejects entry_key not in nodes', () => {
@@ -79,7 +106,7 @@ test('validateDraft rejects entry_key not in nodes', () => {
   d.entry_key = 'missing_node'
   const r = validateDraft(d)
   assert.equal(r.ok, false)
-  assert.ok(r.errors.some((e) => /entry_key missing from nodes/.test(e)))
+  assert.ok(errorTexts(r).some((e) => /entry_key missing from nodes/.test(e)))
 })
 
 test('validateDraft rejects go target that does not exist', () => {
@@ -87,7 +114,7 @@ test('validateDraft rejects go target that does not exist', () => {
   d.nodes[0].buttons = [[{ label: 'X', go: 'missing_node' }]]
   const r = validateDraft(d)
   assert.equal(r.ok, false)
-  assert.ok(r.errors.some((e) => /missing_node/.test(e)))
+  assert.ok(errorTexts(r).some((e) => /missing_node/.test(e)))
 })
 
 test('validateDraft rejects unknown action', () => {
@@ -95,7 +122,7 @@ test('validateDraft rejects unknown action', () => {
   d.nodes[1].action = 'not_a_real_action'
   const r = validateDraft(d)
   assert.equal(r.ok, false)
-  assert.ok(r.errors.some((e) => /action/i.test(e)))
+  assert.ok(errorTexts(r).some((e) => /action/i.test(e)))
 })
 
 test('validateDraft rejects duplicate screen_key across screen nodes', () => {
@@ -112,7 +139,7 @@ test('validateDraft rejects duplicate screen_key across screen nodes', () => {
   })
   const r = validateDraft(d)
   assert.equal(r.ok, false)
-  assert.ok(r.errors.some((e) => /duplicate screen_key: screen\.welcome/.test(e)))
+  assert.ok(errorTexts(r).some((e) => /duplicate screen_key: screen\.welcome/.test(e)))
 })
 
 test('validateDraft accepts distinct screen_key values', () => {
@@ -136,7 +163,7 @@ test('validateDraft rejects screen_key outside the screen-copy namespace', () =>
   d.nodes[0].screen_key = 'msg.menu_cs'
   const r = validateDraft(d)
   assert.equal(r.ok, false)
-  assert.ok(r.errors.some((e) => /screen_key must start with screen\./.test(e)))
+  assert.ok(errorTexts(r).some((e) => /screen_key must start with screen\./.test(e)))
 })
 
 test('diffPublishPlan emits nodeDeletes for removed published keys', () => {
@@ -382,6 +409,96 @@ test('reorderButtons and generateButtonLabelKey maintain valid button rows', () 
 
   const labelKey = generateButtonLabelKey('screen.welcome', 0)
   assert.strictEqual(labelKey, 'btn.welcome.0')
+})
+
+test('validateDraft rejects empty screen message text with node key and reason', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].body = '   '
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(hasScreenReason(r, 'welcome', 'message text is empty'))
+})
+
+test('validateDraft rejects non-string screen message text', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].body = 12
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(hasScreenReason(r, 'welcome', /must be a string/))
+})
+
+test('validateDraft uses 1024-char caption limit when media_url is set', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].media_url = 'https://example.com/banner.png'
+  d.nodes[0].body = 'x'.repeat(TELEGRAM_CAPTION_LIMIT)
+  assert.equal(validateDraft(d).ok, true)
+
+  d.nodes[0].body = 'x'.repeat(TELEGRAM_CAPTION_LIMIT + 1)
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(hasScreenReason(r, 'welcome', /1024-character Telegram caption limit/))
+})
+
+test('validateDraft uses 4096-char text limit when the node has no media', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].media_url = '  '
+  d.nodes[0].body = 'x'.repeat(TELEGRAM_TEXT_LIMIT)
+  assert.equal(validateDraft(d).ok, true)
+
+  d.nodes[0].body = 'x'.repeat(TELEGRAM_TEXT_LIMIT + 1)
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(hasScreenReason(r, 'welcome', /4096-character Telegram text limit/))
+})
+
+test('validateDraft rejects invalid Telegram Markdown on a screen node', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].body = 'Halo *{{first_name}}'
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(hasScreenReason(r, 'welcome', /unbalanced Markdown \*/))
+})
+
+test('validateDraft does not require message text on action nodes', () => {
+  const d = structuredClone(baseDraft)
+  delete d.nodes[1].body
+  const r = validateDraft(d, { allowedActions: DEFAULT_FLOW_ACTIONS })
+  assert.equal(r.ok, true, errorTexts(r).join('; '))
+})
+
+test('validatePublishRpcPayload accepts a payload built from a valid draft', () => {
+  const d = structuredClone(baseDraft)
+  const diff = diffPublishPlan(d, KEYS, ['screen.welcome', 'screen.saldo_menu'])
+  const payload = buildPublishRpcPayload('a0000000-0000-4000-8000-000000000001', d, diff)
+  const r = validatePublishRpcPayload(payload)
+  assert.equal(r.ok, true, errorTexts(r).join('; '))
+})
+
+test('validatePublishRpcPayload rejects missing uuid, bad kinds, and non-numeric positions', () => {
+  const bad = {
+    p_flow_id: 'not-a-uuid',
+    p_draft: [],
+    p_entry_key: '',
+    p_node_deletes: [1],
+    p_node_upserts: [
+      { key: 'welcome', kind: 'filter', pos_x: 'nope', pos_y: 1 },
+      { kind: 'screen' },
+    ],
+    p_copy_inserts: [{ body: 'x' }],
+    p_copy_upserts: 'nope',
+  }
+  const r = validatePublishRpcPayload(bad)
+  assert.equal(r.ok, false)
+  const texts = errorTexts(r)
+  assert.ok(texts.some((e) => /p_flow_id must be a uuid/.test(e)))
+  assert.ok(texts.some((e) => /p_draft must be a JSON object/.test(e)))
+  assert.ok(texts.some((e) => /p_entry_key must be a non-empty string/.test(e)))
+  assert.ok(texts.some((e) => /p_node_deletes must be an array of strings/.test(e)))
+  assert.ok(texts.some((e) => /welcome: invalid kind/.test(e)))
+  assert.ok(texts.some((e) => /welcome: pos_x must be numeric/.test(e)))
+  assert.ok(texts.some((e) => /node upsert missing key/.test(e)))
+  assert.ok(texts.some((e) => /copy insert missing key/.test(e)))
+  assert.ok(texts.some((e) => /p_copy_upserts must be an array/.test(e)))
 })
 
 

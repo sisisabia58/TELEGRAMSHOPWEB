@@ -6016,7 +6016,9 @@ app.post('/api/bot-flow/draft', isAuthenticated, async (req, res) => {
     if (!flow) throw new Error('No active flow')
     const draft = req.body.draft
     const v = flowDraft.validateDraft(draft, { allowedActions: FLOW_ACTIONS })
-    if (!v.ok) return res.status(400).json({ success: false, errors: v.errors })
+    if (!v.ok) {
+      return res.status(400).json({ success: false, errors: v.errors })
+    }
     const { error } = await supabase
       .from('BotFlow')
       .update({ draft, draft_updated_at: new Date().toISOString() })
@@ -6156,10 +6158,16 @@ app.post('/api/bot-flow/publish', isAuthenticated, async (req, res) => {
     if (!draft) throw new Error('No draft to publish')
 
     const v = flowDraft.validateDraft(draft, { allowedActions: FLOW_ACTIONS })
-    if (!v.ok) return res.status(400).json({ success: false, errors: v.errors })
+    if (!v.ok) {
+      return res.status(400).json({ success: false, errors: v.errors })
+    }
 
     const diff = flowDraft.diffPublishPlan(draft, publishedKeys, existingCopies)
     const payload = flowDraft.buildPublishRpcPayload(flow.id, draft, diff)
+    const rpcV = flowDraft.validatePublishRpcPayload(payload)
+    if (!rpcV.ok) {
+      return res.status(400).json({ success: false, errors: rpcV.errors })
+    }
     const { error } = await supabase.rpc('publish_bot_flow_graph', payload)
     if (error) throw error
 

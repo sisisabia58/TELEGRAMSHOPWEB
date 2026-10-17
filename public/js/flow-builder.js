@@ -46,6 +46,19 @@
       .replace(/"/g, '&quot;')
   }
 
+  function formatApiErrors(data, fallback) {
+    if (Array.isArray(data.errors) && data.errors.length) {
+      return data.errors.map(function (e) {
+        if (e && typeof e === 'object') {
+          const reason = e.reason || ''
+          return e.key ? e.key + ': ' + reason : reason
+        }
+        return String(e)
+      }).join('; ')
+    }
+    return data.error || fallback
+  }
+
   function setStatus(msg, kind) {
     const el = document.getElementById('flowStatus')
     if (!el) return
@@ -1097,7 +1110,7 @@
     })
     const data = await res.json()
     if (!data.success) {
-      const msg = (data.errors && data.errors.join('; ')) || data.error || 'Save failed'
+      const msg = formatApiErrors(data, 'Save failed')
       setStatus(msg, 'err')
       return
     }
@@ -1121,7 +1134,7 @@
     })
     const data = await res.json()
     if (!data.success) {
-      const msg = (data.errors && data.errors.join('; ')) || data.error || 'Publish failed'
+      const msg = formatApiErrors(data, 'Publish failed')
       setStatus(msg, 'err')
       return
     }
