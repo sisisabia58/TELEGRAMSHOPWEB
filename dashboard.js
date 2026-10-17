@@ -2058,6 +2058,15 @@ app.get('/transaksi', isAuthenticated, async (req, res) => {
       .order('nama', { ascending: true })
 
     const totalCount = count != null ? count : 0
+    const filters = {
+      startDate: startDate || '',
+      endDate: endDate || '',
+      produk: produk || '',
+      user: user || '',
+      minHarga: minHarga || '',
+      maxHarga: maxHarga || '',
+      search: search || ''
+    }
     res.render('transaksi', {
       title: `Transaksi - ${NamaBot}`,
       namaBot: NamaBot,
@@ -2072,15 +2081,9 @@ app.get('/transaksi', isAuthenticated, async (req, res) => {
       limit: 50,
       formatrupiah,
       formatTanggal,
-      filters: {
-        startDate: startDate || '',
-        endDate: endDate || '',
-        produk: produk || '',
-        user: user || '',
-        minHarga: minHarga || '',
-        maxHarga: maxHarga || '',
-        search: search || ''
-      },
+      filters,
+      // views/transaksi.ejs reads this bare local. Empty strings are not filters.
+      hasFilters: Object.values(filters).some(Boolean),
       req: req
     })
   } catch (error) {
