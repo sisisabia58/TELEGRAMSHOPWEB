@@ -1,4 +1,4 @@
--- READ-ONLY verification for 20261017000200_prod_lockdown_rls.sql
+-- READ-ONLY verification for 20261017140126_prod_lockdown_rls.sql
 -- Safe to run on production. Does not write.
 --
 -- Key check (resolved 2026-10-17): 24h of edge logs showed every app request

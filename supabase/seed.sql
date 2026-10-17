@@ -2,7 +2,7 @@
 --
 -- The local postgres image does not auto-grant table rights the way hosted
 -- Supabase used to. The app talks to Postgres as service_role (lib/supabase.js),
--- so local grants match 20261017000200: service_role only. Do not grant tables
+-- so local grants match 20261017140126: service_role only. Do not grant tables
 -- back to anon/authenticated — that would undo the lockdown after `supabase start`.
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 

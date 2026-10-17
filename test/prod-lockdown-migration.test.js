@@ -7,7 +7,7 @@ const MIGRATIONS = path.join(__dirname, '..', 'supabase', 'migrations')
 const SEED = path.join(__dirname, '..', 'supabase', 'seed.sql')
 const ROLLBACK = path.join(__dirname, '..', 'docs', 'runbooks', 'prod-lockdown-rollback.sql')
 const AUDIT = path.join(__dirname, '..', 'docs', 'runbooks', 'rls-audit.sql')
-const LOCKDOWN = '20261017000200_prod_lockdown_rls.sql'
+const LOCKDOWN = '20261017140126_prod_lockdown_rls.sql'
 const RPC_SIG = String.raw`public\.publish_bot_flow_graph\(\s*uuid,\s*jsonb,\s*text,\s*text\[\],\s*jsonb,\s*jsonb,\s*jsonb\s*\)`
 
 // Lockdown ALTER/REVOKE targets these objects; each predecessor must exist and

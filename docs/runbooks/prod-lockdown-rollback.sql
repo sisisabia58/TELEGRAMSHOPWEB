@@ -1,4 +1,4 @@
--- ROLLBACK for 20261017000200_prod_lockdown_rls.sql
+-- ROLLBACK for 20261017140126_prod_lockdown_rls.sql
 -- Restores the production state observed 2026-10-17 (read-only check),
 -- except Supplier* table grants stay locked (see below):
 --   * "Allow all for service role" on the 22 tables attached to PUBLIC
