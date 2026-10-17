@@ -11,6 +11,15 @@
     <main class="main-content" id="main-content">
         <%- include('partials/topbar') %>
 
+        <% if (typeof csMissing !== 'undefined' && csMissing) { %>
+        <div class="container" style="padding-top: 12px;">
+            <div class="alert alert-warning" role="status">
+                Link Customer Service belum diisi. Tombol CS (<code>url_from: cs</code>) di bot tidak akan tampil.
+                <a href="/settings/channel-contact">Atur di Channel &amp; Contact</a>.
+            </div>
+        </div>
+        <% } %>
+
         <div class="flow-workspace">
             <header class="flow-topbar">
                 <div class="flow-topbar-left">

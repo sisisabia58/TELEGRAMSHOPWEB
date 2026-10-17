@@ -112,6 +112,27 @@ test('buildKeyboard uses f: callbacks and url_from', () => {
   assert.equal(kb.inline_keyboard[1][0].url, 'https://t.me/x')
 })
 
+test('buildKeyboard skips empty or invalid url_from and drops empty rows', () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const node = {
+    buttons: [
+      [
+        { label: 'CS', url_from: 'cs' },
+        { label: 'Shop', callback: 'daftarproduk' },
+      ],
+      [{ label: 'Bad', url: 'javascript:alert(1)' }],
+      [{ label: 'Channel', url_from: 'channel_store' }],
+    ],
+  }
+  const kb = flow.buildKeyboard(node, (n) => (n === 'channel_store' ? 'https://t.me/x' : ''))
+  assert.deepEqual(kb.inline_keyboard, [
+    [
+      { text: 'Shop', callback_data: 'daftarproduk' },
+    ],
+    [{ text: 'Channel', url: 'https://t.me/x' }],
+  ])
+})
+
 test('legacyToKey maps daftarproduk', () => {
   const flow = muatFlow({ nodes: sampleNodes })
   assert.equal(flow.legacyToKey('daftarproduk'), 'product_list')

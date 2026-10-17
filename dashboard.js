@@ -5958,6 +5958,8 @@ async function loadActiveFlowBundle() {
 
 app.get('/settings/bot-flow', isAuthenticated, async (req, res) => {
   try {
+    const channelSettings = await getChannelContactSettings()
+    const csMissing = !String(channelSettings.cs || '').trim()
     res.render('settings-bot-flow', {
       title: `Bot Flow - ${NamaBot}`,
       namaBot: NamaBot,
@@ -5965,6 +5967,7 @@ app.get('/settings/bot-flow', isAuthenticated, async (req, res) => {
       currentPage: 'settings-bot-flow',
       pageTitle: 'Bot Flow',
       req,
+      csMissing,
     })
   } catch (e) {
     console.error(e)
