@@ -256,6 +256,20 @@ test('prod lockdown rollback preserves Supplier* grants after GRANT ALL', () => 
   )
 })
 
+test('prod lockdown rollback restores PUBLIC EXECUTE on update_updated_at_column only', () => {
+  const rollback = fs.readFileSync(ROLLBACK, 'utf8')
+  assert.match(
+    rollback,
+    /GRANT EXECUTE ON FUNCTION public\.update_updated_at_column\(\)\s+TO PUBLIC\s*;/i,
+    'rollback must restore the prior PUBLIC EXECUTE on the trigger function'
+  )
+  assert.doesNotMatch(
+    rollback,
+    new RegExp(`GRANT\\s+EXECUTE\\s+ON\\s+FUNCTION\\s+${RPC_SIG}\\s+TO\\s+PUBLIC\\s*;`, 'i'),
+    'publish_bot_flow_graph PUBLIC EXECUTE stays revoked (20260818000001)'
+  )
+})
+
 test('rls-audit covers views, partitioned tables, and sequences', () => {
   const audit = fs.readFileSync(AUDIT, 'utf8')
   assert.match(
@@ -271,4 +285,32 @@ test('rls-audit covers views, partitioned tables, and sequences', () => {
   assert.match(audit, /has_sequence_privilege\(\s*'authenticated'\s*,\s*c\.oid\s*,\s*'USAGE'\s*\)/i)
   assert.match(audit, /c\.relkind\s*=\s*'S'/i)
   assert.match(audit, /has_table_privilege\(\s*'anon'\s*,\s*c\.oid\s*,\s*'TRUNCATE'\s*\)/i)
+})
+
+test('rls-audit checks REFERENCES and TRIGGER for anon and authenticated', () => {
+  const audit = fs.readFileSync(AUDIT, 'utf8')
+  for (const role of ['anon', 'authenticated']) {
+    for (const priv of ['REFERENCES', 'TRIGGER']) {
+      assert.match(
+        audit,
+        new RegExp(`has_table_privilege\\(\\s*'${role}'\\s*,\\s*c\\.oid\\s*,\\s*'${priv}'\\s*\\)`, 'i'),
+        `${role} ${priv} must be audited`
+      )
+    }
+  }
+})
+
+test('rls-audit checks global default function ACL and treats a missing entry as PUBLIC EXECUTE', () => {
+  const audit = fs.readFileSync(AUDIT, 'utf8')
+  assert.match(audit, /pg_default_acl/i)
+  assert.match(audit, /defaclnamespace\s*=\s*0/)
+  assert.match(audit, /defaclobjtype\s*=\s*'f'/)
+  assert.match(audit, /['"]postgres['"]/)
+  assert.match(audit, /['"]supabase_admin['"]/)
+  assert.match(
+    audit,
+    /WHEN\s+[\w.]+\.oid\s+IS\s+NULL\s+THEN\s+true/i,
+    'missing global default-ACL row is the built-in PUBLIC EXECUTE default, not a revoke'
+  )
+  assert.match(audit, /aclexplode/i)
 })

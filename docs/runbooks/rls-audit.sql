@@ -9,7 +9,8 @@
 -- Expected AFTER applying the lockdown (and NOT before):
 --   1. pg_policies.roles is {service_role} for every "Allow all for service role"
 --      policy, including Supplier* (already that way) and the 22 former-PUBLIC tables.
---   2. has_table_privilege(anon|authenticated, oid, SELECT/INSERT/UPDATE/DELETE/TRUNCATE)
+--   2. has_table_privilege(anon|authenticated, oid,
+--      SELECT/INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER)
 --      is false for every public table, view, matview, foreign table, and
 --      partitioned table (GRANT ALL TABLES covers these relkinds).
 --   3. has_sequence_privilege(anon|authenticated, oid, USAGE/SELECT/UPDATE)
@@ -18,6 +19,10 @@
 --      is false. service_role remains true.
 --   5. pg_proc.proconfig for public.update_updated_at_column contains
 --      search_path=public.
+--   6. pg_default_acl global function defaults for postgres (and
+--      supabase_admin when that role exists) must not grant PUBLIC EXECUTE.
+--      A missing pg_default_acl row is the built-in default (PUBLIC EXECUTE
+--      still present), not proof of a revoke.
 
 -- 1. Policies in public (tablename, policyname, roles, cmd, qual)
 SELECT
@@ -50,11 +55,15 @@ SELECT
   has_table_privilege('anon', c.oid, 'UPDATE') AS anon_update,
   has_table_privilege('anon', c.oid, 'DELETE') AS anon_delete,
   has_table_privilege('anon', c.oid, 'TRUNCATE') AS anon_truncate,
+  has_table_privilege('anon', c.oid, 'REFERENCES') AS anon_references,
+  has_table_privilege('anon', c.oid, 'TRIGGER') AS anon_trigger,
   has_table_privilege('authenticated', c.oid, 'SELECT') AS authenticated_select,
   has_table_privilege('authenticated', c.oid, 'INSERT') AS authenticated_insert,
   has_table_privilege('authenticated', c.oid, 'UPDATE') AS authenticated_update,
   has_table_privilege('authenticated', c.oid, 'DELETE') AS authenticated_delete,
   has_table_privilege('authenticated', c.oid, 'TRUNCATE') AS authenticated_truncate,
+  has_table_privilege('authenticated', c.oid, 'REFERENCES') AS authenticated_references,
+  has_table_privilege('authenticated', c.oid, 'TRIGGER') AS authenticated_trigger,
   c.relrowsecurity AS rls_enabled
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -99,3 +108,29 @@ FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE n.nspname = 'public'
   AND p.proname = 'update_updated_at_column';
+
+-- 6. Default EXECUTE for future functions created by postgres and, when
+--    the role exists, supabase_admin. Query 4 only covers existing
+--    functions. A missing global pg_default_acl row is PostgreSQL's
+--    built-in default (PUBLIC EXECUTE still present), not proof that the
+--    lockdown revoke landed.
+SELECT
+  r.rolname AS creator_role,
+  d.oid IS NOT NULL AS has_global_function_default_acl,
+  d.defaclacl AS global_function_acl,
+  CASE
+    WHEN d.oid IS NULL THEN true
+    ELSE EXISTS (
+      SELECT 1
+      FROM aclexplode(COALESCE(d.defaclacl, '{}'::aclitem[])) AS e
+      WHERE e.grantee = 0
+        AND e.privilege_type = 'EXECUTE'
+    )
+  END AS public_execute_still_default
+FROM pg_roles r
+LEFT JOIN pg_default_acl d
+  ON d.defaclrole = r.oid
+ AND d.defaclnamespace = 0
+ AND d.defaclobjtype = 'f'
+WHERE r.rolname IN ('postgres', 'supabase_admin')
+ORDER BY r.rolname;

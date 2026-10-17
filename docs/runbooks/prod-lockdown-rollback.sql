@@ -6,6 +6,8 @@
 --     except Supplier / SupplierProduct / SupplierOrder
 --   * EXECUTE on publish_bot_flow_graph for anon, authenticated, service_role
 --     (PUBLIC stays revoked, matching 20260818000001)
+--   * PUBLIC EXECUTE on update_updated_at_column restored (the forward
+--     migration revoked PUBLIC from every existing public function)
 --   * update_updated_at_column search_path reset to the prior unset state
 --   * global PUBLIC EXECUTE default for future functions restored
 --
@@ -35,6 +37,11 @@ GRANT ALL ON TABLE "Supplier", "SupplierProduct", "SupplierOrder" TO service_rol
 
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
+-- Named-role GRANT does not restore PUBLIC. The forward migration revoked
+-- PUBLIC EXECUTE from every existing public function; restore it on the
+-- trigger function only. publish_bot_flow_graph stays without PUBLIC
+-- (20260818000001).
+GRANT EXECUTE ON FUNCTION public.update_updated_at_column() TO PUBLIC;
 
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT ALL ON TABLES TO anon, authenticated;
