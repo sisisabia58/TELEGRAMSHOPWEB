@@ -6,6 +6,7 @@ const path = require('node:path')
 const MIGRATIONS = path.join(__dirname, '..', 'supabase', 'migrations')
 const SEED = path.join(__dirname, '..', 'supabase', 'seed.sql')
 const ROLLBACK = path.join(__dirname, '..', 'docs', 'runbooks', 'prod-lockdown-rollback.sql')
+const AUDIT = path.join(__dirname, '..', 'docs', 'runbooks', 'rls-audit.sql')
 const LOCKDOWN = '20261017000200_prod_lockdown_rls.sql'
 const RPC_SIG = String.raw`public\.publish_bot_flow_graph\(\s*uuid,\s*jsonb,\s*text,\s*text\[\],\s*jsonb,\s*jsonb,\s*jsonb\s*\)`
 
@@ -128,11 +129,24 @@ test('prod lockdown revokes anon and authenticated table/sequence/function privi
   )
   assert.match(
     sql,
-    /ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public\s+REVOKE ALL ON FUNCTIONS FROM PUBLIC,\s*anon,\s*authenticated\s*;/i
+    /ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public\s+REVOKE ALL ON FUNCTIONS FROM anon,\s*authenticated\s*;/i
+  )
+  // Built-in PUBLIC EXECUTE is global; IN SCHEMA cannot revoke it.
+  assert.match(
+    sql,
+    /ALTER DEFAULT PRIVILEGES FOR ROLE postgres\s+REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC\s*;/i
+  )
+  assert.doesNotMatch(
+    sql,
+    /ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public\s+REVOKE (?:ALL|EXECUTE) ON FUNCTIONS FROM PUBLIC/i
   )
   assert.match(
     sql,
-    /REVOKE ALL ON FUNCTIONS FROM PUBLIC,\s*anon,\s*authenticated'/i
+    /REVOKE ALL ON FUNCTIONS FROM anon,\s*authenticated'/i
+  )
+  assert.match(
+    sql,
+    /ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC'/i
   )
   assertSupabaseAdminBlockGuarded(sql, LOCKDOWN)
 })
@@ -147,7 +161,15 @@ test('prod lockdown rollback and seed guard supabase_admin the same way', () => 
   }
   assert.match(
     seed,
-    /ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM PUBLIC,\s*anon,\s*authenticated\s*;/i
+    /ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon,\s*authenticated\s*;/i
+  )
+  assert.match(
+    seed,
+    /ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC\s*;/i
+  )
+  assert.doesNotMatch(
+    seed,
+    /ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE (?:ALL|EXECUTE) ON FUNCTIONS FROM PUBLIC/i
   )
   assert.match(
     seed,
@@ -191,4 +213,62 @@ test('prod lockdown leaves Supplier* policies untouched', () => {
       `${tabel} policies are already TO service_role; do not recreate them here`
     )
   }
+})
+
+test('prod lockdown rollback preserves Supplier* grants after GRANT ALL', () => {
+  const rollback = fs.readFileSync(ROLLBACK, 'utf8')
+  const grantIdx = rollback.search(
+    /GRANT ALL ON ALL TABLES IN SCHEMA public TO anon,\s*authenticated,\s*service_role\s*;/i
+  )
+  assert.ok(grantIdx >= 0, 'rollback must GRANT ALL ON ALL TABLES')
+
+  const supplierRevoke = /REVOKE ALL ON TABLE "Supplier",\s*"SupplierProduct",\s*"SupplierOrder"\s+FROM PUBLIC,\s*anon,\s*authenticated\s*;/i
+  const apiKeyRevoke = /REVOKE SELECT\s*\(\s*api_key\s*\)\s+ON TABLE "Supplier"\s+FROM PUBLIC,\s*anon,\s*authenticated\s*;/i
+  const supplierGrant = /GRANT ALL ON TABLE "Supplier",\s*"SupplierProduct",\s*"SupplierOrder" TO service_role\s*;/i
+
+  assert.match(rollback, supplierRevoke)
+  assert.match(rollback, apiKeyRevoke)
+  assert.match(rollback, supplierGrant)
+
+  const supplierRevokeIdx = rollback.search(supplierRevoke)
+  const apiKeyRevokeIdx = rollback.search(apiKeyRevoke)
+  assert.ok(
+    supplierRevokeIdx > grantIdx,
+    'Supplier* REVOKE must follow GRANT ALL ON ALL TABLES so TRUNCATE is not left granted'
+  )
+  assert.ok(apiKeyRevokeIdx > grantIdx, 'api_key column REVOKE must follow GRANT ALL')
+
+  for (const tabel of ['Supplier', 'SupplierProduct', 'SupplierOrder']) {
+    assert.doesNotMatch(
+      rollback,
+      new RegExp(`CREATE POLICY[\\s\\S]{0,80}ON "${tabel}"`, 'i'),
+      `${tabel} policies stay TO service_role; rollback must not recreate them on PUBLIC`
+    )
+  }
+
+  assert.match(
+    rollback,
+    /ALTER DEFAULT PRIVILEGES FOR ROLE postgres\s+GRANT EXECUTE ON FUNCTIONS TO PUBLIC\s*;/i
+  )
+  assert.match(
+    rollback,
+    /ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin GRANT EXECUTE ON FUNCTIONS TO PUBLIC'/i
+  )
+})
+
+test('rls-audit covers views, partitioned tables, and sequences', () => {
+  const audit = fs.readFileSync(AUDIT, 'utf8')
+  assert.match(
+    audit,
+    /c\.relkind IN\s*\(\s*'r'\s*,\s*'v'\s*,\s*'m'\s*,\s*'f'\s*,\s*'p'\s*\)/i
+  )
+  assert.doesNotMatch(
+    audit,
+    /c\.relkind\s*=\s*'r'\s*$/m,
+    'must not filter only ordinary tables'
+  )
+  assert.match(audit, /has_sequence_privilege\(\s*'anon'\s*,\s*c\.oid\s*,\s*'USAGE'\s*\)/i)
+  assert.match(audit, /has_sequence_privilege\(\s*'authenticated'\s*,\s*c\.oid\s*,\s*'USAGE'\s*\)/i)
+  assert.match(audit, /c\.relkind\s*=\s*'S'/i)
+  assert.match(audit, /has_table_privilege\(\s*'anon'\s*,\s*c\.oid\s*,\s*'TRUNCATE'\s*\)/i)
 })
