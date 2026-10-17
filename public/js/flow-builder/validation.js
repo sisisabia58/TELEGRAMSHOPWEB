@@ -209,6 +209,16 @@
           const btn = row[colIdx]
           const idx = flatIndex
           flatIndex++
+          if (!btn || typeof btn !== 'object') {
+            errors.push(issue({
+              code: 'button_shape',
+              nodeKey: key,
+              field: 'buttons',
+              buttonIndex: idx,
+              message: key + ': button ' + (idx + 1) + ' must be an object',
+            }))
+            continue
+          }
           const buttonName = (btn && (btn.label || btn.label_key))
             ? String(btn.label || btn.label_key)
             : ('row ' + (rowIdx + 1) + ' col ' + (colIdx + 1))

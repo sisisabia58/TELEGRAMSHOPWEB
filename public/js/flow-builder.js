@@ -13,6 +13,7 @@
   let lastCanvasPoint = null
   let historyLockCount = 0
   let lastValidation = { ok: true, errors: [], warnings: [], issues: [] }
+  let panelDirty = false
 
   function isHistoryLocked() {
     return historyLockCount > 0
@@ -117,6 +118,7 @@
   }
 
   function buttonMode(btn) {
+    if (!btn || typeof btn !== 'object') return ''
     if (btn.go !== undefined && btn.go !== null && String(btn.go) !== '') return 'go'
     if (btn.callback) return 'callback'
     if (btn.url_from) return 'url_from'
@@ -428,9 +430,12 @@
   function insertFieldError(el, message) {
     if (!el) return
     el.classList.add('is-invalid')
+    el.setAttribute('aria-invalid', 'true')
     const err = document.createElement('p')
     err.className = 'field-error'
+    err.id = (el.id || 'field') + '-error'
     err.textContent = message
+    el.setAttribute('aria-describedby', err.id)
     el.insertAdjacentElement('afterend', err)
   }
 
@@ -438,7 +443,11 @@
     const panel = document.getElementById('flowPanel')
     if (!panel) return
     panel.querySelectorAll('.field-error').forEach((el) => el.remove())
-    panel.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid'))
+    panel.querySelectorAll('.is-invalid').forEach((el) => {
+      el.classList.remove('is-invalid')
+      el.removeAttribute('aria-invalid')
+      el.removeAttribute('aria-describedby')
+    })
     const key = state.selectedKey
     if (!key || !result) return
     for (const item of result.errors || []) {
@@ -632,11 +641,13 @@
         '<strong>Inspector</strong>' +
         'Select a Message or Action block to edit type, key, copy, and buttons.' +
         '</div>'
+      panelDirty = false
       return
     }
     const node = getNode(key)
     if (!node) {
       panel.innerHTML = '<div class="flow-panel-empty">Node not found</div>'
+      panelDirty = false
       return
     }
 
@@ -709,6 +720,7 @@
 
     const flat = flattenButtons(node.buttons)
     flat.forEach((btn, idx) => {
+      if (!btn || typeof btn !== 'object') return
       const mode = buttonMode(btn)
       const target = btn.go || btn.callback || btn.url_from || btn.url || ''
       html += '<div class="sp-btn-row" data-flat-index="' + idx + '">'
@@ -862,6 +874,7 @@
     if (btnDeleteNode) {
       btnDeleteNode.addEventListener('click', requestDeleteSelectedNode)
     }
+    panelDirty = false
     refreshValidation()
   }
 
@@ -948,6 +961,7 @@
     }
 
     selectNodeByKey(key)
+    panelDirty = false
     setStatus('Applied to canvas — click Save draft to persist', 'ok')
   }
 
@@ -1032,6 +1046,7 @@
   }
 
   function syncPanelIntoDraft() {
+    if (!panelDirty) return
     const node = state.selectedKey ? getNode(state.selectedKey) : null
     if (!node) return
     if (!document.getElementById('panelApply')) return
@@ -1726,8 +1741,14 @@
     document.addEventListener('click', closeValidationList)
     const flowPanel = document.getElementById('flowPanel')
     if (flowPanel) {
-      flowPanel.addEventListener('input', refreshValidation)
-      flowPanel.addEventListener('change', refreshValidation)
+      flowPanel.addEventListener('input', function () {
+        panelDirty = true
+        refreshValidation()
+      })
+      flowPanel.addEventListener('change', function () {
+        panelDirty = true
+        refreshValidation()
+      })
     }
     document.getElementById('btnPreview').addEventListener('click', openPreview)
     document.getElementById('previewClose').addEventListener('click', closePreview)

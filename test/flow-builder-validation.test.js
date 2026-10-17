@@ -176,6 +176,29 @@ test('empty and whitespace-only go targets name the button', () => {
   assert.match(unlabeledIssue.message, /welcome: button "row 2 col 1" has an empty go target/)
 })
 
+test('null and non-object buttons are shape errors and do not throw', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].buttons = [[null, { label: 'Go', go: 'product_list' }], ['nope', undefined]]
+  const r = collectDraftIssues(d, { allowedActions: DEFAULT_FLOW_ACTIONS })
+  const shape = r.errors.filter((e) => e.code === 'button_shape')
+  assert.deepEqual(shape.map((e) => e.buttonIndex), [0, 2, 3])
+  assert.equal(shape[0].nodeKey, 'welcome')
+  assert.equal(shape[0].field, 'buttons')
+  assert.equal(shape[0].level, 'error')
+  assert.match(shape[0].message, /welcome: button 1 must be an object/)
+  assert.match(shape[1].message, /welcome: button 3 must be an object/)
+  assert.match(shape[2].message, /welcome: button 4 must be an object/)
+  assert.equal(r.errors.some((e) => e.buttonIndex === 0 && e.code !== 'button_shape'), false)
+  assert.equal(r.errors.some((e) => e.buttonIndex === 1), false)
+  assert.equal(saveBlocked(r), true)
+
+  const js = fs.readFileSync(jsFile, 'utf8')
+  const mode = js.slice(js.indexOf('function buttonMode'), js.indexOf('function goFlatIndices'))
+  assert.match(mode, /if\s*\(\s*!btn\s*\|\|\s*typeof btn !== 'object'\s*\)\s*return ''/)
+  const panel = js.slice(js.indexOf('function renderPanel'), js.indexOf('function readPanelPatch'))
+  assert.match(panel, /if\s*\(\s*!btn\s*\|\|\s*typeof btn !== 'object'\s*\)\s*return/)
+})
+
 test('go target that does not exist is a red error', () => {
   const d = structuredClone(baseDraft)
   d.nodes[0].buttons = [[{ label: 'X', go: 'missing_node' }]]
@@ -310,6 +333,41 @@ test('flow-builder CSS styles red/yellow node outlines and inspector field error
   assert.match(css, /\.flow-validation-list\b/)
   assert.match(css, /\.field-error\b/)
   assert.match(css, /\.sp-btn-row\.is-invalid\b/)
+})
+
+test('hidden attribute hides .flow-validation despite display:flex', () => {
+  const css = fs.readFileSync(cssFile, 'utf8')
+  const block = css.slice(css.indexOf('.flow-validation {'), css.indexOf('.flow-validation-toggle'))
+  assert.match(block, /display:\s*flex/)
+  assert.match(block, /\.flow-validation\[hidden\]\s*\{[^}]*display:\s*none/)
+})
+
+test('inspector field errors set and clear aria-invalid and aria-describedby', () => {
+  const js = fs.readFileSync(jsFile, 'utf8')
+  const insert = js.slice(js.indexOf('function insertFieldError'), js.indexOf('function applyPanelFieldErrors'))
+  assert.match(insert, /setAttribute\(\s*'aria-invalid'\s*,\s*'true'\s*\)/)
+  assert.match(insert, /err\.id\s*=\s*\(el\.id\s*\|\|\s*'field'\)\s*\+\s*'-error'/)
+  assert.match(insert, /setAttribute\(\s*'aria-describedby'\s*,\s*err\.id\s*\)/)
+  const clear = js.slice(js.indexOf('function applyPanelFieldErrors'), js.indexOf('function updateSaveButtons'))
+  const reset = clear.slice(0, clear.indexOf('const key = state.selectedKey'))
+  assert.match(reset, /removeAttribute\(\s*'aria-invalid'\s*\)/)
+  assert.match(reset, /removeAttribute\(\s*'aria-describedby'\s*\)/)
+})
+
+test('syncPanelIntoDraft applies the inspector only after a real edit', () => {
+  const js = fs.readFileSync(jsFile, 'utf8')
+  assert.match(js, /let panelDirty = false/)
+  const sync = js.slice(js.indexOf('function syncPanelIntoDraft'), js.indexOf('async function saveDraft'))
+  assert.match(sync, /if\s*\(\s*!panelDirty\s*\)\s*return/)
+  assert.ok(sync.indexOf('!panelDirty') < sync.indexOf('readPanelPatch'))
+  assert.match(sync, /patchChangesNode\(node, patch\)/)
+  const render = js.slice(js.indexOf('function renderPanel'), js.indexOf('function readPanelPatch'))
+  assert.match(render, /panelDirty = false/)
+  const apply = js.slice(js.indexOf('function applyPanelToDraft'), js.indexOf('function bindEditorEvents'))
+  assert.match(apply, /panelDirty = false/)
+  const bind = js.slice(js.indexOf('const flowPanel = document.getElementById(\'flowPanel\')'), js.indexOf('document.getElementById(\'btnPreview\')'))
+  assert.match(bind, /addEventListener\(\s*'input'[\s\S]*panelDirty = true/)
+  assert.match(bind, /addEventListener\(\s*'change'[\s\S]*panelDirty = true/)
 })
 
 test('flow-builder JS highlights nodes, gates Save/Publish, and centres on list click (M6)', () => {
