@@ -444,6 +444,9 @@
     }
     html += '<button type="button" id="panelApply" class="btn-apply">Apply</button>'
     html += '</div>'
+    if (isStart) {
+      html += '<p class="flow-panel-hint flow-panel-start-hint">The Start node cannot be deleted. Change the entry node first.</p>'
+    }
 
     panel.innerHTML = html
 

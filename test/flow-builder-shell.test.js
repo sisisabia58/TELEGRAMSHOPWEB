@@ -79,6 +79,7 @@ test('flow-builder JS puts a Start pill on entry_key and refuses deleting that n
   assert.match(js, /sp-start-pill/)
   assert.match(js, /node\.key === entryKey/)
   assert.match(js, /Cannot delete the entry node/)
+  assert.match(js, /The Start node cannot be deleted/)
   assert.match(js, /is-entry/)
   assert.match(js, /btnSaveMenu/)
   assert.match(js, /btnOverflowMenu/)
