@@ -28,6 +28,7 @@ const pakasir = require('./pakasir.js')
 const { formatrupiah, formatWIB, formatWIBDetail, namaBulan } = require('./lib/format')
 const { sanitizeInlineKeyboard } = require('./lib/inline-keyboard')
 const { reportCallbackFailure } = require('./lib/telegram-user-error')
+const { installCommandMentionGuard, createBotUsernameCache } = require('./lib/command-mention')
 
 // Query tabel Stok. Di bot, "hitung stok" selalu berdasarkan kode produk —
 // karena itu getStokCount dialiaskan ke getStokCountByKode. Nama-nama lokal
@@ -110,6 +111,10 @@ const bot = new TelegramBot(TokenBot, {
   // Base URL dengan fallback
   baseApiUrl: process.env.TELEGRAM_API_URL || 'https://api.telegram.org'
 })
+
+// One check for every later onText handler. Bare /cmd and /cmd@thisBot run;
+// /cmd@AnotherBot is ignored. Username comes from getMe() and is cached.
+installCommandMentionGuard(bot, createBotUsernameCache(() => bot.getMe()))
 
 // Configure Telegram chat column commands menu (autocomplete)
 bot.setMyCommands([
