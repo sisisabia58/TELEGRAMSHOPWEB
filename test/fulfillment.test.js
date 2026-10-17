@@ -399,6 +399,46 @@ test('mengembalikan kegagalan kalau tidak ada penawaran sama sekali', async () =
   assert.match(r.error, /habis/)
 })
 
+test('campuran stok sendiri dan supplier tidak dijual di atas satu sumber', async () => {
+  const f = muatFulfillment()
+  const offers = [offerSendiri({ stok: 2 }), offerSupplier({ stok: 3, harga: 30000 })]
+  assert.equal(sourcing.batasBeli({ offers, stok_count: 5 }), 3)
+  let supplierQty = null
+  const { deps } = buatDeps({
+    getOffers: async () => offers,
+    getStokForTransaction: async (_kode, n) => (
+      Array.from({ length: n }, (_, i) => ({ id: `st${i}`, data: `own-${i}` }))
+    ),
+    createOrder: async (_supplier, args) => {
+      supplierQty = args.quantity
+      return {
+        ok: true,
+        orderId: 'mix',
+        keys: Array.from({ length: args.quantity }, (_, i) => `sup-${i}`),
+        status: 'completed',
+      }
+    },
+  })
+
+  const campur = await f.fulfill({ varian: VARIAN, qty: 5, trxid: 'TRX-MIX', deps })
+  assert.equal(campur.ok, false, '2+3 tidak boleh lolos sebagai satu pesanan 5')
+  assert.match(campur.error, /habis/)
+  assert.equal(supplierQty, null, 'supplier tidak dipanggil untuk qty yang tidak muat')
+
+  const dariSupplier = await f.fulfill({ varian: VARIAN, qty: 3, trxid: 'TRX-MIX-S', deps })
+  assert.equal(dariSupplier.ok, true)
+  assert.equal(dariSupplier.sumber, 'supplier')
+  assert.equal(dariSupplier.lines.length, 3)
+  assert.equal(supplierQty, 3)
+
+  supplierQty = null
+  const dariSendiri = await f.fulfill({ varian: VARIAN, qty: 2, trxid: 'TRX-MIX-O', deps })
+  assert.equal(dariSendiri.ok, true)
+  assert.equal(dariSendiri.sumber, 'sendiri')
+  assert.deepEqual(dariSendiri.stokIds, ['st0', 'st1'])
+  assert.equal(supplierQty, null)
+})
+
 test('mengembalikan kegagalan kalau qty melebihi semua stok', async () => {
   const f = muatFulfillment()
   const { deps } = buatDeps({ getOffers: async () => [offerSendiri({ stok: 2 }), offerSupplier({ stok: 3 })] })

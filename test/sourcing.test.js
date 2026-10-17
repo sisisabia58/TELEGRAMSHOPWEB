@@ -297,6 +297,21 @@ test('rankOffers mengutamakan stok sendiri lalu supplier, meski sendiri lebih ma
   assert.equal(s.pickBestOffer(offers, 1).sumber, 'supplier', 'harga tampilan tetap yang termurah')
 })
 
+test('batasBeli adalah stok satu sumber, bukan jumlah gabungan', () => {
+  const s = muatSourcing()
+  const offers = s.buildOffers({
+    varian: { ...VARIAN, harga: 50000 }, ownStokCount: 2, pricing: PRICING,
+    supplierRows: [supplierRow({ id: 'cadangan', harga_asal: 2.0, stok: 3 })],
+  })
+  assert.equal(s.summarize(offers).stok_total, 5, 'persediaan tampilan tetap gabungan')
+  assert.equal(s.batasSatuSumber(offers), 3)
+  assert.equal(s.batasBeli({ offers, stok_count: 5 }), 3, 'qty 4 dan 5 tidak ada satu jalur yang sanggup')
+  assert.equal(s.rankOffers(offers, 3).length, 1)
+  assert.equal(s.rankOffers(offers, 5).length, 0)
+  assert.equal(s.batasBeli({ stok_count: 4 }), 4, 'tanpa penawaran, stok_count adalah satu sumber')
+  assert.equal(s.batasBeli(null), 0)
+})
+
 test('rankOffers memakai stok gabungan: qty di atas stok sendiri tetap lolos ke supplier', () => {
   const s = muatSourcing()
   const offers = s.buildOffers({

@@ -193,7 +193,7 @@ test('pemilih baris hanya untuk stok sendiri murni, bukan campuran', () => {
   assert.equal(
     catalog.pakaiPemilihStok({ stok_sendiri: 2, punya_supplier: true, stok_count: 12 }),
     false,
-    'campuran memakai pemilih jumlah sampai stok gabungan'
+    'campuran memakai pemilih jumlah, bukan pemilih baris'
   )
   assert.equal(catalog.pakaiPemilihStok({ stok_sendiri: 0, punya_supplier: true, stok_count: 10 }), false)
   assert.equal(catalog.pakaiPemilihStok({ stok_sendiri: 0, punya_supplier: false, stok_count: 0 }), false)
