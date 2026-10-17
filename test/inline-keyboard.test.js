@@ -57,6 +57,21 @@ test('isAllowedInlineUrl accepts http(s) and tg://, rejects tg: without slashes'
   assert.equal(isAllowedInlineUrl(''), false)
 })
 
+test('isAllowedInlineUrl rejects http(s) without // or without a non-whitespace host', () => {
+  const { isAllowedInlineUrl } = muat()
+  assert.equal(isAllowedInlineUrl('https:example.com'), false)
+  assert.equal(isAllowedInlineUrl('http:example.com'), false)
+  assert.equal(isAllowedInlineUrl('https:/example.com'), false)
+  assert.equal(isAllowedInlineUrl('https://'), false)
+  assert.equal(isAllowedInlineUrl('https://   '), false)
+  assert.equal(isAllowedInlineUrl('http://'), false)
+  assert.equal(isAllowedInlineUrl('http://   '), false)
+  assert.equal(isAllowedInlineUrl('HTTPS://Example.COM/a'), true)
+  assert.equal(isAllowedInlineUrl('https://t.me/cs'), true)
+  assert.equal(isAllowedInlineUrl('tg://resolve?domain=shopcs'), true)
+  assert.equal(isAllowedInlineUrl('tg:resolve?domain=shopcs'), false)
+})
+
 test('isAllowedInlineUrl rejects C0 controls and DEL left in the trimmed value', () => {
   const { isAllowedInlineUrl } = muat()
   const newlineUrl = 'https://exa\nmple.com'
