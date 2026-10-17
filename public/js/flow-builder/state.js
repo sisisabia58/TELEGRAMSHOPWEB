@@ -115,6 +115,49 @@
     return null
   }
 
+  const NODE_SHORTCUTS = { copy: true, paste: true, duplicate: true, delete: true }
+  const SELECTION_SHORTCUTS = { copy: true, duplicate: true, delete: true }
+
+  function isOpenDialog(el) {
+    if (!el) return false
+    const tag = String(el.tagName || '').toLowerCase()
+    if (tag === 'dialog' && 'open' in el) return !!el.open
+    if (el.hidden) return false
+    if (el.getAttribute && el.getAttribute('aria-hidden') === 'true') return false
+    if (el.classList && typeof el.classList.contains === 'function' && el.classList.contains('hidden')) {
+      return false
+    }
+    return true
+  }
+
+  function isModalOrDialogActive(options) {
+    options = options || {}
+    const target = options.target
+    if (target && typeof target.closest === 'function' && isOpenDialog(target.closest('[role="dialog"], dialog'))) {
+      return true
+    }
+    const dialogs = options.dialogs
+    if (!dialogs) return false
+    for (let i = 0; i < dialogs.length; i++) {
+      if (isOpenDialog(dialogs[i])) return true
+    }
+    return false
+  }
+
+  function shouldHandleShortcut(action, options) {
+    if (!action) return false
+    options = options || {}
+    if (NODE_SHORTCUTS[action] && options.modalOpen) return false
+    if (SELECTION_SHORTCUTS[action] && !options.selectedKey) return false
+    return true
+  }
+
+  function resolveShortcut(event, options) {
+    const action = shortcutFromEvent(event)
+    if (!shouldHandleShortcut(action, options)) return null
+    return action
+  }
+
   return {
     HISTORY_LIMIT: HISTORY_LIMIT,
     cloneDraft: cloneDraft,
@@ -123,5 +166,8 @@
     createEditorState: createEditorState,
     shouldIgnoreShortcut: shouldIgnoreShortcut,
     shortcutFromEvent: shortcutFromEvent,
+    isModalOrDialogActive: isModalOrDialogActive,
+    shouldHandleShortcut: shouldHandleShortcut,
+    resolveShortcut: resolveShortcut,
   }
 })

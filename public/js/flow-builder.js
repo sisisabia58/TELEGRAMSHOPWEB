@@ -1517,7 +1517,13 @@
 
   function bindHistoryShortcuts() {
     document.addEventListener('keydown', function (ev) {
-      const action = FlowBuilderState.shortcutFromEvent(ev)
+      const action = FlowBuilderState.resolveShortcut(ev, {
+        selectedKey: state.selectedKey,
+        modalOpen: FlowBuilderState.isModalOrDialogActive({
+          dialogs: document.querySelectorAll('[role="dialog"], dialog'),
+          target: ev.target,
+        }),
+      })
       if (!action) return
       ev.preventDefault()
       if (action === 'undo') undoDraft()

@@ -20,6 +20,9 @@ const {
   effectiveEntryKey,
   shortcutFromEvent,
   shouldIgnoreShortcut,
+  shouldHandleShortcut,
+  isModalOrDialogActive,
+  resolveShortcut,
 } = require('../public/js/flow-builder/state')
 const { deleteNode } = require('../public/js/flow-builder/commands')
 
@@ -228,6 +231,90 @@ test('shortcutFromEvent maps copy, paste, duplicate, and delete, and ignores typ
   assert.equal(shouldIgnoreShortcut(target('SELECT')), true)
 })
 
+function dialogEl(opts) {
+  opts = opts || {}
+  const hiddenClass = !!opts.hiddenClass
+  const host = opts.host || null
+  return {
+    tagName: opts.tagName || 'DIV',
+    open: opts.open,
+    hidden: !!opts.hidden,
+    classList: { contains: (name) => name === 'hidden' && hiddenClass },
+    getAttribute: (name) => (name === 'aria-hidden' ? (opts.ariaHidden != null ? String(opts.ariaHidden) : null) : null),
+    closest: function () { return host },
+  }
+}
+
+test('isModalOrDialogActive is true when a dialog is open or focused (a)', () => {
+  assert.equal(isModalOrDialogActive({ dialogs: [dialogEl({ hiddenClass: true })] }), false)
+  assert.equal(isModalOrDialogActive({ dialogs: [dialogEl()] }), true)
+  assert.equal(isModalOrDialogActive({ dialogs: [dialogEl({ tagName: 'DIALOG', open: false })] }), false)
+  assert.equal(isModalOrDialogActive({ dialogs: [dialogEl({ tagName: 'DIALOG', open: true })] }), true)
+  assert.equal(isModalOrDialogActive({ dialogs: [dialogEl({ ariaHidden: true })] }), false)
+
+  const openDialog = dialogEl()
+  const focusedInDialog = dialogEl({ host: openDialog })
+  assert.equal(isModalOrDialogActive({ dialogs: [], target: focusedInDialog }), true)
+
+  const closedDialog = dialogEl({ hiddenClass: true })
+  const focusedInClosed = dialogEl({ host: closedDialog })
+  assert.equal(isModalOrDialogActive({ dialogs: [closedDialog], target: focusedInClosed }), false)
+})
+
+test('shouldHandleShortcut skips node actions in a modal and without a selection (a)(b)', () => {
+  assert.equal(shouldHandleShortcut('copy', { modalOpen: true, selectedKey: 'welcome' }), false)
+  assert.equal(shouldHandleShortcut('paste', { modalOpen: true, selectedKey: 'welcome' }), false)
+  assert.equal(shouldHandleShortcut('duplicate', { modalOpen: true, selectedKey: 'welcome' }), false)
+  assert.equal(shouldHandleShortcut('delete', { modalOpen: true, selectedKey: 'welcome' }), false)
+  assert.equal(shouldHandleShortcut('undo', { modalOpen: true, selectedKey: 'welcome' }), true)
+  assert.equal(shouldHandleShortcut('redo', { modalOpen: true }), true)
+
+  assert.equal(shouldHandleShortcut('copy', { selectedKey: null }), false)
+  assert.equal(shouldHandleShortcut('duplicate', { selectedKey: '' }), false)
+  assert.equal(shouldHandleShortcut('delete', {}), false)
+  assert.equal(shouldHandleShortcut('paste', { selectedKey: null }), true)
+  assert.equal(shouldHandleShortcut('copy', { selectedKey: 'welcome' }), true)
+  assert.equal(shouldHandleShortcut(null, { selectedKey: 'welcome' }), false)
+})
+
+test('resolveShortcut does not perform node shortcuts while a modal is open (a)', () => {
+  const copy = { ctrlKey: true, key: 'c', target: target('BODY') }
+  const paste = { metaKey: true, key: 'v', target: target('DIV') }
+  const duplicate = { ctrlKey: true, key: 'd', target: target('BODY') }
+  const del = { key: 'Delete', target: target('BODY') }
+  const opts = { modalOpen: true, selectedKey: 'welcome' }
+
+  assert.equal(resolveShortcut(copy, opts), null)
+  assert.equal(resolveShortcut(paste, opts), null)
+  assert.equal(resolveShortcut(duplicate, opts), null)
+  assert.equal(resolveShortcut(del, opts), null)
+  assert.equal(resolveShortcut({ ctrlKey: true, key: 'z', target: target('BODY') }, opts), 'undo')
+})
+
+test('resolveShortcut ignores copy, duplicate, and delete when no node is selected (b)', () => {
+  const none = { selectedKey: null }
+  assert.equal(resolveShortcut({ ctrlKey: true, key: 'c', target: target('BODY') }, none), null)
+  assert.equal(resolveShortcut({ ctrlKey: true, key: 'd', target: target('BODY') }, none), null)
+  assert.equal(resolveShortcut({ key: 'Delete', target: target('BODY') }, none), null)
+  assert.equal(resolveShortcut({ key: 'Backspace', target: target('BODY') }, none), null)
+  assert.equal(resolveShortcut({ ctrlKey: true, key: 'v', target: target('BODY') }, none), 'paste')
+  assert.equal(resolveShortcut({ ctrlKey: true, key: 'z', target: target('BODY') }, none), 'undo')
+  assert.equal(resolveShortcut({ ctrlKey: true, key: 'c', target: target('BODY') }, { selectedKey: 'welcome' }), 'copy')
+})
+
+test('resolveShortcut returns null instead of a handled action when the shortcut will not run (c)', () => {
+  const copyText = { ctrlKey: true, key: 'c', target: target('BODY') }
+  assert.equal(resolveShortcut(copyText, { selectedKey: null }), null)
+  assert.equal(resolveShortcut(copyText, { modalOpen: true, selectedKey: 'welcome' }), null)
+  assert.equal(resolveShortcut({
+    ctrlKey: true,
+    key: 'c',
+    target: target('INPUT', { type: 'text' }),
+  }, { selectedKey: 'welcome' }), null)
+  assert.equal(resolveShortcut(copyText, { selectedKey: 'welcome' }), 'copy')
+  assert.equal(resolveShortcut({ ctrlKey: true, key: 'v', target: target('BODY') }, { selectedKey: 'welcome' }), 'paste')
+})
+
 test('toolbarPosition places the toolbar above the selected node', () => {
   const wrap = { left: 100, top: 50, width: 800, height: 600 }
   const node = { left: 300, top: 200, width: 240, height: 160 }
@@ -278,4 +365,19 @@ test('flow-builder JS wires toolbar, shortcuts, and applyCommand clipboard actio
   assert.match(js, /action === 'duplicate'/)
   assert.match(js, /action === 'delete'/)
   assert.match(js, /applyCommand\(\(draft\) => FlowBuilderClipboard/)
+})
+
+test('flow-builder JS preventDefaults shortcuts only after resolveShortcut accepts them (a)(b)(c)', () => {
+  const js = fs.readFileSync(jsFile, 'utf8')
+  const match = js.match(/function bindHistoryShortcuts\(\) \{[\s\S]*?\n  \}/)
+  assert.ok(match, 'bindHistoryShortcuts should exist')
+  const handler = match[0]
+  assert.match(handler, /FlowBuilderState\.resolveShortcut\(/)
+  assert.match(handler, /isModalOrDialogActive/)
+  const resolveAt = handler.indexOf('resolveShortcut')
+  const guardAt = handler.search(/if\s*\(\s*!action\s*\)\s*return/)
+  const preventAt = handler.indexOf('preventDefault')
+  assert.ok(resolveAt !== -1 && guardAt !== -1 && preventAt !== -1)
+  assert.ok(resolveAt < guardAt, 'resolveShortcut should run before the action guard')
+  assert.ok(guardAt < preventAt, 'preventDefault should run only after the unhandled-action return')
 })
