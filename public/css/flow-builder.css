@@ -96,6 +96,7 @@
 
 .flow-status.ok { color: #86efac; }
 .flow-status.err { color: #fca5a5; }
+.flow-status.warn { color: #fbbf24; }
 
 .flow-topbar-btn {
   appearance: none;
@@ -197,6 +198,18 @@
   cursor: pointer;
   user-select: none;
   color: var(--sp-text);
+  flex-wrap: wrap;
+}
+
+.flow-toggle-note {
+  font-size: 11px;
+  color: #b45309;
+  font-weight: 600;
+}
+
+.flow-toggle.is-forced {
+  cursor: not-allowed;
+  opacity: 0.75;
 }
 
 .flow-entry-picker {

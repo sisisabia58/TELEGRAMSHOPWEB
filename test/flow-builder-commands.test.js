@@ -12,10 +12,14 @@ const {
 const {
   addNode,
   deleteNode,
+  deleteNodes,
   moveNode,
   applyWire,
   clearWire,
   patchNode,
+  inboundGoCount,
+  defaultMessageButtons,
+  diffStringMap,
 } = require('../public/js/flow-builder/commands')
 
 const baseDraft = {
@@ -195,13 +199,90 @@ test('no-op applyCommand does not push history', () => {
   assert.deepEqual(state.getDraft(), before)
 })
 
-test('deleteNode clears inbound go wires', () => {
-  const state = sessionFrom(baseDraft)
-  state.applyCommand((draft) => deleteNode(draft, 'product_list'))
-  const welcome = state.getDraft().nodes.find((n) => n.key === 'welcome')
-  assert.equal(welcome.buttons[0][0].go, '')
+test('deleteNode removes inbound go buttons, drops empty rows, and undo restores them', () => {
+  const draft = structuredClone(baseDraft)
+  draft.nodes[0].buttons = [
+    [{ label: 'Shop', go: 'product_list' }, { label: 'Saldo', go: 'saldo_menu' }],
+    [{ label: 'Also shop', go: 'product_list' }],
+  ]
+  const state = sessionFrom(draft)
+  assert.equal(inboundGoCount(state.getDraft(), 'product_list'), 2)
+
+  const after = state.applyCommand((d) => deleteNode(d, 'product_list'))
+  const welcome = after.nodes.find((n) => n.key === 'welcome')
+  assert.deepEqual(welcome.buttons, [[{ label: 'Saldo', go: 'saldo_menu' }]])
+  assert.ok(!after.nodes.some((n) => n.key === 'product_list'))
+  assert.equal(inboundGoCount(after, 'product_list'), 0)
+
   state.undo()
-  assert.equal(state.getDraft().nodes.find((n) => n.key === 'welcome').buttons[0][0].go, 'product_list')
+  const restored = state.getDraft().nodes.find((n) => n.key === 'welcome')
+  assert.equal(restored.buttons[0][0].go, 'product_list')
+  assert.equal(restored.buttons[0][1].go, 'saldo_menu')
+  assert.equal(restored.buttons[1][0].go, 'product_list')
+  assert.ok(state.getDraft().nodes.some((n) => n.key === 'product_list'))
+})
+
+test('deleteNode does not leave empty go targets', () => {
+  const state = sessionFrom(baseDraft)
+  const after = state.applyCommand((draft) => deleteNode(draft, 'product_list'))
+  const welcome = after.nodes.find((n) => n.key === 'welcome')
+  assert.deepEqual(welcome.buttons, [])
+  const dangling = []
+  for (const node of after.nodes) {
+    for (const row of node.buttons || []) {
+      for (const btn of row || []) {
+        if (btn.go === '') dangling.push(node.key)
+      }
+    }
+  }
+  assert.deepEqual(dangling, [])
+})
+
+test('deleteNodes strips inbound buttons for every key as one undo step', () => {
+  const draft = structuredClone(baseDraft)
+  draft.nodes[0].buttons = [
+    [{ label: 'Shop', go: 'product_list' }, { label: 'Saldo', go: 'saldo_menu' }],
+    [{ label: 'Also shop', go: 'product_list' }],
+  ]
+  draft.nodes.push({
+    key: 'extra',
+    kind: 'screen',
+    body: 'Extra',
+    pos_x: 200,
+    pos_y: 0,
+    buttons: [[{ label: 'Both', go: 'product_list' }, { label: 'Home', go: 'welcome' }]],
+  })
+  const state = sessionFrom(draft)
+  assert.equal(inboundGoCount(state.getDraft(), ['product_list', 'saldo_menu']), 4)
+
+  const after = state.applyCommand((d) => deleteNodes(d, ['product_list', 'saldo_menu']))
+  assert.ok(!after.nodes.some((n) => n.key === 'product_list' || n.key === 'saldo_menu'))
+  const welcome = after.nodes.find((n) => n.key === 'welcome')
+  const extra = after.nodes.find((n) => n.key === 'extra')
+  assert.deepEqual(welcome.buttons, [])
+  assert.deepEqual(extra.buttons, [[{ label: 'Home', go: 'welcome' }]])
+  assert.equal(inboundGoCount(after, ['product_list', 'saldo_menu']), 0)
+
+  state.undo()
+  assert.deepEqual(state.getDraft(), draft)
+})
+
+test('defaultMessageButtons targets the current entry, or none', () => {
+  assert.deepEqual(defaultMessageButtons('welcome'), [[{ label: 'Menu', go: 'welcome' }]])
+  assert.deepEqual(defaultMessageButtons('screen.home'), [[{ label: 'Menu', go: 'screen.home' }]])
+  assert.deepEqual(defaultMessageButtons(null), [])
+  assert.deepEqual(defaultMessageButtons(''), [])
+  assert.deepEqual(defaultMessageButtons(undefined), [])
+})
+
+test('diffStringMap posts only keys whose values changed', () => {
+  const original = { 'btn.ok': 'OK', 'err.x': 'Nope', 'msg.hi': 'Hi' }
+  const current = { 'btn.ok': 'OK', 'err.x': 'Changed', 'msg.hi': 'Hi' }
+  assert.deepEqual(diffStringMap(original, current), { 'err.x': 'Changed' })
+  assert.deepEqual(diffStringMap(original, original), {})
+  assert.deepEqual(diffStringMap(original, { 'btn.ok': 'OK', 'err.x': 'Nope', 'msg.hi': 'Hi', 'new.key': 'N' }), {
+    'new.key': 'N',
+  })
 })
 
 test('replaceDraft loads a session without undo history', () => {

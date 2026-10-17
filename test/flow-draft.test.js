@@ -237,6 +237,29 @@ test('validateDraft rejects button with multiple modes', () => {
   d.nodes[0].buttons = [[{ label: 'X', go: 'product_list', url: 'https://x' }]]
   const r = validateDraft(d, KEYS)
   assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => /welcome: button "X"/.test(e)))
+})
+
+test('validateDraft empty go names the node and button', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].buttons = [[{ label: 'Menu', go: '' }]]
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(
+    r.errors.some((e) => /welcome: button "Menu" has an empty go target/.test(e)),
+    r.errors.join('; ')
+  )
+})
+
+test('validateDraft empty go falls back to row/col when the button has no label', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[2].buttons = [[], [{ go: '' }]]
+  const r = validateDraft(d)
+  assert.equal(r.ok, false)
+  assert.ok(
+    r.errors.some((e) => /saldo_menu: button "row 2 col 1" has an empty go target/.test(e)),
+    r.errors.join('; ')
+  )
 })
 
 test('draftFromPublished hydrates body from copy map', () => {

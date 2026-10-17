@@ -24,17 +24,67 @@
     return next
   }
 
-  function deleteNode(draft, key) {
-    const next = clone(draft)
-    next.nodes = (next.nodes || []).filter((n) => n.key !== key)
-    for (const other of next.nodes) {
-      for (const row of other.buttons || []) {
+  function inboundKeySet(keys) {
+    if (keys instanceof Set) return keys
+    return new Set(Array.isArray(keys) ? keys : [keys])
+  }
+
+  function inboundGoCount(draft, keys) {
+    const wanted = inboundKeySet(keys)
+    let n = 0
+    for (const node of (draft && draft.nodes) || []) {
+      for (const row of node.buttons || []) {
         for (const btn of row || []) {
-          if (btn.go === key) btn.go = ''
+          if (wanted.has(btn.go)) n++
         }
       }
     }
+    return n
+  }
+
+  function stripInboundGoButtons(nodes, keys) {
+    const wanted = inboundKeySet(keys)
+    return (nodes || []).map((node) => {
+      const buttons = []
+      for (const row of node.buttons || []) {
+        const kept = []
+        for (const btn of row || []) {
+          if (!wanted.has(btn.go)) kept.push(btn)
+        }
+        if (kept.length) buttons.push(kept)
+      }
+      if (node.buttons === undefined && buttons.length === 0) return node
+      return Object.assign({}, node, { buttons: buttons })
+    })
+  }
+
+  function deleteNodes(draft, keys) {
+    const wanted = inboundKeySet(keys)
+    const next = clone(draft)
+    next.nodes = stripInboundGoButtons(
+      (next.nodes || []).filter((n) => !wanted.has(n.key)),
+      wanted
+    )
     return next
+  }
+
+  function deleteNode(draft, key) {
+    return deleteNodes(draft, [key])
+  }
+
+  function defaultMessageButtons(entryKey) {
+    if (!entryKey) return []
+    return [[{ label: 'Menu', go: entryKey }]]
+  }
+
+  function diffStringMap(original, current) {
+    const out = {}
+    const prev = original || {}
+    const src = current || {}
+    for (const key of Object.keys(src)) {
+      if (String(src[key] ?? '') !== String(prev[key] ?? '')) out[key] = src[key]
+    }
+    return out
   }
 
   function moveNode(draft, key, posX, posY) {
@@ -100,9 +150,13 @@
   return {
     addNode: addNode,
     deleteNode: deleteNode,
+    deleteNodes: deleteNodes,
     moveNode: moveNode,
     applyWire: applyWire,
     clearWire: clearWire,
     patchNode: patchNode,
+    inboundGoCount: inboundGoCount,
+    defaultMessageButtons: defaultMessageButtons,
+    diffStringMap: diffStringMap,
   }
 })
