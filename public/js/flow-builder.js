@@ -30,6 +30,7 @@
     draft: null,
     publishedKeys: [],
     enabled: false,
+    envOverride: false,
     actions: [],
     flow: null,
     selectedKey: null,
@@ -296,20 +297,41 @@
     setStatus('Pasted ' + (created ? created.key : 'node'), 'ok')
   }
 
+  function selectedKeysForDelete() {
+    return state.selectedKey ? [state.selectedKey] : []
+  }
+
+  function inboundRemovedStatus(removed) {
+    if (removed === 1) return ' — removed 1 inbound button'
+    if (removed > 1) return ' — removed ' + removed + ' inbound buttons'
+    return ''
+  }
+
   function requestDeleteSelectedNode() {
-    const nodeKey = state.selectedKey
-    if (!nodeKey) return
-    if (effectiveEntryKey() === nodeKey) {
-      alert(FlowBuilderClipboard.entryDeleteMessage(nodeKey))
+    const keys = selectedKeysForDelete()
+    if (!keys.length) return
+    const entry = effectiveEntryKey()
+    const deletable = keys.filter((key) => key !== entry)
+    if (!deletable.length) {
+      alert(FlowBuilderClipboard.entryDeleteMessage(entry || keys[0]))
       return
     }
-    if (!window.confirm('Delete node "' + nodeKey + '"? Connections pointing to this node will be disconnected.')) return
-    applyCommand((draft) => FlowBuilderCommands.deleteNode(draft, nodeKey))
-    state.selectedKey = null
+    const confirmMsg = deletable.length === 1
+      ? 'Delete node "' + deletable[0] + '"? Connections pointing to this node will be disconnected.'
+      : 'Delete ' + deletable.length + ' nodes? Connections pointing to these nodes will be disconnected.'
+    if (!window.confirm(confirmMsg)) return
+    const removed = FlowBuilderCommands.inboundGoCount(state.draft, deletable)
+    applyCommand((draft) => FlowBuilderCommands.deleteNodes(draft, deletable))
+    if (state.selectedKey && deletable.indexOf(state.selectedKey) !== -1) {
+      state.selectedKey = null
+    }
     renderCanvas()
     renderPanel()
     positionSelectionToolbar()
-    setStatus('Deleted node: ' + nodeKey, 'ok')
+    const msg = deletable.length === 1
+      ? 'Deleted node: ' + deletable[0]
+      : 'Deleted ' + deletable.length + ' nodes'
+    setStatus(msg + inboundRemovedStatus(removed), 'ok')
   }
 
   function renderCanvas() {
@@ -854,7 +876,7 @@
       setStatus(msg, 'err')
       return
     }
-    setStatus('Published — bot reloads in ~10s', 'ok')
+    setStatusFromBump(data, 'Published — bot reloads in ~10s')
   }
 
   function buttonLabel(btn) {
@@ -987,7 +1009,43 @@
     if (modal) modal.classList.add('hidden')
   }
 
+  function setStatusFromBump(data, okMessage) {
+    if (data && data.reloadPending) {
+      setStatus(data.warning || 'Saved, but the bot may not reload until the next publish or a restart.', 'warn')
+      return
+    }
+    setStatus(okMessage, 'ok')
+  }
+
+  function isFlowEngineForced() {
+    return state.envOverride === 'forced on' || state.envOverride === 'forced off'
+  }
+
+  function applyFlowEnabledUi() {
+    const el = document.getElementById('flowEnabled')
+    const note = document.getElementById('flowEnabledOverride')
+    if (!el) return
+    el.checked = !!state.enabled
+    const forced = isFlowEngineForced()
+    el.disabled = forced
+    if (el.parentElement) el.parentElement.classList.toggle('is-forced', forced)
+    if (note) {
+      if (forced) {
+        note.textContent = state.envOverride === 'forced on' ? 'Forced on by env' : 'Forced off by env'
+        note.classList.remove('hidden')
+      } else {
+        note.textContent = ''
+        note.classList.add('hidden')
+      }
+    }
+  }
+
   async function toggleEnabled(checked) {
+    if (isFlowEngineForced()) {
+      applyFlowEnabledUi()
+      setStatus('Flow engine is ' + state.envOverride + ' — the dashboard toggle cannot change it', 'warn')
+      return
+    }
     const res = await fetch('/settings/bot-flow/toggle', {
       method: 'POST',
       headers: {
@@ -999,10 +1057,12 @@
     const data = await res.json()
     if (!data.success) {
       setStatus(data.error || 'Toggle failed', 'err')
+      applyFlowEnabledUi()
       return
     }
     state.enabled = checked
-    setStatus('Flow engine ' + (checked ? 'enabled' : 'disabled') + ' — bot reloads in ~10s', 'ok')
+    applyFlowEnabledUi()
+    setStatusFromBump(data, 'Flow engine ' + (checked ? 'enabled' : 'disabled') + ' — bot reloads in ~10s')
   }
 
   function generateUniqueNodeKey(prefix = 'screen') {
@@ -1064,7 +1124,7 @@
       pos_y: y,
       media_url: null,
       media_type: 'photo',
-      buttons: [[{ label: 'Menu', go: 'welcome' }]],
+      buttons: FlowBuilderCommands.defaultMessageButtons(effectiveEntryKey()),
       description: '',
     }
     applyCommand((draft) => FlowBuilderCommands.addNode(draft, newNode))
@@ -1262,6 +1322,7 @@
   }
 
   let globalStringsCache = {}
+  let globalStringsOriginal = {}
 
   async function openGlobalStringsDrawer() {
     const modal = document.getElementById('globalStringsModal')
@@ -1275,6 +1336,7 @@
         for (const [k, v] of Object.entries(data.copy)) {
           if (!k.startsWith('screen.')) globalStringsCache[k] = v
         }
+        globalStringsOriginal = clone(globalStringsCache)
         renderGlobalStringsList()
         setStatus('Global strings loaded', 'ok')
       } else {
@@ -1308,15 +1370,31 @@
     html += '</tbody></table>'
     if (count === 0) html = '<p class="muted">No matching global strings found.</p>'
     container.innerHTML = html
+    container.querySelectorAll('.global-string-input').forEach((inp) => {
+      inp.addEventListener('input', function () {
+        const key = inp.getAttribute('data-key')
+        if (key) globalStringsCache[key] = inp.value
+      })
+    })
+  }
+
+  function collectVisibleGlobalStringEdits() {
+    document.querySelectorAll('.global-string-input').forEach((inp) => {
+      const key = inp.getAttribute('data-key')
+      if (key) globalStringsCache[key] = inp.value
+    })
   }
 
   async function saveGlobalStrings() {
-    const inputs = document.querySelectorAll('.global-string-input')
-    const updates = {}
-    inputs.forEach((inp) => {
-      const key = inp.getAttribute('data-key')
-      updates[key] = inp.value
-    })
+    collectVisibleGlobalStringEdits()
+    const updates = FlowBuilderCommands.diffStringMap(globalStringsOriginal, globalStringsCache)
+    if (!Object.keys(updates).length) {
+      setStatus('No changes to save', 'ok')
+      return
+    }
+    if (!window.confirm('These Global Strings go live to all buyers within ~10 seconds. There is no Publish step. Save the changed strings now?')) {
+      return
+    }
     setStatus('Saving global strings…')
     try {
       const res = await fetch('/api/bot-copy', {
@@ -1326,8 +1404,9 @@
       })
       const data = await res.json()
       if (data.success) {
-        setStatus('Global strings saved successfully!', 'ok')
+        Object.assign(globalStringsOriginal, updates)
         closeGlobalStringsDrawer()
+        setStatusFromBump(data, 'Global strings saved successfully!')
       } else {
         setStatus(data.error || 'Failed to save global strings', 'err')
       }
@@ -1480,10 +1559,11 @@
     state.draft = editorState.getDraft()
     state.publishedKeys = data.publishedKeys
     state.enabled = data.enabled
+    state.envOverride = data.envOverride || false
     state.actions = data.actions || []
     state.flow = data.flow
 
-    document.getElementById('flowEnabled').checked = !!state.enabled
+    applyFlowEnabledUi()
 
     const nameEl = document.getElementById('flowName')
     if (nameEl && data.flow) {

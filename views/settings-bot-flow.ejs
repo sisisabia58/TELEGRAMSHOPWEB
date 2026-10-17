@@ -39,9 +39,10 @@
                     <div class="flow-dropdown" id="overflowDropdown">
                         <button type="button" id="btnOverflowMenu" class="flow-topbar-btn flow-topbar-btn-icon" title="More" aria-expanded="false" aria-controls="flowOverflowMenu" aria-label="More">⋯</button>
                         <div id="flowOverflowMenu" class="flow-dropdown-menu flow-dropdown-menu-end hidden">
-                            <label class="flow-toggle">
+                            <label class="flow-toggle" id="flowEnabledLabel">
                                 <input type="checkbox" id="flowEnabled">
                                 <span>Flow engine enabled</span>
+                                <span id="flowEnabledOverride" class="flow-toggle-note hidden"></span>
                             </label>
                             <button type="button" id="btnGlobalStrings">Global Strings 🌐</button>
                             <label class="flow-entry-picker">

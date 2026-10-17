@@ -148,6 +148,28 @@ test('isEnabled reads runtime setting', () => {
   assert.equal(off.isEnabled(), false)
 })
 
+test('isEnabled uses the same FLOW_ENGINE_ENABLED override as flowEngineFlagState', () => {
+  const { effectiveFlowEngineEnabled } = require('../lib/flow-engine-flag')
+  const prev = process.env.FLOW_ENGINE_ENABLED
+  try {
+    process.env.FLOW_ENGINE_ENABLED = 'true'
+    delete require.cache[jalurFlow]
+    const forcedOn = muatFlow({ nodes: sampleNodes, enabled: false })
+    assert.equal(forcedOn.isEnabled(), true)
+    assert.equal(forcedOn.isEnabled(), effectiveFlowEngineEnabled(false, 'true'))
+
+    process.env.FLOW_ENGINE_ENABLED = 'false'
+    delete require.cache[jalurFlow]
+    const forcedOff = muatFlow({ nodes: sampleNodes, enabled: true })
+    assert.equal(forcedOff.isEnabled(), false)
+    assert.equal(forcedOff.isEnabled(), effectiveFlowEngineEnabled(true, 'false'))
+  } finally {
+    if (prev === undefined) delete process.env.FLOW_ENGINE_ENABLED
+    else process.env.FLOW_ENGINE_ENABLED = prev
+    delete require.cache[jalurFlow]
+  }
+})
+
 function recordingBot({ editCaptionThrows = false } = {}) {
   const calls = []
   return {

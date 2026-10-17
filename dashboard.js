@@ -13,6 +13,7 @@ const pricing = require('./lib/pricing')
 const bulk = require('./lib/bulk')
 const flowDraft = require('./lib/flow-draft')
 const flowPreview = require('./lib/flow-preview')
+const { flowEngineFlagState } = require('./lib/flow-engine-flag')
 const copyLib = require('./lib/copy')
 // Sumber stok ketiga: katalog supplier (fase 13).
 const supplierSync = require('./lib/supplier-sync')
@@ -5921,8 +5922,8 @@ app.post('/api/bot-copy', isAuthenticated, async (req, res) => {
         .eq('key', key)
       if (error) throw error
     }
-    await runtimeSettings.bump()
-    res.json({ success: true })
+    const bumped = await runtimeSettings.bump()
+    res.json({ success: true, ...runtimeSettings.describeBump(bumped) })
   } catch (e) {
     console.error(e)
     res.json({ success: false, error: e.message })
@@ -5993,7 +5994,8 @@ app.get('/api/bot-flow', isAuthenticated, async (req, res) => {
       .select('setting_value')
       .eq('setting_key', 'flow_engine_enabled')
       .maybeSingle()
-    const enabled = !!(flag?.setting_value && flag.setting_value.value === true)
+    const dbEnabled = !!(flag?.setting_value && flag.setting_value.value === true)
+    const { enabled, envOverride } = flowEngineFlagState(dbEnabled)
     res.json({
       success: true,
       flow: flow ? {
@@ -6005,6 +6007,7 @@ app.get('/api/bot-flow', isAuthenticated, async (req, res) => {
       publishedKeys,
       draft,
       enabled,
+      envOverride,
       actions: FLOW_ACTIONS,
     })
   } catch (e) {
@@ -6166,8 +6169,8 @@ app.post('/api/bot-flow/publish', isAuthenticated, async (req, res) => {
     const { error } = await supabase.rpc('publish_bot_flow_graph', payload)
     if (error) throw error
 
-    await runtimeSettings.bump()
-    res.json({ success: true })
+    const bumped = await runtimeSettings.bump()
+    res.json({ success: true, ...runtimeSettings.describeBump(bumped) })
   } catch (e) {
     console.error(e)
     res.status(500).json({ success: false, error: e.message })
@@ -6183,9 +6186,9 @@ app.post('/settings/bot-flow/toggle', isAuthenticated, async (req, res) => {
       updated_at: new Date().toISOString(),
     }, { onConflict: 'setting_key' })
     if (error) throw error
-    await runtimeSettings.bump()
+    const bumped = await runtimeSettings.bump()
     if (req.headers.accept && req.headers.accept.includes('application/json')) {
-      return res.json({ success: true })
+      return res.json({ success: true, ...runtimeSettings.describeBump(bumped) })
     }
     res.redirect('/settings/bot-flow?success=toggle')
   } catch (e) {
