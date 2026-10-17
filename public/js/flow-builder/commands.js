@@ -17,6 +17,10 @@
   function addNode(draft, node) {
     const next = clone(draft)
     next.nodes = (next.nodes || []).concat([clone(node)])
+    const entry = next.entry_key
+    if (!next.nodes.some((n) => n.key === entry)) {
+      next.entry_key = node.key
+    }
     return next
   }
 

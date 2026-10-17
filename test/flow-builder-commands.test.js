@@ -5,6 +5,7 @@ const {
   cloneDraft,
   draftsEqual,
   createEditorState,
+  effectiveEntryKey,
   shouldIgnoreShortcut,
   shortcutFromEvent,
 } = require('../public/js/flow-builder/state')
@@ -236,4 +237,57 @@ test('shortcutFromEvent maps undo/redo combos and ignores typing', () => {
 test('shouldIgnoreShortcut treats select as a field', () => {
   assert.equal(shouldIgnoreShortcut(target('SELECT')), true)
   assert.equal(shouldIgnoreShortcut(target('BUTTON')), false)
+})
+
+test('effectiveEntryKey returns the configured key when it matches a node', () => {
+  assert.equal(effectiveEntryKey(baseDraft), 'welcome')
+  assert.equal(effectiveEntryKey({
+    entry_key: 'product_list',
+    nodes: baseDraft.nodes,
+  }), 'product_list')
+})
+
+test('effectiveEntryKey falls back to the first node when entry_key is missing from nodes', () => {
+  assert.equal(effectiveEntryKey({
+    entry_key: 'welcome',
+    nodes: [{ key: 'screen.custom_1' }, { key: 'action.custom_1' }],
+  }), 'screen.custom_1')
+})
+
+test('effectiveEntryKey returns null when there are no nodes', () => {
+  assert.equal(effectiveEntryKey(null), null)
+  assert.equal(effectiveEntryKey(undefined), null)
+  assert.equal(effectiveEntryKey({ entry_key: 'welcome', nodes: [] }), null)
+})
+
+test('effectiveEntryKey treats a missing entry_key as welcome, then the first node', () => {
+  assert.equal(effectiveEntryKey({ nodes: [{ key: 'welcome' }, { key: 'other' }] }), 'welcome')
+  assert.equal(effectiveEntryKey({ nodes: [{ key: 'screen.custom_1' }] }), 'screen.custom_1')
+})
+
+test('addNode persists entry_key when adding the first node', () => {
+  const empty = { entry_key: 'welcome', nodes: [] }
+  const next = addNode(empty, { key: 'screen.custom_1', kind: 'screen', body: 'Hi' })
+  assert.equal(next.entry_key, 'screen.custom_1')
+  assert.equal(empty.entry_key, 'welcome')
+})
+
+test('addNode replaces an invalid entry_key with the added node', () => {
+  const draft = { entry_key: 'welcome', nodes: [{ key: 'existing' }] }
+  const next = addNode(draft, { key: 'screen.custom_2', kind: 'screen' })
+  assert.equal(next.entry_key, 'screen.custom_2')
+})
+
+test('addNode keeps a valid entry_key', () => {
+  const next = addNode(baseDraft, { key: 'screen.custom_1', kind: 'screen' })
+  assert.equal(next.entry_key, 'welcome')
+})
+
+test('undo of first-node add restores the previous entry_key', () => {
+  const state = sessionFrom({ entry_key: 'welcome', nodes: [] })
+  state.applyCommand((draft) => addNode(draft, { key: 'screen.custom_1', kind: 'screen' }))
+  assert.equal(state.getDraft().entry_key, 'screen.custom_1')
+  state.undo()
+  assert.equal(state.getDraft().entry_key, 'welcome')
+  assert.equal(state.getDraft().nodes.length, 0)
 })

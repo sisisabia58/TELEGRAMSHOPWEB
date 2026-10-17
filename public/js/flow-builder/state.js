@@ -20,6 +20,14 @@
     return JSON.stringify(a) === JSON.stringify(b)
   }
 
+  function effectiveEntryKey(draft) {
+    if (!draft) return null
+    const nodes = draft.nodes || []
+    const cur = draft.entry_key || 'welcome'
+    if (nodes.some((n) => n.key === cur)) return cur
+    return nodes[0] ? nodes[0].key : null
+  }
+
   function createEditorState(options) {
     options = options || {}
     const historyLimit = options.historyLimit || HISTORY_LIMIT
@@ -104,6 +112,7 @@
     HISTORY_LIMIT: HISTORY_LIMIT,
     cloneDraft: cloneDraft,
     draftsEqual: draftsEqual,
+    effectiveEntryKey: effectiveEntryKey,
     createEditorState: createEditorState,
     shouldIgnoreShortcut: shouldIgnoreShortcut,
     shortcutFromEvent: shortcutFromEvent,

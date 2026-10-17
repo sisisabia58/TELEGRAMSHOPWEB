@@ -11,45 +11,76 @@
     <main class="main-content" id="main-content">
         <%- include('partials/topbar') %>
 
-        <div class="flow-toolbar">
-            <label class="flow-toggle">
-                <input type="checkbox" id="flowEnabled">
-                <span>Flow engine enabled</span>
-            </label>
-            <div class="flow-toolbar-actions">
-                <button type="button" id="btnAddMessageNode" class="btn btn-secondary">+ Message Node</button>
-                <button type="button" id="btnAddActionNode" class="btn btn-secondary">+ Action Node</button>
-                <div class="zoom-controls">
-                    <button type="button" id="btnZoomIn" class="btn btn-sm btn-secondary" title="Zoom In">+</button>
-                    <button type="button" id="btnZoomOut" class="btn btn-sm btn-secondary" title="Zoom Out">-</button>
-                    <button type="button" id="btnFitView" class="btn btn-sm btn-secondary" title="Reset Zoom">⛶</button>
+        <div class="flow-workspace">
+            <header class="flow-topbar">
+                <div class="flow-topbar-left">
+                    <span class="flow-topbar-brand">Bot Flow</span>
+                    <span class="flow-topbar-sep" aria-hidden="true">·</span>
+                    <span id="flowName" class="flow-name" title="Flow name">Untitled flow</span>
                 </div>
-                <div class="history-controls">
-                    <button type="button" id="btnUndo" class="btn btn-sm btn-secondary" title="Undo (Ctrl/Cmd+Z)" disabled>Undo</button>
-                    <button type="button" id="btnRedo" class="btn btn-sm btn-secondary" title="Redo (Ctrl/Cmd+Shift+Z or Ctrl+Y)" disabled>Redo</button>
+                <div class="flow-topbar-center">
+                    <span id="flowStatus" class="flow-status" aria-live="polite"></span>
                 </div>
-                <button type="button" id="btnGlobalStrings" class="btn btn-secondary">Global Strings 🌐</button>
-                <label class="flow-entry-picker">
-                    Entry node
-                    <select id="entryKeySelect" aria-label="Flow entry node"></select>
-                </label>
-                <button type="button" id="btnSaveDraft" class="btn btn-secondary">Save draft</button>
-                <button type="button" id="btnPreview" class="btn">Preview</button>
-                <button type="button" id="btnPublish" class="btn btn-primary">Publish</button>
+                <div class="flow-topbar-right">
+                    <div class="history-controls">
+                        <button type="button" id="btnUndo" class="flow-topbar-btn" title="Undo (Ctrl/Cmd+Z)" disabled>Undo</button>
+                        <button type="button" id="btnRedo" class="flow-topbar-btn" title="Redo (Ctrl/Cmd+Shift+Z or Ctrl+Y)" disabled>Redo</button>
+                    </div>
+                    <button type="button" id="btnPreview" class="flow-topbar-btn">Preview</button>
+                    <div class="flow-dropdown" id="saveDropdown">
+                        <button type="button" id="btnSaveMenu" class="flow-topbar-btn flow-topbar-btn-primary" aria-expanded="false" aria-controls="flowSaveMenu">
+                            Save <span aria-hidden="true">▾</span>
+                        </button>
+                        <div id="flowSaveMenu" class="flow-dropdown-menu hidden">
+                            <button type="button" id="btnSaveDraft">Save draft</button>
+                            <button type="button" id="btnPublish">Publish</button>
+                        </div>
+                    </div>
+                    <div class="flow-dropdown" id="overflowDropdown">
+                        <button type="button" id="btnOverflowMenu" class="flow-topbar-btn flow-topbar-btn-icon" title="More" aria-expanded="false" aria-controls="flowOverflowMenu" aria-label="More">⋯</button>
+                        <div id="flowOverflowMenu" class="flow-dropdown-menu flow-dropdown-menu-end hidden">
+                            <label class="flow-toggle">
+                                <input type="checkbox" id="flowEnabled">
+                                <span>Flow engine enabled</span>
+                            </label>
+                            <button type="button" id="btnGlobalStrings">Global Strings 🌐</button>
+                            <label class="flow-entry-picker">
+                                Entry node
+                                <select id="entryKeySelect" aria-label="Flow entry node"></select>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <div class="flow-layout">
+                <aside class="flow-palette" aria-label="Block palette">
+                    <p class="flow-palette-heading">Blocks</p>
+                    <button type="button" id="btnAddMessageNode" class="flow-palette-item" title="Add Message block" data-kind="message">
+                        <span class="flow-palette-swatch message" aria-hidden="true"></span>
+                        <span class="flow-palette-label">Message</span>
+                    </button>
+                    <button type="button" id="btnAddActionNode" class="flow-palette-item" title="Add Action block" data-kind="action">
+                        <span class="flow-palette-swatch action" aria-hidden="true"></span>
+                        <span class="flow-palette-label">Action</span>
+                    </button>
+                    <p class="flow-palette-hint">Click to add at the canvas</p>
+                </aside>
+                <div class="flow-canvas-wrap">
+                    <div id="drawflow" class="flow-canvas"></div>
+                    <div class="flow-canvas-controls" aria-label="Canvas zoom">
+                        <button type="button" id="btnZoomIn" title="Zoom In">+</button>
+                        <button type="button" id="btnZoomOut" title="Zoom Out">−</button>
+                        <button type="button" id="btnFitView" title="Reset Zoom">⛶</button>
+                    </div>
+                </div>
+                <aside id="flowPanel" class="flow-panel" aria-label="Node editor">
+                    <div class="flow-panel-empty">
+                        <strong>Inspector</strong>
+                        Loading flow…
+                    </div>
+                </aside>
             </div>
-            <span id="flowStatus" class="flow-status" aria-live="polite"></span>
-        </div>
-
-        <p id="flowMeta" class="flow-meta muted"></p>
-
-        <div class="flow-layout">
-            <div id="drawflow" class="flow-canvas"></div>
-            <aside id="flowPanel" class="flow-panel" aria-label="Node editor">
-                <div class="flow-panel-empty">
-                    <strong>Edit panel</strong>
-                    Loading flow…
-                </div>
-            </aside>
         </div>
 
         <div id="previewModal" class="preview-modal hidden" role="dialog" aria-modal="true" aria-labelledby="previewTitle">
