@@ -1,6 +1,6 @@
 # Phase 13 — Flow Builder Graph CRUD Completion Implementation Plan
 
-> **Status:** implemented. Publish is an atomic Postgres RPC (`publish_bot_flow_graph`), not the separate node/copy/flow writes in the original draft of this plan.
+> **Status:** implemented. Publish is an atomic Postgres RPC (`publish_bot_flow_graph`), not the separate node/copy/flow writes in the original draft of this plan. Unchecked `[ ]` steps below are leftover plan tracking (including the original smoke-test and commit steps), not remaining work; operator QA lives in `docs/runbooks/phase13-flow-builder-graph-crud.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
