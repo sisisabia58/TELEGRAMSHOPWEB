@@ -21,7 +21,7 @@
 - Keep EJS + vanilla JS + Drawflow CDN — **no React/Vue/build step**
 - Tests: pure functions via `node --test` only; no Telegram mocks; no browser automation for CI
 - `runtimeSettings.bump()` on Publish and enable toggle only (draft save does not bump)
-- Publish is atomic via `public.publish_bot_flow_graph` (`SECURITY INVOKER`, `search_path` = `public`). Original function: `supabase/migrations/20260818000001_publish_bot_flow_graph.sql`. Payload-shape checks: `20261017000100_validate_publish_bot_flow_graph.sql` (`CREATE OR REPLACE`, same signature; does not change grants). Never apply graph changes as separate supabase-js writes — that reintroduces partial-publish risk. Handle the RPC error, including a failed `BotFlow` update, before `runtimeSettings.bump()`.
+- Publish is atomic via `public.publish_bot_flow_graph` (`SECURITY INVOKER`, `search_path` = `public`). Original function: `supabase/migrations/20260818000001_publish_bot_flow_graph.sql`. Payload-shape checks: `20261017225540_validate_publish_bot_flow_graph.sql` (`CREATE OR REPLACE`, same signature; does not change grants). Never apply graph changes as separate supabase-js writes — that reintroduces partial-publish risk. Handle the RPC error, including a failed `BotFlow` update, before `runtimeSettings.bump()`.
 
 ---
 
@@ -34,7 +34,7 @@
 | `test/flow-draft.test.js` | Unit tests for validation + diff + RPC payload shape |
 | `dashboard.js` | Draft/publish routes validate then call `publish_bot_flow_graph`. Draft failures return 400 `{ errors: string[] }` (same messages as `collectDraftIssues`). Payload-shape failures return 400 `{ errors: [{ key, reason }] }` |
 | `supabase/migrations/20260818000001_publish_bot_flow_graph.sql` | Atomic publish RPC (media columns + function) |
-| `supabase/migrations/20261017000100_validate_publish_bot_flow_graph.sql` | `CREATE OR REPLACE` with cheap payload-shape checks |
+| `supabase/migrations/20261017225540_validate_publish_bot_flow_graph.sql` | `CREATE OR REPLACE` with cheap payload-shape checks |
 | `public/js/flow-builder.js` | Action select, media type, entry picker, preview media |
 | `views/settings-bot-flow.ejs` | Entry node `<select>`, preview media container |
 | `public/css/flow-builder.css` | Entry highlight + preview image styles |

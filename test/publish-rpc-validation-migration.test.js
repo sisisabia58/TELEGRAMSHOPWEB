@@ -8,7 +8,7 @@ const MIGRATION = path.join(
   '..',
   'supabase',
   'migrations',
-  '20261017000100_validate_publish_bot_flow_graph.sql'
+  '20261017225540_validate_publish_bot_flow_graph.sql'
 )
 
 function sql() {
