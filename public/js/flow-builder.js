@@ -1,4 +1,4 @@
-/* global Drawflow, FlowBuilderState, FlowBuilderCommands */
+/* global Drawflow, FlowBuilderState, FlowBuilderCommands, FlowBuilderPalette */
 (function () {
   'use strict'
 
@@ -917,16 +917,53 @@
     return basePrefix + idx
   }
 
-  function addMessageNode() {
+  function getCanvasGeometry() {
+    if (!editor || !editor.precanvas) return null
+    const container = document.getElementById('drawflow')
+    if (!container) return null
+    return {
+      containerRect: container.getBoundingClientRect(),
+      precanvasRect: editor.precanvas.getBoundingClientRect(),
+      zoom: editor.zoom || 1,
+    }
+  }
+
+  function placementFromViewportCenter() {
+    const geo = getCanvasGeometry()
+    if (!geo) return { x: 150, y: 150 }
+    return FlowBuilderPalette.viewportCenterPosition(geo.containerRect, geo.precanvasRect, geo.zoom)
+  }
+
+  function addPaletteNode(kind, pos) {
     if (!state.draft) return
+    const x = pos && pos.x != null ? pos.x : pos && pos.pos_x
+    const y = pos && pos.y != null ? pos.y : pos && pos.pos_y
+    if (kind === 'action') {
+      const key = generateUniqueNodeKey('action')
+      const newNode = {
+        key,
+        kind: 'action',
+        screen_key: null,
+        action: 'product_list',
+        pos_x: x,
+        pos_y: y,
+        buttons: [],
+        description: 'Open product catalog',
+      }
+      applyCommand((draft) => FlowBuilderCommands.addNode(draft, newNode))
+      renderCanvas()
+      selectNodeByKey(key)
+      setStatus('Added Action node: ' + key, 'ok')
+      return
+    }
     const key = generateUniqueNodeKey('screen')
     const newNode = {
       key,
       kind: 'screen',
       screen_key: key,
       body: 'Halo *{{first_name}}*!',
-      pos_x: 150 + ((state.draft.nodes || []).length * 40) % 400,
-      pos_y: 150 + ((state.draft.nodes || []).length * 40) % 300,
+      pos_x: x,
+      pos_y: y,
       media_url: null,
       media_type: 'photo',
       buttons: [[{ label: 'Menu', go: 'welcome' }]],
@@ -938,23 +975,192 @@
     setStatus('Added Message node: ' + key, 'ok')
   }
 
+  const PALETTE_DRAG_THRESHOLD = 8
+  let palettePointer = null
+  let paletteGhost = null
+  let skipPaletteClick = false
+  let html5DropJustPlaced = false
+  let ignoreCompatibilityMouse = false
+
+  function addMessageNode() {
+    if (skipPaletteClick) return
+    addPaletteNode('message', placementFromViewportCenter())
+  }
+
   function addActionNode() {
-    if (!state.draft) return
-    const key = generateUniqueNodeKey('action')
-    const newNode = {
-      key,
-      kind: 'action',
-      screen_key: null,
-      action: 'product_list',
-      pos_x: 200 + ((state.draft.nodes || []).length * 40) % 400,
-      pos_y: 200 + ((state.draft.nodes || []).length * 40) % 300,
-      buttons: [],
-      description: 'Open product catalog',
+    if (skipPaletteClick) return
+    addPaletteNode('action', placementFromViewportCenter())
+  }
+
+  function dropNodeAtClient(kind, clientX, clientY) {
+    const geo = getCanvasGeometry()
+    if (!geo) {
+      addPaletteNode(kind, placementFromViewportCenter())
+      return
     }
-    applyCommand((draft) => FlowBuilderCommands.addNode(draft, newNode))
-    renderCanvas()
-    selectNodeByKey(key)
-    setStatus('Added Action node: ' + key, 'ok')
+    const pos = FlowBuilderPalette.canvasPositionFromClient(clientX, clientY, geo.precanvasRect, geo.zoom)
+    addPaletteNode(kind, pos)
+  }
+
+  function pointOverCanvas(clientX, clientY) {
+    const canvas = document.getElementById('drawflow')
+    if (!canvas) return false
+    const el = document.elementFromPoint(clientX, clientY)
+    return !!(el && (el === canvas || canvas.contains(el)))
+  }
+
+  function setCanvasDragOver(on) {
+    const canvas = document.getElementById('drawflow')
+    if (!canvas) return
+    canvas.classList.toggle('is-drop-target', on)
+    canvas.classList.toggle('is-drag-over', on)
+  }
+
+  function hidePaletteGhost() {
+    if (paletteGhost && paletteGhost.parentNode) paletteGhost.parentNode.removeChild(paletteGhost)
+    paletteGhost = null
+  }
+
+  function showPaletteGhost(item, clientX, clientY) {
+    if (!paletteGhost) {
+      paletteGhost = item.cloneNode(true)
+      paletteGhost.removeAttribute('id')
+      paletteGhost.classList.add('flow-palette-ghost')
+      paletteGhost.setAttribute('aria-hidden', 'true')
+      document.body.appendChild(paletteGhost)
+    }
+    paletteGhost.style.left = Math.round(clientX - 36) + 'px'
+    paletteGhost.style.top = Math.round(clientY - 28) + 'px'
+  }
+
+  function endPalettePointer(place, clientX, clientY) {
+    const session = palettePointer
+    palettePointer = null
+    FlowBuilderPalette.setActivePaletteKind(null)
+    hidePaletteGhost()
+    setCanvasDragOver(false)
+    document.querySelectorAll('.flow-palette-item.is-dragging').forEach((el) => {
+      el.classList.remove('is-dragging')
+    })
+    if (!session || !session.active) return
+    skipPaletteClick = true
+    setTimeout(function () { skipPaletteClick = false }, 0)
+    if (!place || html5DropJustPlaced) return
+    if (!pointOverCanvas(clientX, clientY)) return
+    dropNodeAtClient(session.kind, clientX, clientY)
+  }
+
+  function startPalettePointer(item, kind, clientX, clientY, pointerId) {
+    if (palettePointer) return
+    if (kind !== 'message' && kind !== 'action') return
+    html5DropJustPlaced = false
+    palettePointer = {
+      item: item,
+      kind: kind,
+      pointerId: pointerId,
+      startX: clientX,
+      startY: clientY,
+      active: false,
+    }
+  }
+
+  function movePalettePointer(clientX, clientY) {
+    if (!palettePointer) return
+    const dx = clientX - palettePointer.startX
+    const dy = clientY - palettePointer.startY
+    if (!palettePointer.active) {
+      if ((dx * dx + dy * dy) < PALETTE_DRAG_THRESHOLD * PALETTE_DRAG_THRESHOLD) return
+      palettePointer.active = true
+      if (palettePointer.item) palettePointer.item.classList.add('is-dragging')
+      FlowBuilderPalette.setActivePaletteKind(palettePointer.kind)
+    }
+    showPaletteGhost(palettePointer.item, clientX, clientY)
+    setCanvasDragOver(pointOverCanvas(clientX, clientY))
+  }
+
+  function bindPaletteDrag() {
+    document.querySelectorAll('.flow-palette-item').forEach((item) => {
+      item.addEventListener('mousedown', function (ev) {
+        if (ignoreCompatibilityMouse) return
+        if (ev.button !== 0) return
+        startPalettePointer(item, item.getAttribute('data-kind'), ev.clientX, ev.clientY, 'mouse')
+      })
+      item.addEventListener('pointerdown', function (ev) {
+        if (ev.pointerType === 'mouse') {
+          ignoreCompatibilityMouse = false
+          return
+        }
+        if (ev.button != null && ev.button !== 0) return
+        ignoreCompatibilityMouse = true
+        startPalettePointer(item, item.getAttribute('data-kind'), ev.clientX, ev.clientY, ev.pointerId)
+        try { item.setPointerCapture(ev.pointerId) } catch (err) { /* ignore */ }
+      })
+      item.addEventListener('dragstart', function (ev) {
+        const kind = item.getAttribute('data-kind')
+        FlowBuilderPalette.setPaletteDragData(ev.dataTransfer, kind)
+        // Keep the mouse/pointer gesture; native HTML5 drag swallows mouseup
+        // in automation and some browsers, so we cancel it and place on mouseup.
+        ev.preventDefault()
+      })
+    })
+
+    document.addEventListener('mousemove', function (ev) {
+      if (!palettePointer || palettePointer.pointerId !== 'mouse') return
+      if (palettePointer.active) ev.preventDefault()
+      movePalettePointer(ev.clientX, ev.clientY)
+    })
+    document.addEventListener('mouseup', function (ev) {
+      if (!palettePointer || palettePointer.pointerId !== 'mouse') return
+      endPalettePointer(true, ev.clientX, ev.clientY)
+    })
+    document.addEventListener('pointermove', function (ev) {
+      if (!palettePointer || palettePointer.pointerId === 'mouse') return
+      if (palettePointer.pointerId !== ev.pointerId) return
+      ev.preventDefault()
+      movePalettePointer(ev.clientX, ev.clientY)
+    })
+    document.addEventListener('pointerup', function (ev) {
+      if (!palettePointer || palettePointer.pointerId === 'mouse') return
+      if (palettePointer.pointerId !== ev.pointerId) return
+      endPalettePointer(true, ev.clientX, ev.clientY)
+    })
+    document.addEventListener('pointercancel', function (ev) {
+      if (!palettePointer || palettePointer.pointerId === 'mouse') return
+      if (palettePointer.pointerId !== ev.pointerId) return
+      endPalettePointer(false, ev.clientX, ev.clientY)
+    })
+
+    const canvas = document.getElementById('drawflow')
+    if (!canvas) return
+
+    canvas.addEventListener('dragover', function (ev) {
+      const fromPalette = FlowBuilderPalette.allowsPaletteDrop(ev.dataTransfer) ||
+        !!FlowBuilderPalette.getActivePaletteKind()
+      if (!fromPalette) return
+      ev.preventDefault()
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy'
+      canvas.classList.add('is-drag-over')
+    })
+
+    canvas.addEventListener('dragleave', function (ev) {
+      if (!canvas.contains(ev.relatedTarget)) canvas.classList.remove('is-drag-over')
+    })
+
+    canvas.addEventListener('drop', function (ev) {
+      ev.preventDefault()
+      canvas.classList.remove('is-drag-over', 'is-drop-target')
+      const resolved = FlowBuilderPalette.resolvePaletteDrop(ev, getCanvasGeometry())
+      FlowBuilderPalette.setActivePaletteKind(null)
+      hidePaletteGhost()
+      if (!resolved) return
+      html5DropJustPlaced = true
+      skipPaletteClick = true
+      setTimeout(function () {
+        skipPaletteClick = false
+        html5DropJustPlaced = false
+      }, 0)
+      addPaletteNode(resolved.kind, { x: resolved.pos_x, y: resolved.pos_y })
+    })
   }
 
   let globalStringsCache = {}
@@ -1126,6 +1332,7 @@
     if (btnAddMsg) btnAddMsg.addEventListener('click', addMessageNode)
     const btnAddAct = document.getElementById('btnAddActionNode')
     if (btnAddAct) btnAddAct.addEventListener('click', addActionNode)
+    bindPaletteDrag()
 
     const btnZoomIn = document.getElementById('btnZoomIn')
     if (btnZoomIn) btnZoomIn.addEventListener('click', function () { if (editor) editor.zoom_in() })
@@ -1190,7 +1397,7 @@
     updateHistoryButtons()
 
     if (!state.draft.nodes.length) {
-      setStatus('No flow nodes configured — click Message or Action in the palette to start', 'ok')
+      setStatus('No flow nodes configured — drag Message or Action onto the canvas, or click to add', 'ok')
       renderEntryKeySelect()
       renderPanel()
       return

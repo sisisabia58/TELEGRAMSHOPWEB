@@ -46,7 +46,8 @@ test('Bot Flow page renders the Phase 14 PR3 layout shell (M2)', async () => {
   assert.match(html, /class="[^"]*\bflow-palette\b/)
   assert.match(html, /id="btnAddMessageNode"/)
   assert.match(html, /id="btnAddActionNode"/)
-  assert.equal(html.includes('draggable="true"'), false, 'PR4 drag-from-palette is out of scope')
+  assert.match(html, /id="btnAddMessageNode"[^>]*draggable="true"/)
+  assert.match(html, /id="btnAddActionNode"[^>]*draggable="true"/)
 
   assert.match(html, /id="drawflow"/)
   assert.match(html, /class="[^"]*\bflow-canvas\b/)

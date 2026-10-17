@@ -262,14 +262,34 @@
   border: 1px solid var(--sp-border);
   border-radius: 10px;
   background: #fff;
-  cursor: pointer;
+  cursor: grab;
   color: var(--sp-text);
   font-family: inherit;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 
 .flow-palette-item:hover {
   border-color: var(--sp-wire);
   box-shadow: 0 0 0 3px rgba(74, 163, 255, 0.12);
+}
+
+.flow-palette-item:active {
+  cursor: grabbing;
+}
+
+.flow-palette-item.is-dragging {
+  opacity: 0.45;
+}
+
+.flow-palette-ghost {
+  position: fixed;
+  z-index: 80;
+  width: 72px;
+  pointer-events: none;
+  opacity: 0.92;
+  box-shadow: 0 0 0 3px rgba(74, 163, 255, 0.18);
 }
 
 .flow-palette-swatch {
@@ -304,11 +324,21 @@
 .flow-canvas {
   width: 100%;
   height: 100%;
+  position: relative;
   background:
     radial-gradient(circle at 1px 1px, #c5ced8 1.15px, transparent 0) 0 0 / 22px 22px,
     var(--sp-bg);
-  position: relative;
   overflow: hidden;
+}
+
+.flow-canvas.is-drag-over::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(74, 163, 255, 0.08);
+  box-shadow: inset 0 0 0 2px var(--sp-wire);
+  z-index: 4;
 }
 
 .flow-canvas-controls {
