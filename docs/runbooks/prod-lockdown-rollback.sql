@@ -1,11 +1,12 @@
 -- ROLLBACK for 20261017140126_prod_lockdown_rls.sql
 -- Restores the production state observed 2026-10-17 (read-only check),
--- except Supplier* table grants stay locked (see below):
+-- except two earlier locks stay in place (see below):
 --   * "Allow all for service role" on the 22 tables attached to PUBLIC
 --   * GRANT ALL on public tables/sequences/functions to anon, authenticated
 --     except Supplier / SupplierProduct / SupplierOrder
---   * EXECUTE on publish_bot_flow_graph for anon, authenticated, service_role
---     (PUBLIC stays revoked, matching 20260818000001)
+--   * publish_bot_flow_graph stays EXECUTE for service_role only.
+--     PUBLIC, anon, and authenticated stay revoked (20261017145821 and
+--     this lockdown). The blanket function GRANT would reopen /rpc.
 --   * PUBLIC EXECUTE on update_updated_at_column restored (the forward
 --     migration revoked PUBLIC from every existing public function)
 --   * update_updated_at_column search_path reset to the prior unset state
@@ -17,14 +18,16 @@
 -- does not apply to TRUNCATE, so those grants are revoked again immediately
 -- (same as 20261016000000). Column REVOKE on Supplier.api_key is restored too.
 --
+-- Does NOT restore anon/authenticated EXECUTE on publish_bot_flow_graph.
+-- GRANT ALL ON ALL FUNCTIONS would reopen PostgREST
+-- /rpc/publish_bot_flow_graph for the anon key, so EXECUTE is revoked
+-- again immediately (same as 20261017145821).
+--
 -- READ/WRITE. Apply only if the lockdown must be undone. Not applied by CI.
 
 BEGIN;
 
 SET search_path TO public, extensions;
-
-GRANT EXECUTE ON FUNCTION public.publish_bot_flow_graph(uuid, jsonb, text, text[], jsonb, jsonb, jsonb)
-  TO anon, authenticated, service_role;
 
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
 -- Keep the earlier Supplier* lockdown (20261016000000). GRANT ALL includes
@@ -37,10 +40,17 @@ GRANT ALL ON TABLE "Supplier", "SupplierProduct", "SupplierOrder" TO service_rol
 
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
+-- Keep publish_bot_flow_graph locked to service_role (20261017145821).
+-- GRANT ALL ON ALL FUNCTIONS above restores EXECUTE for anon and
+-- authenticated and would reopen /rpc/publish_bot_flow_graph. Revoke
+-- those roles (and PUBLIC) again; service_role keeps EXECUTE.
+REVOKE EXECUTE ON FUNCTION public.publish_bot_flow_graph(uuid, jsonb, text, text[], jsonb, jsonb, jsonb)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.publish_bot_flow_graph(uuid, jsonb, text, text[], jsonb, jsonb, jsonb)
+  TO service_role;
 -- Named-role GRANT does not restore PUBLIC. The forward migration revoked
 -- PUBLIC EXECUTE from every existing public function; restore it on the
--- trigger function only. publish_bot_flow_graph stays without PUBLIC
--- (20260818000001).
+-- trigger function only.
 GRANT EXECUTE ON FUNCTION public.update_updated_at_column() TO PUBLIC;
 
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public

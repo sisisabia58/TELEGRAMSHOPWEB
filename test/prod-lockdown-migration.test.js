@@ -266,7 +266,44 @@ test('prod lockdown rollback restores PUBLIC EXECUTE on update_updated_at_column
   assert.doesNotMatch(
     rollback,
     new RegExp(`GRANT\\s+EXECUTE\\s+ON\\s+FUNCTION\\s+${RPC_SIG}\\s+TO\\s+PUBLIC\\s*;`, 'i'),
-    'publish_bot_flow_graph PUBLIC EXECUTE stays revoked (20260818000001)'
+    'publish_bot_flow_graph PUBLIC EXECUTE stays revoked'
+  )
+})
+
+test('prod lockdown rollback keeps publish_bot_flow_graph service_role only after GRANT ALL FUNCTIONS', () => {
+  const rollback = fs.readFileSync(ROLLBACK, 'utf8')
+  const grantAllFn = /GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon,\s*authenticated,\s*service_role\s*;/i
+  const grantIdx = rollback.search(grantAllFn)
+  assert.ok(grantIdx >= 0, 'rollback must GRANT ALL ON ALL FUNCTIONS')
+
+  const revoke = new RegExp(
+    `REVOKE\\s+EXECUTE\\s+ON\\s+FUNCTION\\s+${RPC_SIG}\\s+FROM\\s+PUBLIC,\\s*anon,\\s*authenticated\\s*;`,
+    'i'
+  )
+  assert.match(rollback, revoke)
+  const revokeIdx = rollback.search(revoke)
+  assert.ok(
+    revokeIdx > grantIdx,
+    'publish_bot_flow_graph REVOKE must follow GRANT ALL ON ALL FUNCTIONS so anon EXECUTE is not left granted'
+  )
+
+  const serviceGrant = new RegExp(
+    `GRANT\\s+EXECUTE\\s+ON\\s+FUNCTION\\s+${RPC_SIG}\\s+TO\\s+service_role\\s*;`,
+    'i'
+  )
+  assert.match(rollback, serviceGrant)
+  assert.ok(
+    rollback.search(serviceGrant) > revokeIdx,
+    'service_role GRANT must follow the client-role REVOKE'
+  )
+
+  assert.doesNotMatch(
+    rollback,
+    new RegExp(
+      `GRANT\\s+(?:ALL|EXECUTE)\\s+ON\\s+FUNCTION\\s+${RPC_SIG}\\s+TO\\s+[^;]*\\b(?:anon|authenticated|PUBLIC)\\b`,
+      'i'
+    ),
+    'rollback must not grant publish_bot_flow_graph to anon, authenticated, or PUBLIC'
   )
 })
 
