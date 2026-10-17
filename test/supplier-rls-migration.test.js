@@ -31,11 +31,21 @@ test('migrasi lanjutan mengunci RLS Supplier* ke service_role', () => {
   }
 })
 
-test('kolom api_key tidak bisa di-SELECT oleh anon/authenticated', () => {
+test('REVOKE SELECT(api_key) bukan pagar tahan lama; kebijakan RLS TO service_role yang melindungi', () => {
   const sql = sqlSetelahBaseline()
   assert.match(
     sql,
+    /CREATE POLICY[\s\S]*ON "Supplier"[\s\S]*TO service_role/i,
+    'perlindungan yang tahan GRANT SELECT ON TABLE adalah kebijakan RLS TO service_role, bukan REVOKE kolom'
+  )
+  assert.match(
+    sql,
+    /column-level REVOKE does NOT override a table-level GRANT SELECT/i,
+    'komentar migrasi harus menyatakan REVOKE kolom tidak mengalahkan GRANT SELECT tingkat tabel'
+  )
+  assert.match(
+    sql,
     /REVOKE\s+SELECT\s*\(\s*api_key\s*\)\s+ON TABLE "Supplier" FROM[\s\S]*(anon|authenticated|PUBLIC)/i,
-    'SELECT(api_key) harus di-REVOKE dari peran klien'
+    'pernyataan REVOKE kolom tetap ada sebagai lapisan tambahan, bukan jaminan tahan lama'
   )
 })
