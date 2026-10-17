@@ -1,0 +1,196 @@
+-- Prod lockdown — revoke Data API access from anon/authenticated.
+--
+-- Read-only prod check 2026-10-17 (teleshop-improvement-v2):
+--   * 22 tables still have policy "Allow all for service role" attached to PUBLIC.
+--   * Supplier / SupplierProduct / SupplierOrder are already TO service_role.
+--   * anon/authenticated have GRANT ALL (including TRUNCATE) on every public table
+--     and EXECUTE on publish_bot_flow_graph.
+--   * 24h of edge logs: every app request used JWT role=service_role. No anon
+--     or authenticated traffic. Restricting these grants/policies should not
+--     break the bot or dashboard.
+--
+-- PR #43 (20261017000000_lock_publish_bot_flow_graph.sql) has the same
+-- REVOKE/GRANT EXECUTE on publish_bot_flow_graph. Both files are idempotent
+-- so they can be applied in either order.
+--
+-- Do not apply from this PR automatically. Migration file only.
+
+BEGIN;
+
+SET search_path TO public, extensions;
+
+-- ---------------------------------------------------------------------------
+-- 1. publish_bot_flow_graph: service_role only (same statements as PR #43)
+-- ---------------------------------------------------------------------------
+REVOKE EXECUTE ON FUNCTION public.publish_bot_flow_graph(uuid, jsonb, text, text[], jsonb, jsonb, jsonb)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.publish_bot_flow_graph(uuid, jsonb, text, text[], jsonb, jsonb, jsonb)
+  TO service_role;
+
+-- ---------------------------------------------------------------------------
+-- 2. Table / sequence / function privileges
+-- ---------------------------------------------------------------------------
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
+-- Postgres grants EXECUTE to PUBLIC by default. Revoking only anon/authenticated
+-- would leave PUBLIC EXECUTE, so those roles could still call functions.
+-- Safe as a blanket public-schema revoke: the only functions this repo creates
+-- in public are update_updated_at_column (trigger; runs as table-owner context,
+-- EXECUTE is not re-checked when the trigger fires) and publish_bot_flow_graph
+-- (already REVOKE FROM PUBLIC above). The app uses the service_role key only.
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC, anon, authenticated;
+
+GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
+GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO service_role;
+
+-- Future objects: stop auto-granting to client roles.
+-- Hosted Supabase creates objects as postgres and (often) supabase_admin.
+-- The local CLI image has postgres but not supabase_admin; skip that role there.
+-- ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin requires membership (or
+-- superuser). Skip when current_user is not a member, even if the role exists.
+--
+-- Tables/sequences: hosted grants to anon/authenticated are per-schema, so
+-- IN SCHEMA public REVOKE works for those roles.
+--
+-- Functions: PostgreSQL's built-in default is GLOBAL PUBLIC EXECUTE
+-- (acldefault). Per-schema default privileges are only additive, so
+-- `ALTER DEFAULT PRIVILEGES ... IN SCHEMA public REVOKE ... FROM PUBLIC`
+-- cannot remove that global default and is a no-op unless it undoes a
+-- matching per-schema GRANT (PostgreSQL docs, ALTER DEFAULT PRIVILEGES).
+-- Keep the per-schema revoke for anon/authenticated, and revoke PUBLIC
+-- EXECUTE globally for the roles that create functions.
+--
+-- Scope of the global revoke: future functions created by postgres (and
+-- by supabase_admin when the guarded block runs) in ANY schema. Existing
+-- functions keep their ACLs; public-schema ones are already revoked above.
+--
+-- Extension impact: CREATE EXTENSION / extension upgrades that run as
+-- postgres or supabase_admin after this will not auto-grant PUBLIC EXECUTE
+-- on newly created functions. Existing extension functions are unchanged.
+-- Per-schema GRANTs that Supabase already sets (typical on `extensions`,
+-- and sometimes storage/graphql) still ADD EXECUTE for
+-- anon/authenticated/service_role on those schemas. If a later extension
+-- in a schema without those grants needs PUBLIC EXECUTE, GRANT it
+-- explicitly. This app uses the service_role key only; a later SECURITY
+-- DEFINER function in public must not be callable via /rpc with the anon key.
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  REVOKE ALL ON TABLES FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  REVOKE ALL ON SEQUENCES FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  REVOKE ALL ON FUNCTIONS FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres
+  REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin') THEN
+    IF pg_has_role(current_user, 'supabase_admin', 'MEMBER') THEN
+      EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated';
+      EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated';
+      EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon, authenticated';
+      EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC';
+    END IF;
+  END IF;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- 3. RLS policies: 22 tables that were attached to PUBLIC.
+--    Supplier* already TO service_role — left unchanged.
+--    RLS stays enabled (already ON; this does not disable it).
+-- ---------------------------------------------------------------------------
+DROP POLICY IF EXISTS "Allow all for service role" ON "User";
+CREATE POLICY "Allow all for service role" ON "User"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "Trx";
+CREATE POLICY "Allow all for service role" ON "Trx"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "Admin";
+CREATE POLICY "Allow all for service role" ON "Admin"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "Deposit";
+CREATE POLICY "Allow all for service role" ON "Deposit"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "Voucher";
+CREATE POLICY "Allow all for service role" ON "Voucher"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "BotFlow";
+CREATE POLICY "Allow all for service role" ON "BotFlow"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "BotFlowNode";
+CREATE POLICY "Allow all for service role" ON "BotFlowNode"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "BotCopy";
+CREATE POLICY "Allow all for service role" ON "BotCopy"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "NotificationSettings";
+CREATE POLICY "Allow all for service role" ON "NotificationSettings"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "AuditLog";
+CREATE POLICY "Allow all for service role" ON "AuditLog"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "BotSession";
+CREATE POLICY "Allow all for service role" ON "BotSession"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "HargaTier";
+CREATE POLICY "Allow all for service role" ON "HargaTier"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "LoginHistory";
+CREATE POLICY "Allow all for service role" ON "LoginHistory"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "MessageHistory";
+CREATE POLICY "Allow all for service role" ON "MessageHistory"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "MessageTemplate";
+CREATE POLICY "Allow all for service role" ON "MessageTemplate"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "NotificationLog";
+CREATE POLICY "Allow all for service role" ON "NotificationLog"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "Payment";
+CREATE POLICY "Allow all for service role" ON "Payment"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "Premium";
+CREATE POLICY "Allow all for service role" ON "Premium"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "ProductStockThreshold";
+CREATE POLICY "Allow all for service role" ON "ProductStockThreshold"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "Produk";
+CREATE POLICY "Allow all for service role" ON "Produk"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "Stok";
+CREATE POLICY "Allow all for service role" ON "Stok"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all for service role" ON "Varian";
+CREATE POLICY "Allow all for service role" ON "Varian"
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- ---------------------------------------------------------------------------
+-- 4. Trigger function search_path (advisor function_search_path_mutable)
+-- ---------------------------------------------------------------------------
+ALTER FUNCTION public.update_updated_at_column() SET search_path = public;
+
+COMMIT;

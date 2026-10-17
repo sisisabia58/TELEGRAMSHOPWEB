@@ -6478,6 +6478,12 @@ app.post('/api/settings/supabase/test', isAuthenticated, async (req, res) => {
   }
 })
 
+// Admin-only: whether the process SUPABASE_KEY JWT role is service_role.
+// Boolean only — never returns the key.
+app.get('/api/diagnostics/supabase-key', isAuthenticated, requireRole('admin'), (req, res) => {
+  res.json({ supabaseKeyIsServiceRole: supabase.supabaseKeyIsServiceRole === true })
+})
+
 // ============================================
 // BULK OPERATIONS - FILE UPLOAD
 // ============================================
