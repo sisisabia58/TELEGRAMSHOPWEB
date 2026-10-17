@@ -57,6 +57,29 @@ test('isAllowedInlineUrl accepts http(s) and tg://, rejects tg: without slashes'
   assert.equal(isAllowedInlineUrl(''), false)
 })
 
+test('isAllowedInlineUrl rejects C0 controls and DEL left in the trimmed value', () => {
+  const { isAllowedInlineUrl } = muat()
+  const newlineUrl = 'https://exa\nmple.com'
+  assert.equal(new URL(newlineUrl).href, 'https://example.com/')
+  assert.equal(isAllowedInlineUrl(newlineUrl), false)
+  assert.equal(isAllowedInlineUrl('https://exa\tmple.com'), false)
+  assert.equal(isAllowedInlineUrl('https://exa\rmple.com'), false)
+  assert.equal(isAllowedInlineUrl('https://example.com/\x00path'), false)
+  assert.equal(isAllowedInlineUrl('https://example.com/\x01path'), false)
+  assert.equal(isAllowedInlineUrl('https://example.com/\x7fpath'), false)
+  assert.equal(isAllowedInlineUrl(' \nhttps://t.me/cs\t '), true)
+})
+
+test('sanitizeInlineKeyboard drops urls whose controls survive trim', () => {
+  const { sanitizeInlineKeyboard } = muat()
+  const out = sanitizeInlineKeyboard([
+    [{ text: 'Bad', url: 'https://exa\nmple.com' }],
+    [{ text: 'Del', url: 'https://example.com/\x7fpath' }],
+    [{ text: 'Ok', url: ' \nhttps://t.me/cs\t ' }],
+  ])
+  assert.deepEqual(out, [[{ text: 'Ok', url: 'https://t.me/cs' }]])
+})
+
 test('sanitizeInlineKeyboard skips tg: urls that lack the // prefix', () => {
   const { sanitizeInlineKeyboard } = muat()
   const out = sanitizeInlineKeyboard([
