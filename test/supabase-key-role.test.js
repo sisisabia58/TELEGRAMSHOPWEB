@@ -3,6 +3,7 @@ const assert = require('node:assert')
 const fs = require('node:fs')
 const path = require('node:path')
 const {
+  decodeJwtPayload,
   inspectSupabaseKeyRole,
   warnIfNotServiceRole,
   getSupabaseKeyDiagnostics,
@@ -18,15 +19,38 @@ test('inspectSupabaseKeyRole accepts a service_role JWT', () => {
   const info = inspectSupabaseKeyRole(jwtForRole('service_role'))
   assert.equal(info.role, 'service_role')
   assert.equal(info.isServiceRole, true)
+  assert.equal(info.isServiceRoleFormat, true)
 })
 
 test('inspectSupabaseKeyRole rejects anon JWT and non-JWT keys', () => {
   assert.equal(inspectSupabaseKeyRole(jwtForRole('anon')).isServiceRole, false)
+  assert.equal(inspectSupabaseKeyRole(jwtForRole('anon')).isServiceRoleFormat, false)
   assert.equal(inspectSupabaseKeyRole(jwtForRole('anon')).role, 'anon')
   assert.equal(inspectSupabaseKeyRole('sb_publishable_not-a-jwt').isServiceRole, false)
+  assert.equal(inspectSupabaseKeyRole('sb_publishable_not-a-jwt').isServiceRoleFormat, false)
   assert.equal(inspectSupabaseKeyRole('dummy').isServiceRole, false)
   assert.equal(inspectSupabaseKeyRole('').isServiceRole, false)
   assert.equal(inspectSupabaseKeyRole(null).isServiceRole, false)
+})
+
+test('inspectSupabaseKeyRole treats sb_secret_ as service-role format, not JWT validity', () => {
+  const info = inspectSupabaseKeyRole('sb_secret_not-a-jwt')
+  assert.equal(info.role, null)
+  assert.equal(info.isServiceRole, false)
+  assert.equal(info.isServiceRoleFormat, true)
+  assert.equal(decodeJwtPayload('sb_secret_not-a-jwt'), null)
+  assert.equal(getSupabaseKeyDiagnostics('sb_secret_not-a-jwt').supabaseKeyIsServiceRole, false)
+})
+
+test('decodeJwtPayload requires exactly three segments and a non-empty payload', () => {
+  const valid = jwtForRole('service_role')
+  const [header, payload] = valid.split('.')
+  assert.ok(decodeJwtPayload(valid))
+  assert.equal(decodeJwtPayload(`${header}.${payload}`), null)
+  assert.equal(decodeJwtPayload(`${valid}.extra`), null)
+  assert.equal(decodeJwtPayload(`${header}..sig`), null)
+  assert.equal(inspectSupabaseKeyRole(`${header}.${payload}`).role, null)
+  assert.equal(inspectSupabaseKeyRole(`${valid}.extra`).isServiceRole, false)
 })
 
 test('warnIfNotServiceRole logs a loud warning without the key (fail open)', () => {
@@ -49,6 +73,16 @@ test('warnIfNotServiceRole is silent for service_role', () => {
   const log = { warn: (msg) => lines.push(String(msg)) }
   const info = warnIfNotServiceRole(jwtForRole('service_role'), log)
   assert.equal(info.isServiceRole, true)
+  assert.equal(info.isServiceRoleFormat, true)
+  assert.deepEqual(lines, [])
+})
+
+test('warnIfNotServiceRole is silent for sb_secret_ format', () => {
+  const lines = []
+  const log = { warn: (msg) => lines.push(String(msg)) }
+  const info = warnIfNotServiceRole('sb_secret_not-a-jwt', log)
+  assert.equal(info.isServiceRoleFormat, true)
+  assert.equal(info.isServiceRole, false)
   assert.deepEqual(lines, [])
 })
 
