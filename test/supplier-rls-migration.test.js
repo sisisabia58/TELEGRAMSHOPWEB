@@ -50,10 +50,14 @@ CREATE POLICY "Allow all for service role" ON "SupplierProduct"
     /CREATE POLICY[^;]*ON "Supplier"[^;]*TO service_role\b[^;]*;/i,
     'TO service_role pada pernyataan SupplierProduct berikutnya tidak boleh memenuhi asersi Supplier'
   )
+  const runbook = fs.readFileSync(
+    path.join(__dirname, '..', 'docs', 'runbooks', 'phase13-supplier-sourcing.md'),
+    'utf8'
+  )
   assert.match(
-    sql,
+    runbook,
     /column-level REVOKE does NOT override a table-level GRANT SELECT/i,
-    'komentar migrasi harus menyatakan REVOKE kolom tidak mengalahkan GRANT SELECT tingkat tabel'
+    'dokumentasi runbook harus menyatakan REVOKE kolom tidak mengalahkan GRANT SELECT tingkat tabel'
   )
   assert.match(
     sql,
