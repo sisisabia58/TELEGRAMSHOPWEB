@@ -25,6 +25,14 @@ test('publish RPC validation migration replaces the function without touching gr
   assert.match(body, /SET search_path TO public/)
   assert.match(body, /node upsert missing key/)
   assert.match(body, /pos_x must be numeric/)
+  assert.match(
+    body,
+    /COALESCE\(NULLIF\(btrim\(n->>'pos_x'\), ''\)::double precision, 0\)/
+  )
+  assert.match(
+    body,
+    /COALESCE\(NULLIF\(btrim\(n->>'pos_y'\), ''\)::double precision, 0\)/
+  )
   assert.match(body, /copy insert missing key/)
   assert.doesNotMatch(body, /GRANT\s+EXECUTE/i)
   assert.doesNotMatch(body, /REVOKE\s+ALL\s+ON FUNCTION/i)

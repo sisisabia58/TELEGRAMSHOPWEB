@@ -110,8 +110,8 @@ BEGIN
     n->>'action',
     COALESCE(n->>'description', ''),
     COALESCE(n->'buttons', '[]'::jsonb),
-    COALESCE(NULLIF(n->>'pos_x', '')::double precision, 0),
-    COALESCE(NULLIF(n->>'pos_y', '')::double precision, 0),
+    COALESCE(NULLIF(btrim(n->>'pos_x'), '')::double precision, 0),
+    COALESCE(NULLIF(btrim(n->>'pos_y'), '')::double precision, 0),
     NULLIF(n->>'media_url', ''),
     COALESCE(NULLIF(n->>'media_type', ''), 'photo'),
     NOW()
