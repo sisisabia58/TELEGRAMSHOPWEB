@@ -6448,15 +6448,6 @@ app.post('/api/settings/supabase/test', isAuthenticated, async (req, res) => {
   }
 })
 
-// Scheduled task: Check alerts setiap 5 menit
-const cron = require('node-cron')
-cron.schedule('*/5 * * * *', async () => {
-  await Promise.all([
-    checkDepositPending(),
-    checkLowStockAlerts()
-  ])
-})
-
 // ============================================
 // BULK OPERATIONS - FILE UPLOAD
 // ============================================
@@ -7755,11 +7746,24 @@ app.post('/api/settings/reseller/kurs', isAuthenticated, async (req, res) => {
   }
 })
 
-// Start server
-const PORT = process.env.PORT || 3000
-app.listen(PORT, () => {
-  console.log(`📊 Dashboard berjalan di http://localhost:${PORT}`)
-  console.log(`🔔 Real-time notifications enabled`)
-  console.log(`⚡ Bulk operations enabled`)
-})
+module.exports = app
+
+// `node dashboard.js` / `npm run dashboard` is the process entry. Tests import
+// `app` and must not bind a port or start the alert cron.
+if (require.main === module) {
+  const cron = require('node-cron')
+  cron.schedule('*/5 * * * *', async () => {
+    await Promise.all([
+      checkDepositPending(),
+      checkLowStockAlerts()
+    ])
+  })
+
+  const PORT = process.env.PORT || 3000
+  app.listen(PORT, () => {
+    console.log(`📊 Dashboard berjalan di http://localhost:${PORT}`)
+    console.log(`🔔 Real-time notifications enabled`)
+    console.log(`⚡ Bulk operations enabled`)
+  })
+}
 
