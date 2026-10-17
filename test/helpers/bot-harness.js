@@ -73,10 +73,32 @@ async function waitUntil(fn, timeoutMs, label) {
   throw new Error(`timeout waiting for ${label}`)
 }
 
-async function cleanupFailedStart(botModule, api) {
-  if (botModule && typeof botModule.stopBot === 'function') {
+async function stopHarnessBot(botModule) {
+  if (!botModule) return
+  const bot = botModule.bot
+  const polling = bot && bot._polling
+  // node-telegram-bot-api's stopPolling() is a no-op until the first getUpdates
+  // is in flight. Abort the poller so a request that starts after stop cannot
+  // reschedule itself via setTimeout.
+  if (polling) {
+    polling._abort = true
+    clearTimeout(polling._pollingTimeout)
+  }
+  if (typeof botModule.stopBot === 'function') {
     try { await botModule.stopBot() } catch (_) { /* ignore */ }
   }
+  if (bot && typeof bot.stopPolling === 'function') {
+    try { await bot.stopPolling({ cancel: true }) } catch (_) { /* ignore */ }
+  }
+  if (polling) {
+    polling._abort = true
+    polling._lastRequest = null
+    clearTimeout(polling._pollingTimeout)
+  }
+}
+
+async function cleanupFailedStart(botModule, api) {
+  await stopHarnessBot(botModule)
   try { await api.close() } catch (_) { /* ignore */ }
 }
 
@@ -129,9 +151,7 @@ async function startBotHarness(options = {}) {
       runtimeSettings,
       async stop() {
         try {
-          if (typeof botModule.stopBot === 'function') {
-            await botModule.stopBot()
-          }
+          await stopHarnessBot(botModule)
         } finally {
           await api.close()
           if (activeHarness === harness) activeHarness = null
