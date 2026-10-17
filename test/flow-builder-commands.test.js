@@ -232,6 +232,13 @@ test('shortcutFromEvent maps undo/redo combos and ignores typing', () => {
   assert.equal(shortcutFromEvent({ ctrlKey: true, key: 'z', target: target('INPUT', { type: 'text' }) }), null)
   assert.equal(shortcutFromEvent({ ctrlKey: true, key: 'z', target: target('DIV', { isContentEditable: true }) }), null)
   assert.equal(shortcutFromEvent({ ctrlKey: true, key: 'z', target: target('INPUT', { type: 'checkbox' }) }), 'undo')
+  assert.equal(shortcutFromEvent({ ctrlKey: true, key: 'c', target: target('BODY') }), 'copy')
+  assert.equal(shortcutFromEvent({ metaKey: true, key: 'v', target: target('BODY') }), 'paste')
+  assert.equal(shortcutFromEvent({ ctrlKey: true, key: 'd', target: target('BODY') }), 'duplicate')
+  assert.equal(shortcutFromEvent({ key: 'Delete', target: target('BODY') }), 'delete')
+  assert.equal(shortcutFromEvent({ key: 'Backspace', target: target('BODY') }), 'delete')
+  assert.equal(shortcutFromEvent({ key: 'Backspace', target: target('INPUT', { type: 'text' }) }), null)
+  assert.equal(shortcutFromEvent({ ctrlKey: true, key: 'c', target: target('TEXTAREA') }), null)
 })
 
 test('shouldIgnoreShortcut treats select as a field', () => {

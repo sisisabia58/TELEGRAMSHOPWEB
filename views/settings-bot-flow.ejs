@@ -68,6 +68,11 @@
                 </aside>
                 <div class="flow-canvas-wrap">
                     <div id="drawflow" class="flow-canvas"></div>
+                    <div id="selectionToolbar" class="flow-selection-toolbar" hidden role="toolbar" aria-label="Selected block actions">
+                        <button type="button" id="btnDuplicateNode" title="Duplicate (Ctrl/Cmd+D)">Duplicate</button>
+                        <button type="button" id="btnCopyNode" title="Copy (Ctrl/Cmd+C)">Copy</button>
+                        <button type="button" id="btnToolbarDeleteNode" title="Delete (Delete)">Delete</button>
+                    </div>
                     <div class="flow-canvas-controls" aria-label="Canvas zoom">
                         <button type="button" id="btnZoomIn" title="Zoom In">+</button>
                         <button type="button" id="btnZoomOut" title="Zoom Out">−</button>
@@ -119,6 +124,7 @@
     <script src="/vendor/drawflow/drawflow.min.js"></script>
     <script src="/js/flow-builder/state.js"></script>
     <script src="/js/flow-builder/commands.js"></script>
+    <script src="/js/flow-builder/clipboard.js"></script>
     <script src="/js/flow-builder/palette.js"></script>
     <script src="/js/flow-builder.js"></script>
 </body>

@@ -101,10 +101,17 @@
   function shortcutFromEvent(event) {
     if (!event) return null
     if (shouldIgnoreShortcut(event.target)) return null
-    if (!(event.ctrlKey || event.metaKey)) return null
     const key = String(event.key || '').toLowerCase()
+    const mod = event.ctrlKey || event.metaKey
+    if (!mod) {
+      if (key === 'delete' || key === 'backspace') return 'delete'
+      return null
+    }
     if (key === 'z') return event.shiftKey ? 'redo' : 'undo'
     if (key === 'y') return 'redo'
+    if (key === 'c') return 'copy'
+    if (key === 'v') return 'paste'
+    if (key === 'd') return 'duplicate'
     return null
   }
 

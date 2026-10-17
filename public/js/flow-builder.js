@@ -1,4 +1,4 @@
-/* global Drawflow, FlowBuilderState, FlowBuilderCommands, FlowBuilderPalette */
+/* global Drawflow, FlowBuilderState, FlowBuilderCommands, FlowBuilderPalette, FlowBuilderClipboard */
 (function () {
   'use strict'
 
@@ -9,6 +9,8 @@
   const goOutputFlatIndices = new Map()
 
   const editorState = FlowBuilderState.createEditorState()
+  const nodeClipboard = FlowBuilderClipboard.createClipboard()
+  let lastCanvasPoint = null
   let historyLockCount = 0
 
   function isHistoryLocked() {
@@ -211,15 +213,103 @@
     return null
   }
 
+  function positionSelectionToolbar() {
+    const toolbar = document.getElementById('selectionToolbar')
+    if (!toolbar) return
+    const key = state.selectedKey
+    const id = key ? keyToId.get(key) : null
+    const nodeEl = id != null ? document.getElementById('node-' + id) : null
+    const wrap = document.querySelector('.flow-canvas-wrap')
+    const deleteBtn = document.getElementById('btnToolbarDeleteNode')
+    if (!key || !nodeEl || !wrap) {
+      toolbar.hidden = true
+      if (deleteBtn) deleteBtn.disabled = true
+      return
+    }
+    toolbar.hidden = false
+    const isStart = effectiveEntryKey() === key
+    if (deleteBtn) {
+      deleteBtn.disabled = isStart
+      deleteBtn.title = isStart ? 'The Start node cannot be deleted' : 'Delete (Delete)'
+    }
+    const pos = FlowBuilderClipboard.toolbarPosition(
+      nodeEl.getBoundingClientRect(),
+      wrap.getBoundingClientRect(),
+      { width: toolbar.offsetWidth, height: toolbar.offsetHeight },
+      { gap: 8 }
+    )
+    toolbar.style.left = pos.left + 'px'
+    toolbar.style.top = pos.top + 'px'
+  }
+
   function selectNodeByKey(key) {
     if (!key || !state.draft) return
     state.selectedKey = key
     renderPanel()
     const id = keyToId.get(key)
-    if (id == null || !editor) return
+    if (id == null || !editor) {
+      positionSelectionToolbar()
+      return
+    }
     document.querySelectorAll('.drawflow-node.selected').forEach((n) => n.classList.remove('selected'))
     const el = document.getElementById('node-' + id)
     if (el) el.classList.add('selected')
+    positionSelectionToolbar()
+  }
+
+  function copySelectedNode() {
+    if (!state.draft || !state.selectedKey) return
+    syncPositionsFromEditor()
+    nodeClipboard.copy(FlowBuilderClipboard.snapshotNodes(state.draft, [state.selectedKey]))
+    setStatus('Copied ' + state.selectedKey, 'ok')
+  }
+
+  function duplicateSelectedNode() {
+    if (!state.draft || !state.selectedKey) return
+    syncPositionsFromEditor()
+    const sourceKey = state.selectedKey
+    const beforeKeys = new Set((state.draft.nodes || []).map((n) => n.key))
+    applyCommand((draft) => FlowBuilderClipboard.duplicateNodes(draft, [sourceKey]))
+    renderCanvas()
+    const created = (state.draft.nodes || []).find((n) => !beforeKeys.has(n.key))
+    if (created) selectNodeByKey(created.key)
+    setStatus('Duplicated ' + sourceKey + (created ? ' → ' + created.key : ''), 'ok')
+  }
+
+  function pasteClipboard() {
+    if (!state.draft) return
+    if (nodeClipboard.isEmpty()) {
+      setStatus('Clipboard is empty', 'err')
+      return
+    }
+    syncPositionsFromEditor()
+    const origin = lastCanvasPoint
+    const beforeKeys = new Set((state.draft.nodes || []).map((n) => n.key))
+    applyCommand((draft) => FlowBuilderClipboard.pasteNodes(
+      draft,
+      nodeClipboard.peek(),
+      origin ? { origin: origin } : {}
+    ))
+    renderCanvas()
+    const created = (state.draft.nodes || []).find((n) => !beforeKeys.has(n.key))
+    if (created) selectNodeByKey(created.key)
+    setStatus('Pasted ' + (created ? created.key : 'node'), 'ok')
+  }
+
+  function requestDeleteSelectedNode() {
+    const nodeKey = state.selectedKey
+    if (!nodeKey) return
+    if (effectiveEntryKey() === nodeKey) {
+      alert(FlowBuilderClipboard.entryDeleteMessage(nodeKey))
+      return
+    }
+    if (!window.confirm('Delete node "' + nodeKey + '"? Connections pointing to this node will be disconnected.')) return
+    applyCommand((draft) => FlowBuilderCommands.deleteNode(draft, nodeKey))
+    state.selectedKey = null
+    renderCanvas()
+    renderPanel()
+    positionSelectionToolbar()
+    setStatus('Deleted node: ' + nodeKey, 'ok')
   }
 
   function renderCanvas() {
@@ -276,6 +366,8 @@
 
     if (keepKey && keyToId.has(keepKey)) {
       selectNodeByKey(keepKey)
+    } else {
+      positionSelectionToolbar()
     }
 
     renderEntryKeySelect()
@@ -566,20 +658,7 @@
 
     const btnDeleteNode = document.getElementById('panelDeleteNode')
     if (btnDeleteNode) {
-      btnDeleteNode.addEventListener('click', function () {
-        const nodeKey = state.selectedKey
-        if (!nodeKey) return
-        if (effectiveEntryKey() === nodeKey) {
-          alert('Cannot delete the entry node ("' + nodeKey + '"). Change the entry node before deleting.')
-          return
-        }
-        if (!window.confirm('Delete node "' + nodeKey + '"? Connections pointing to this node will be disconnected.')) return
-        applyCommand((draft) => FlowBuilderCommands.deleteNode(draft, nodeKey))
-        state.selectedKey = null
-        renderCanvas()
-        renderPanel()
-        setStatus('Deleted node: ' + nodeKey, 'ok')
-      })
+      btnDeleteNode.addEventListener('click', requestDeleteSelectedNode)
     }
   }
 
@@ -682,6 +761,7 @@
       if (key && info) {
         applyCommand((draft) => FlowBuilderCommands.moveNode(draft, key, info.pos_x, info.pos_y))
       }
+      positionSelectionToolbar()
     })
 
     editor.on('connectionCreated', function (info) {
@@ -721,6 +801,19 @@
       const id = resolveNodeId(nodeEl.id.replace(/^node-/, ''))
       const key = id != null ? idToKey.get(id) : null
       if (key) selectNodeByKey(key)
+    })
+    container.addEventListener('mousemove', function (ev) {
+      const geo = getCanvasGeometry()
+      if (!geo) return
+      lastCanvasPoint = FlowBuilderPalette.canvasPositionFromClient(
+        ev.clientX,
+        ev.clientY,
+        geo.precanvasRect,
+        geo.zoom
+      )
+    })
+    container.addEventListener('wheel', function () {
+      requestAnimationFrame(positionSelectionToolbar)
     })
   }
 
@@ -1335,11 +1428,24 @@
     bindPaletteDrag()
 
     const btnZoomIn = document.getElementById('btnZoomIn')
-    if (btnZoomIn) btnZoomIn.addEventListener('click', function () { if (editor) editor.zoom_in() })
+    if (btnZoomIn) btnZoomIn.addEventListener('click', function () { if (editor) editor.zoom_in(); positionSelectionToolbar() })
     const btnZoomOut = document.getElementById('btnZoomOut')
-    if (btnZoomOut) btnZoomOut.addEventListener('click', function () { if (editor) editor.zoom_out() })
+    if (btnZoomOut) btnZoomOut.addEventListener('click', function () { if (editor) editor.zoom_out(); positionSelectionToolbar() })
     const btnFitView = document.getElementById('btnFitView')
-    if (btnFitView) btnFitView.addEventListener('click', function () { if (editor) editor.zoom_reset() })
+    if (btnFitView) btnFitView.addEventListener('click', function () { if (editor) editor.zoom_reset(); positionSelectionToolbar() })
+
+    const selectionToolbar = document.getElementById('selectionToolbar')
+    if (selectionToolbar) {
+      selectionToolbar.addEventListener('mousedown', function (ev) { ev.stopPropagation() })
+      selectionToolbar.addEventListener('click', function (ev) { ev.stopPropagation() })
+    }
+    const btnDuplicateNode = document.getElementById('btnDuplicateNode')
+    if (btnDuplicateNode) btnDuplicateNode.addEventListener('click', duplicateSelectedNode)
+    const btnCopyNode = document.getElementById('btnCopyNode')
+    if (btnCopyNode) btnCopyNode.addEventListener('click', copySelectedNode)
+    const btnToolbarDeleteNode = document.getElementById('btnToolbarDeleteNode')
+    if (btnToolbarDeleteNode) btnToolbarDeleteNode.addEventListener('click', requestDeleteSelectedNode)
+    window.addEventListener('resize', positionSelectionToolbar)
 
     const btnUndo = document.getElementById('btnUndo')
     if (btnUndo) btnUndo.addEventListener('click', undoDraft)
@@ -1416,6 +1522,10 @@
       ev.preventDefault()
       if (action === 'undo') undoDraft()
       else if (action === 'redo') redoDraft()
+      else if (action === 'copy') copySelectedNode()
+      else if (action === 'paste') pasteClipboard()
+      else if (action === 'duplicate') duplicateSelectedNode()
+      else if (action === 'delete') requestDeleteSelectedNode()
     })
   }
 
