@@ -249,11 +249,12 @@ function createFakeTelegram(options = {}) {
     },
     async waitIdle(quietMs = 250, timeoutMs = 5000) {
       const start = Date.now()
-      let lastCount = calls.length
+      let lastCount = this.outgoing().length
       let lastChange = Date.now()
       while (Date.now() - start < timeoutMs) {
-        if (pending.length || calls.length !== lastCount) {
-          lastCount = calls.length
+        const outCount = this.outgoing().length
+        if (pending.length || outCount !== lastCount) {
+          lastCount = outCount
           lastChange = Date.now()
         }
         if (!pending.length && Date.now() - lastChange >= quietMs && lastGetUpdatesAt >= lastPushAt) {
