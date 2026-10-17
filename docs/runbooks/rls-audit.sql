@@ -13,6 +13,13 @@
 --      SELECT/INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER)
 --      is false for every public table, view, matview, foreign table, and
 --      partitioned table (GRANT ALL TABLES covers these relkinds).
+--      has_any_column_privilege for SELECT/INSERT/UPDATE/REFERENCES is also
+--      false. Those are the only column privileges. A later column grant
+--      such as GRANT SELECT (name) ON "Supplier" TO anon does not set
+--      has_table_privilege. A column result is true when that privilege is
+--      held on the whole relation or on any column, so a true table result
+--      makes the matching column result true. Table false and column true
+--      is a column-only grant.
 --   3. has_sequence_privilege(anon|authenticated, oid, USAGE/SELECT/UPDATE)
 --      is false for every public sequence.
 --   4. has_function_privilege(anon|authenticated, publish_bot_flow_graph, EXECUTE)
@@ -40,6 +47,9 @@ ORDER BY tablename, policyname;
 -- 2. anon / authenticated privileges on every public relation covered by
 --    GRANT/REVOKE ALL TABLES: ordinary tables (r), views (v), materialized
 --    views (m), foreign tables (f), partitioned tables (p).
+--    Column checks use has_any_column_privilege (SELECT, INSERT, UPDATE,
+--    REFERENCES only). True means the privilege is on the relation or on
+--    at least one column.
 SELECT
   c.relname AS relation_name,
   c.relkind,
@@ -64,6 +74,14 @@ SELECT
   has_table_privilege('authenticated', c.oid, 'TRUNCATE') AS authenticated_truncate,
   has_table_privilege('authenticated', c.oid, 'REFERENCES') AS authenticated_references,
   has_table_privilege('authenticated', c.oid, 'TRIGGER') AS authenticated_trigger,
+  has_any_column_privilege('anon', c.oid, 'SELECT') AS anon_column_select,
+  has_any_column_privilege('anon', c.oid, 'INSERT') AS anon_column_insert,
+  has_any_column_privilege('anon', c.oid, 'UPDATE') AS anon_column_update,
+  has_any_column_privilege('anon', c.oid, 'REFERENCES') AS anon_column_references,
+  has_any_column_privilege('authenticated', c.oid, 'SELECT') AS authenticated_column_select,
+  has_any_column_privilege('authenticated', c.oid, 'INSERT') AS authenticated_column_insert,
+  has_any_column_privilege('authenticated', c.oid, 'UPDATE') AS authenticated_column_update,
+  has_any_column_privilege('authenticated', c.oid, 'REFERENCES') AS authenticated_column_references,
   c.relrowsecurity AS rls_enabled
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace

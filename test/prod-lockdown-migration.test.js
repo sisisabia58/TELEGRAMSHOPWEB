@@ -300,6 +300,31 @@ test('rls-audit checks REFERENCES and TRIGGER for anon and authenticated', () =>
   }
 })
 
+test('rls-audit checks column privileges for anon and authenticated', () => {
+  const audit = fs.readFileSync(AUDIT, 'utf8')
+  for (const role of ['anon', 'authenticated']) {
+    for (const priv of ['SELECT', 'INSERT', 'UPDATE', 'REFERENCES']) {
+      assert.match(
+        audit,
+        new RegExp(
+          `has_any_column_privilege\\(\\s*'${role}'\\s*,\\s*c\\.oid\\s*,\\s*'${priv}'\\s*\\)`,
+          'i'
+        ),
+        `${role} column ${priv} must be audited`
+      )
+    }
+  }
+  const calls = audit.match(/has_any_column_privilege\([^)]*\)/gi) || []
+  assert.ok(calls.length > 0)
+  for (const call of calls) {
+    assert.doesNotMatch(
+      call,
+      /DELETE|TRUNCATE|TRIGGER/i,
+      'DELETE, TRUNCATE, and TRIGGER are not column privileges'
+    )
+  }
+})
+
 test('rls-audit checks global default function ACL and treats a missing entry as PUBLIC EXECUTE', () => {
   const audit = fs.readFileSync(AUDIT, 'utf8')
   assert.match(audit, /pg_default_acl/i)
