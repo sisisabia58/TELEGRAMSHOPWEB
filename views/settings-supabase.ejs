@@ -197,11 +197,15 @@
                         
                         <div class="setting-item">
                             <label class="setting-label">Supabase API Key (Anon/Public Key)</label>
-                            <div class="setting-description">API Key publik dari Supabase untuk autentikasi. Dapatkan dari Settings > API di dashboard Supabase Anda.</div>
+                            <div class="setting-description">
+                                API Key dari Settings &gt; API di dashboard Supabase.
+                                <% if (settings.keySet) { %>Tersimpan (hanya petunjuk 4 karakter terakhir). Kosongkan atau biarkan nilai tertutup untuk tidak mengubah.<% } else { %>Belum diatur.<% } %>
+                            </div>
                             <div class="api-key-wrapper">
                                 <input type="password" name="key" id="keyInput" class="setting-input" 
                                     value="<%= settings.key || '' %>" 
-                                    placeholder="Masukkan Supabase API Key">
+                                    placeholder="<%= settings.keySet ? 'Biarkan tertutup untuk tidak mengubah' : 'Masukkan Supabase API Key' %>"
+                                    autocomplete="off">
                                 <button type="button" class="api-key-toggle" onclick="toggleApiKey('keyInput', this)" aria-label="Toggle API Key visibility">
                                     👁️
                                 </button>
@@ -210,11 +214,15 @@
                         
                         <div class="setting-item">
                             <label class="setting-label">Supabase Service Role Key (Opsional)</label>
-                            <div class="setting-description">Service Role Key untuk operasi admin tertentu. Hati-hati: key ini memiliki akses penuh ke database!</div>
+                            <div class="setting-description">
+                                Service Role Key untuk operasi admin. Jangan bagikan; browser hanya melihat petunjuk 4 karakter terakhir.
+                                <% if (settings.serviceKeySet) { %>Tersimpan. Kosongkan atau biarkan nilai tertutup untuk tidak mengubah.<% } else { %>Belum diatur.<% } %>
+                            </div>
                             <div class="api-key-wrapper">
                                 <input type="password" name="serviceKey" id="serviceKeyInput" class="setting-input" 
                                     value="<%= settings.serviceKey || '' %>" 
-                                    placeholder="Masukkan Service Role Key (opsional)">
+                                    placeholder="<%= settings.serviceKeySet ? 'Biarkan tertutup untuk tidak mengubah' : 'Masukkan Service Role Key (opsional)' %>"
+                                    autocomplete="off">
                                 <button type="button" class="api-key-toggle" onclick="toggleApiKey('serviceKeyInput', this)" aria-label="Toggle Service Key visibility">
                                     👁️
                                 </button>
