@@ -78,16 +78,14 @@
         continue
       }
 
+      // Escapes apply only outside entities. * / _ consume their interior
+      // below, and code / pre return before this point, so mode is text here.
       if (text[i] === '\\' && i + 1 < n && MARKDOWN_ESCAPABLE.has(text[i + 1])) {
-        if (mode !== 'text') {
-          return fail('Markdown escape is not allowed inside an entity')
-        }
         i += 2
         continue
       }
 
       if (text.startsWith('```', i)) {
-        if (mode !== 'text') return fail('nested Markdown entities are not allowed')
         mode = 'pre'
         entityStart = i + 3
         i += 3
@@ -95,45 +93,27 @@
       }
 
       if (text[i] === '`') {
-        if (mode !== 'text') return fail('nested Markdown entities are not allowed')
         mode = 'code'
         entityStart = i + 1
         i += 1
         continue
       }
 
-      if (text[i] === '*') {
-        if (mode === 'bold') {
-          if (i === entityStart) return fail('empty Markdown bold entity')
-          mode = 'text'
-          entityStart = -1
-          i += 1
-          continue
+      // Legacy parse_mode Markdown does not parse inside * or _. The next
+      // same character closes the entity and everything between is literal,
+      // so *bold _italic_* is one bold entity, not a nested italic.
+      if (text[i] === '*' || text[i] === '_') {
+        const ch = text[i]
+        const close = text.indexOf(ch, i + 1)
+        if (close < 0) return fail('unbalanced Markdown ' + ch + ' entity')
+        if (close === i + 1) {
+          return fail('empty Markdown ' + (ch === '*' ? 'bold' : 'italic') + ' entity')
         }
-        if (mode !== 'text') return fail('nested Markdown entities are not allowed')
-        mode = 'bold'
-        entityStart = i + 1
-        i += 1
-        continue
-      }
-
-      if (text[i] === '_') {
-        if (mode === 'italic') {
-          if (i === entityStart) return fail('empty Markdown italic entity')
-          mode = 'text'
-          entityStart = -1
-          i += 1
-          continue
-        }
-        if (mode !== 'text') return fail('nested Markdown entities are not allowed')
-        mode = 'italic'
-        entityStart = i + 1
-        i += 1
+        i = close + 1
         continue
       }
 
       if (text[i] === '[') {
-        if (mode !== 'text') return fail('nested Markdown entities are not allowed')
         const closeLabel = text.indexOf('](', i + 1)
         if (closeLabel < 0) return fail('unbalanced Markdown link')
         if (closeLabel === i + 1) return fail('empty Markdown link label')
@@ -148,8 +128,6 @@
       i += 1
     }
 
-    if (mode === 'bold') return fail('unbalanced Markdown * entity')
-    if (mode === 'italic') return fail('unbalanced Markdown _ entity')
     if (mode === 'code') return fail('unbalanced Markdown ` entity')
     if (mode === 'pre') return fail('unbalanced Markdown pre entity')
     return { ok: true, reason: null }

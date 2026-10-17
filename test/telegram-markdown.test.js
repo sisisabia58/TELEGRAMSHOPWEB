@@ -9,6 +9,9 @@ test('accepts plain text and balanced Telegram Markdown entities', () => {
   assert.equal(validateTelegramMarkdown('```pre formatted```').ok, true)
   assert.equal(validateTelegramMarkdown('[CS](https://t.me/example)').ok, true)
   assert.equal(validateTelegramMarkdown('price is 2\\*2').ok, true)
+  // Documented close / escape / reopen, because \\ is not an escape inside an entity.
+  assert.equal(validateTelegramMarkdown('*2*\\**2=4*').ok, true)
+  assert.equal(validateTelegramMarkdown('_snake_\\__case_').ok, true)
 })
 
 test('folds {{placeholders}} so names with underscores are not italic delimiters', () => {
@@ -16,15 +19,26 @@ test('folds {{placeholders}} so names with underscores are not italic delimiters
   assert.equal(validateTelegramMarkdown('*{{nama_bot}}*').ok, true)
 })
 
-test('rejects unbalanced and nested Markdown entities', () => {
+test('reads bold and italic interiors literally', () => {
+  assert.equal(validateTelegramMarkdown('*bold _italic_*').ok, true)
+  assert.equal(validateTelegramMarkdown('*Hubungi @cs_toko*').ok, true)
+  assert.equal(validateTelegramMarkdown('_lihat [di sini]_').ok, true)
+})
+
+test('rejects unbalanced Markdown entities and empty delimiters', () => {
   assert.equal(validateTelegramMarkdown('*bold').ok, false)
   assert.match(validateTelegramMarkdown('*bold').reason, /unbalanced Markdown \*/)
   assert.equal(validateTelegramMarkdown('_italic').ok, false)
   assert.equal(validateTelegramMarkdown('`code').ok, false)
   assert.equal(validateTelegramMarkdown('```pre').ok, false)
-  assert.equal(validateTelegramMarkdown('*bold _italic_*').ok, false)
-  assert.match(validateTelegramMarkdown('*bold _italic_*').reason, /nested/)
+  // The first * closes at the next *, so the trailing _ is left open.
+  const crossed = validateTelegramMarkdown('*a _b* c_')
+  assert.equal(crossed.ok, false)
+  assert.match(crossed.reason, /unbalanced Markdown _/)
   assert.equal(validateTelegramMarkdown('**').ok, false)
+  assert.match(validateTelegramMarkdown('**').reason, /empty Markdown bold/)
+  assert.equal(validateTelegramMarkdown('__').ok, false)
+  assert.match(validateTelegramMarkdown('__').reason, /empty Markdown italic/)
 })
 
 test('rejects incomplete or empty Markdown links', () => {
