@@ -77,6 +77,32 @@ test('login rate limiter is not bypassed by spoofed X-Forwarded-For when trust p
   }
 })
 
+test('login rate limiter removes expired records for IPs that do not return', () => {
+  const store = new Map()
+  let nowMs = 1_000
+  const limiter = security.createLoginRateLimiter({
+    max: 5,
+    windowMs: 60_000,
+    store,
+    now: () => nowMs,
+  })
+  const res = {
+    status() { return this },
+    send() { return this },
+  }
+
+  limiter({ ip: '203.0.113.10', path: '/login' }, res, () => {})
+  limiter({ ip: '203.0.113.11', path: '/login' }, res, () => {})
+  assert.equal(store.size, 2)
+
+  nowMs += 60_001
+  limiter({ ip: '203.0.113.12', path: '/login' }, res, () => {})
+  assert.equal(store.size, 1)
+  assert.equal(store.has('203.0.113.12-/login'), true)
+  assert.equal(store.has('203.0.113.10-/login'), false)
+  assert.equal(store.has('203.0.113.11-/login'), false)
+})
+
 test('login rate limiter treats a different trusted client IP as a separate bucket', async () => {
   const app = express()
   security.applyTrustProxy(app)
