@@ -22,7 +22,7 @@ const supplierAdapters = require('./lib/suppliers')
 const ejs = require('ejs')
 const { formatrupiah, formatTanggal } = require('./lib/format')
 const { buildOverviewModel, summarizeStock } = require('./lib/dashboard-overview')
-const { redactSecrets, resolveSecretInput } = require('./lib/secret-mask')
+const { redactSecrets, resolveSecretInput, secretUpdateRow } = require('./lib/secret-mask')
 const { requireRole, requireWriteAccess } = require('./lib/dashboard-auth')
 
 const app = express()
@@ -6226,9 +6226,6 @@ app.post('/api/settings/payment-gateway', isAuthenticated, async (req, res) => {
       saldoEnabled
     } = req.body
 
-    const stored = await getPaymentGatewaySettings()
-    const apiKeyToStore = resolveSecretInput(apiKey, stored.apiKey)
-    
     const updates = []
     
     // Payment gateway enabled
@@ -6237,11 +6234,9 @@ app.post('/api/settings/payment-gateway', isAuthenticated, async (req, res) => {
       setting_value: { value: enabled === 'true' || enabled === true }
     })
     
-    // API Key — blank or masked field keeps the stored value
-    updates.push({
-      setting_key: 'payment_gateway_api_key',
-      setting_value: { value: apiKeyToStore }
-    })
+    // API Key — blank or masked omits the row so the stored secret is unchanged
+    const apiKeyUpdate = secretUpdateRow('payment_gateway_api_key', apiKey)
+    if (apiKeyUpdate) updates.push(apiKeyUpdate)
     
     // Project Slug
     updates.push({
@@ -6339,10 +6334,6 @@ app.post('/api/settings/supabase', isAuthenticated, async (req, res) => {
       retryDelay
     } = req.body
 
-    const stored = await getSupabaseSettings()
-    const keyToStore = resolveSecretInput(key, stored.key)
-    const serviceKeyToStore = resolveSecretInput(serviceKey, stored.serviceKey)
-    
     const updates = []
     
     // Supabase URL
@@ -6351,17 +6342,13 @@ app.post('/api/settings/supabase', isAuthenticated, async (req, res) => {
       setting_value: { value: url || '' }
     })
     
-    // Supabase Key — blank or masked field keeps the stored value
-    updates.push({
-      setting_key: 'supabase_key',
-      setting_value: { value: keyToStore }
-    })
+    // Supabase Key — blank or masked omits the row so the stored secret is unchanged
+    const keyUpdate = secretUpdateRow('supabase_key', key)
+    if (keyUpdate) updates.push(keyUpdate)
     
-    // Supabase Service Key (opsional) — blank or masked keeps stored
-    updates.push({
-      setting_key: 'supabase_service_key',
-      setting_value: { value: serviceKeyToStore }
-    })
+    // Supabase Service Key (opsional) — blank or masked omits the row
+    const serviceKeyUpdate = secretUpdateRow('supabase_service_key', serviceKey)
+    if (serviceKeyUpdate) updates.push(serviceKeyUpdate)
     
     // Supabase Enabled
     updates.push({

@@ -84,12 +84,32 @@ test('payment gateway and supabase settings HTML never contain the raw secrets',
   assert.match(supabaseHtml, /wxyz/)
 })
 
+function sliceRoute(src, routeLiteral) {
+  const start = src.indexOf(routeLiteral)
+  assert.ok(start >= 0, `missing route ${routeLiteral}`)
+  const next = src.slice(start + routeLiteral.length).search(/\napp\.(get|post|put|patch|delete)\(/)
+  return next < 0 ? src.slice(start) : src.slice(start, start + routeLiteral.length + next)
+}
+
 test('dashboard GET settings handlers redact secrets before render, and saves keep stored values', () => {
   assert.match(dashboardSrc, /redactSecrets\(\s*settings\s*,\s*\['apiKey'\]\s*\)/)
   assert.match(dashboardSrc, /redactSecrets\(\s*settings\s*,\s*\['key',\s*'serviceKey'\]\s*\)/)
-  assert.match(dashboardSrc, /resolveSecretInput\(\s*apiKey/)
-  assert.match(dashboardSrc, /resolveSecretInput\(\s*key/)
-  assert.match(dashboardSrc, /resolveSecretInput\(\s*serviceKey/)
+
+  const paymentSave = sliceRoute(dashboardSrc, "app.post('/api/settings/payment-gateway',")
+  const supabaseSave = sliceRoute(dashboardSrc, "app.post('/api/settings/supabase',")
+  const supabaseTest = sliceRoute(dashboardSrc, "app.post('/api/settings/supabase/test',")
+
+  assert.match(paymentSave, /secretUpdateRow\(\s*'payment_gateway_api_key'\s*,\s*apiKey\s*\)/)
+  assert.doesNotMatch(paymentSave, /resolveSecretInput/)
+  assert.doesNotMatch(paymentSave, /getPaymentGatewaySettings/)
+
+  assert.match(supabaseSave, /secretUpdateRow\(\s*'supabase_key'\s*,\s*key\s*\)/)
+  assert.match(supabaseSave, /secretUpdateRow\(\s*'supabase_service_key'\s*,\s*serviceKey\s*\)/)
+  assert.doesNotMatch(supabaseSave, /resolveSecretInput/)
+  assert.doesNotMatch(supabaseSave, /getSupabaseSettings/)
+
+  assert.match(supabaseTest, /resolveSecretInput\(\s*req\.body\.key/)
+  assert.match(supabaseTest, /getSupabaseSettings\s*\(/)
 })
 
 test('every mutating dashboard route is covered by requireWriteAccess (except login/webhook/self-service)', () => {
