@@ -812,8 +812,13 @@
         geo.zoom
       )
     })
+    let toolbarWheelRaf = 0
     container.addEventListener('wheel', function () {
-      requestAnimationFrame(positionSelectionToolbar)
+      if (toolbarWheelRaf) return
+      toolbarWheelRaf = requestAnimationFrame(function () {
+        toolbarWheelRaf = 0
+        positionSelectionToolbar()
+      })
     })
   }
 
