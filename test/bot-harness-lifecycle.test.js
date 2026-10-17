@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { startBotHarness } = require('./helpers/bot-harness')
+const { startBotHarness, waitUntil } = require('./helpers/bot-harness')
 
 test('failed readiness wait closes the fake Telegram server', { timeout: 15000 }, async () => {
   await assert.rejects(
@@ -36,5 +36,29 @@ test('startBotHarness after stop binds a new bot to a new fake API server', { ti
     assert.match(String(photo.params.caption || ''), /ENTRY Ada/)
   } finally {
     await second.stop()
+  }
+})
+
+test('stopBot during pending settings refresh does not start settings polling', { timeout: 15000 }, async () => {
+  const harness = await startBotHarness({ flowEnabled: false, holdInitialRefresh: true })
+  try {
+    let startPollingCalls = 0
+    const originalStartPolling = harness.runtimeSettings.startPolling
+    harness.runtimeSettings.startPolling = function (...args) {
+      startPollingCalls += 1
+      return originalStartPolling.apply(this, args)
+    }
+
+    await harness.stopBot()
+    harness.releaseInitialRefresh()
+
+    await waitUntil(
+      () => harness.copy.isReady() && harness.flow.isReady(),
+      8000,
+      'copy/flow ready after held refresh'
+    )
+    assert.equal(startPollingCalls, 0)
+  } finally {
+    await harness.stop()
   }
 })

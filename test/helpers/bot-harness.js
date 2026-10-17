@@ -120,8 +120,24 @@ async function startBotHarness(options = {}) {
     evictHarnessModules()
     stubSupabase(supabase)
 
-    botModule = require('../../index.js')
     const runtimeSettings = require('../../lib/runtime-settings')
+    let releaseInitialRefresh = () => {}
+    if (options.holdInitialRefresh) {
+      const originalRefresh = runtimeSettings.refresh
+      let releaseHeldRefresh
+      const heldRefresh = new Promise((resolve) => { releaseHeldRefresh = resolve })
+      let holdingFirstRefresh = true
+      runtimeSettings.refresh = async function (...args) {
+        if (holdingFirstRefresh) {
+          holdingFirstRefresh = false
+          await heldRefresh
+        }
+        return originalRefresh.apply(this, args)
+      }
+      releaseInitialRefresh = () => { releaseHeldRefresh() }
+    }
+
+    botModule = require('../../index.js')
     const copy = require('../../lib/copy')
     const flow = require('../../lib/flow')
     const fx = require('../../lib/fx')
@@ -129,16 +145,18 @@ async function startBotHarness(options = {}) {
       get: async () => { throw new Error('fx blocked in bot harness') },
     })
 
-    await waitUntil(
-      () => runtimeSettings.isReady() && copy.isReady() && flow.isReady(),
-      startupTimeoutMs,
-      'runtime/copy/flow ready'
-    )
-    await waitUntil(
-      () => api.calls.some((c) => c.method === 'getUpdates' || c.method === 'setMyCommands'),
-      startupTimeoutMs,
-      'telegram polling'
-    )
+    if (!options.holdInitialRefresh) {
+      await waitUntil(
+        () => runtimeSettings.isReady() && copy.isReady() && flow.isReady(),
+        startupTimeoutMs,
+        'runtime/copy/flow ready'
+      )
+      await waitUntil(
+        () => api.calls.some((c) => c.method === 'getUpdates' || c.method === 'setMyCommands'),
+        startupTimeoutMs,
+        'telegram polling'
+      )
+    }
 
     const harness = {
       api,
@@ -149,6 +167,7 @@ async function startBotHarness(options = {}) {
       flow,
       copy,
       runtimeSettings,
+      releaseInitialRefresh,
       async stop() {
         try {
           await stopHarnessBot(botModule)
@@ -189,4 +208,5 @@ module.exports = {
   inlineButtons,
   keyboardButtons,
   flattenInline,
+  waitUntil,
 }

@@ -74,15 +74,20 @@ const channelContact = {
 }
 
 // Muat pengaturan sekali di awal, lalu pantau perubahan dari dashboard.
+// Capture the boot generation so a pending refresh cannot start polling after
+// stopBot(); a later re-require of this module starts from 0 again.
+let settingsPollGeneration = 0
+const bootSettingsPollGeneration = settingsPollGeneration
 runtimeSettings.refresh(true)
   .then(async () => {
     await copy.refresh()
     await flow.refresh()
-    if (isBotTestHarness) return
+    if (bootSettingsPollGeneration !== settingsPollGeneration) return
     runtimeSettings.startPolling(10000, () => {
       copy.refresh().catch(() => {})
       flow.refresh().catch(() => {})
     })
+    if (isBotTestHarness) return
     // Segarkan kurs sekali saat boot supaya harga produk supplier tidak
     // memakai angka basi sampai cron harian pertama berjalan. Kalau gagal,
     // kurs terakhir yang tersimpan tetap dipakai.
@@ -7416,6 +7421,7 @@ scheduleCron('0 */6 * * *', async () => {
 console.log('⏱️  [Supplier Wallet] Cron pengecekan saldo dompet supplier aktif (tiap 6 jam).')
 
 async function stopBot() {
+  settingsPollGeneration += 1
   runtimeSettings.stopPolling()
   if (reservationCleanupTimer) {
     clearInterval(reservationCleanupTimer)
