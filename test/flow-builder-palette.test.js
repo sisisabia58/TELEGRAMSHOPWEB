@@ -12,6 +12,8 @@ const {
   parsePaletteDragData,
   allowsPaletteDrop,
   resolvePaletteDrop,
+  setActivePaletteKind,
+  getActivePaletteKind,
 } = require('../public/js/flow-builder/palette')
 const { createEditorState } = require('../public/js/flow-builder/state')
 const { addNode } = require('../public/js/flow-builder/commands')
@@ -159,6 +161,42 @@ test('resolvePaletteDrop ignores unknown payloads and missing geometry', () => {
   }, null), null)
 })
 
+test('resolvePaletteDrop uses active palette kind only until it is cleared', () => {
+  const precanvas = rect(0, 0, 400, 300)
+  const emptyDrop = { clientX: 80, clientY: 90, dataTransfer: transferFromStore({}) }
+
+  setActivePaletteKind('message')
+  assert.equal(getActivePaletteKind(), 'message')
+  const fromFallback = resolvePaletteDrop(emptyDrop, { precanvasRect: precanvas, zoom: 1 })
+  assert.equal(fromFallback.kind, 'message')
+  withinTen(fromFallback.pos_x, 80)
+  withinTen(fromFallback.pos_y, 90)
+
+  setActivePaletteKind(null)
+  assert.equal(getActivePaletteKind(), null)
+  assert.equal(resolvePaletteDrop(emptyDrop, { precanvasRect: precanvas, zoom: 1 }), null)
+
+  const fileDrop = {
+    clientX: 80,
+    clientY: 90,
+    dataTransfer: { types: ['Files'], getData: function () { return '' } },
+  }
+  assert.equal(resolvePaletteDrop(fileDrop, { precanvasRect: precanvas, zoom: 1 }), null)
+
+  const dt = transferFromStore({})
+  setPaletteDragData(dt, 'action')
+  setActivePaletteKind(null)
+  const fromTransfer = resolvePaletteDrop({
+    clientX: 80,
+    clientY: 90,
+    dataTransfer: dt,
+  }, { precanvasRect: precanvas, zoom: 1 })
+  assert.equal(fromTransfer.kind, 'action')
+  withinTen(fromTransfer.pos_x, 80)
+  withinTen(fromTransfer.pos_y, 90)
+  setActivePaletteKind(null)
+})
+
 test('Bot Flow palette items are draggable (M3)', async () => {
   const html = await ejs.renderFile(viewFile, {
     title: 'Bot Flow - Test',
@@ -194,4 +232,20 @@ test('flow-builder JS creates palette drops through applyCommand and selects the
   assert.match(js, /addEventListener\('mouseup'/)
   assert.match(js, /dropNodeAtClient/)
   assert.equal(js.includes('length * 40) % 400'), false, 'click-to-add no longer uses staggered offsets')
+})
+
+test('flow-builder JS suppresses compatibility mouse after a non-mouse pointer session', () => {
+  const js = fs.readFileSync(jsFile, 'utf8')
+  assert.match(js, /let ignoreCompatibilityMouse = false/)
+  assert.match(js, /pointerType === 'mouse'[\s\S]{0,120}ignoreCompatibilityMouse = false/)
+  assert.match(js, /ignoreCompatibilityMouse = true/)
+  assert.match(js, /if \(ignoreCompatibilityMouse\) return/)
+  assert.match(js, /addEventListener\('pointercancel'/)
+})
+
+test('endPalettePointer clears active palette kind so later drops cannot reuse it', () => {
+  const js = fs.readFileSync(jsFile, 'utf8')
+  const endFn = js.match(/function endPalettePointer\([\s\S]*?\n  \}/)
+  assert.ok(endFn, 'endPalettePointer should exist')
+  assert.match(endFn[0], /FlowBuilderPalette\.setActivePaletteKind\(null\)/)
 })

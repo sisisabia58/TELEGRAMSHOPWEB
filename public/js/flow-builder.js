@@ -980,6 +980,7 @@
   let paletteGhost = null
   let skipPaletteClick = false
   let html5DropJustPlaced = false
+  let ignoreCompatibilityMouse = false
 
   function addMessageNode() {
     if (skipPaletteClick) return
@@ -1035,6 +1036,7 @@
   function endPalettePointer(place, clientX, clientY) {
     const session = palettePointer
     palettePointer = null
+    FlowBuilderPalette.setActivePaletteKind(null)
     hidePaletteGhost()
     setCanvasDragOver(false)
     document.querySelectorAll('.flow-palette-item.is-dragging').forEach((el) => {
@@ -1079,12 +1081,17 @@
   function bindPaletteDrag() {
     document.querySelectorAll('.flow-palette-item').forEach((item) => {
       item.addEventListener('mousedown', function (ev) {
+        if (ignoreCompatibilityMouse) return
         if (ev.button !== 0) return
         startPalettePointer(item, item.getAttribute('data-kind'), ev.clientX, ev.clientY, 'mouse')
       })
       item.addEventListener('pointerdown', function (ev) {
-        if (ev.pointerType === 'mouse') return
+        if (ev.pointerType === 'mouse') {
+          ignoreCompatibilityMouse = false
+          return
+        }
         if (ev.button != null && ev.button !== 0) return
+        ignoreCompatibilityMouse = true
         startPalettePointer(item, item.getAttribute('data-kind'), ev.clientX, ev.clientY, ev.pointerId)
         try { item.setPointerCapture(ev.pointerId) } catch (err) { /* ignore */ }
       })
