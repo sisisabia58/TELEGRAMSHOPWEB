@@ -544,7 +544,7 @@ test('flowCallbackNeedsCustomAnswer is true for handlers that answer the query t
   assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('noop')), true)
   assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('product_card')), true)
   assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('product_list')), false)
-  assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('kategori_menu')), false)
+  assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('kategori_menu')), true)
   assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('stok')), false)
   assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('riwayat')), false)
   assert.equal(flow.flowCallbackNeedsCustomAnswer(flow.getNode('welcome')), false)
