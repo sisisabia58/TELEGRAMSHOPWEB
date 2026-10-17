@@ -27,6 +27,7 @@ const pakasir = require('./pakasir.js')
 // terdefinisi sebelum ada kode lain yang memanggilnya.
 const { formatrupiah, formatWIB, formatWIBDetail, namaBulan } = require('./lib/format')
 const { sanitizeInlineKeyboard } = require('./lib/inline-keyboard')
+const { reportCallbackFailure } = require('./lib/telegram-user-error')
 
 // Query tabel Stok. Di bot, "hitung stok" selalu berdasarkan kode produk —
 // karena itu getStokCount dialiaskan ke getStokCountByKode. Nama-nama lokal
@@ -6953,8 +6954,7 @@ A: Untuk saat ini maksimal 5 item per transaksi. Jika ingin lebih, buat pesanan 
     })
   }
  } catch (err) {
-   console.error('[callback]', err)
-  await sendMessage(query.from.id, copy.get('err.load_failed'))
+  await reportCallbackFailure(err, { userId: query.from.id, copy, send: sendMessage })
 }
 })
 
