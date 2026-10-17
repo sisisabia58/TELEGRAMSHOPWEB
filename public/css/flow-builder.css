@@ -371,6 +371,49 @@
   background: #f0f4f8;
 }
 
+.flow-selection-toolbar {
+  position: absolute;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--sp-border);
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(30, 50, 70, 0.16);
+  user-select: none;
+}
+
+.flow-selection-toolbar[hidden] {
+  display: none !important;
+}
+
+.flow-selection-toolbar button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sp-text);
+  cursor: pointer;
+}
+
+.flow-selection-toolbar button:hover:not(:disabled) {
+  background: #f0f4f8;
+}
+
+.flow-selection-toolbar #btnToolbarDeleteNode {
+  color: #b42318;
+}
+
+.flow-selection-toolbar button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* —— Right inspector (SendPulse-style) —— */
 .flow-panel {
   width: 360px;
