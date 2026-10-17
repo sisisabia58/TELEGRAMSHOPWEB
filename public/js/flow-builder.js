@@ -1048,61 +1048,79 @@
     dropNodeAtClient(session.kind, clientX, clientY)
   }
 
+  function startPalettePointer(item, kind, clientX, clientY, pointerId) {
+    if (palettePointer) return
+    if (kind !== 'message' && kind !== 'action') return
+    html5DropJustPlaced = false
+    palettePointer = {
+      item: item,
+      kind: kind,
+      pointerId: pointerId,
+      startX: clientX,
+      startY: clientY,
+      active: false,
+    }
+  }
+
+  function movePalettePointer(clientX, clientY) {
+    if (!palettePointer) return
+    const dx = clientX - palettePointer.startX
+    const dy = clientY - palettePointer.startY
+    if (!palettePointer.active) {
+      if ((dx * dx + dy * dy) < PALETTE_DRAG_THRESHOLD * PALETTE_DRAG_THRESHOLD) return
+      palettePointer.active = true
+      if (palettePointer.item) palettePointer.item.classList.add('is-dragging')
+      FlowBuilderPalette.setActivePaletteKind(palettePointer.kind)
+    }
+    showPaletteGhost(palettePointer.item, clientX, clientY)
+    setCanvasDragOver(pointOverCanvas(clientX, clientY))
+  }
+
   function bindPaletteDrag() {
     document.querySelectorAll('.flow-palette-item').forEach((item) => {
+      item.addEventListener('mousedown', function (ev) {
+        if (ev.button !== 0) return
+        startPalettePointer(item, item.getAttribute('data-kind'), ev.clientX, ev.clientY, 'mouse')
+      })
       item.addEventListener('pointerdown', function (ev) {
+        if (ev.pointerType === 'mouse') return
         if (ev.button != null && ev.button !== 0) return
-        const kind = item.getAttribute('data-kind')
-        if (kind !== 'message' && kind !== 'action') return
-        html5DropJustPlaced = false
-        palettePointer = {
-          kind: kind,
-          pointerId: ev.pointerId,
-          startX: ev.clientX,
-          startY: ev.clientY,
-          active: false,
-        }
+        startPalettePointer(item, item.getAttribute('data-kind'), ev.clientX, ev.clientY, ev.pointerId)
         try { item.setPointerCapture(ev.pointerId) } catch (err) { /* ignore */ }
-      })
-      item.addEventListener('pointermove', function (ev) {
-        if (!palettePointer || palettePointer.pointerId !== ev.pointerId) return
-        const dx = ev.clientX - palettePointer.startX
-        const dy = ev.clientY - palettePointer.startY
-        if (!palettePointer.active) {
-          if ((dx * dx + dy * dy) < PALETTE_DRAG_THRESHOLD * PALETTE_DRAG_THRESHOLD) return
-          palettePointer.active = true
-          item.classList.add('is-dragging')
-          FlowBuilderPalette.setActivePaletteKind(palettePointer.kind)
-        }
-        ev.preventDefault()
-        showPaletteGhost(item, ev.clientX, ev.clientY)
-        setCanvasDragOver(pointOverCanvas(ev.clientX, ev.clientY))
-      })
-      item.addEventListener('pointerup', function (ev) {
-        if (!palettePointer || palettePointer.pointerId !== ev.pointerId) return
-        try { item.releasePointerCapture(ev.pointerId) } catch (err) { /* ignore */ }
-        endPalettePointer(true, ev.clientX, ev.clientY)
-      })
-      item.addEventListener('pointercancel', function (ev) {
-        if (!palettePointer || palettePointer.pointerId !== ev.pointerId) return
-        endPalettePointer(false, ev.clientX, ev.clientY)
       })
       item.addEventListener('dragstart', function (ev) {
         const kind = item.getAttribute('data-kind')
-        if (!FlowBuilderPalette.setPaletteDragData(ev.dataTransfer, kind)) {
-          ev.preventDefault()
-          return
-        }
-        item.classList.add('is-dragging')
-        setCanvasDragOver(true)
+        FlowBuilderPalette.setPaletteDragData(ev.dataTransfer, kind)
+        // Keep the mouse/pointer gesture; native HTML5 drag swallows mouseup
+        // in automation and some browsers, so we cancel it and place on mouseup.
+        ev.preventDefault()
       })
-      item.addEventListener('dragend', function () {
-        item.classList.remove('is-dragging')
-        FlowBuilderPalette.setActivePaletteKind(null)
-        hidePaletteGhost()
-        setCanvasDragOver(false)
-        palettePointer = null
-      })
+    })
+
+    document.addEventListener('mousemove', function (ev) {
+      if (!palettePointer || palettePointer.pointerId !== 'mouse') return
+      if (palettePointer.active) ev.preventDefault()
+      movePalettePointer(ev.clientX, ev.clientY)
+    })
+    document.addEventListener('mouseup', function (ev) {
+      if (!palettePointer || palettePointer.pointerId !== 'mouse') return
+      endPalettePointer(true, ev.clientX, ev.clientY)
+    })
+    document.addEventListener('pointermove', function (ev) {
+      if (!palettePointer || palettePointer.pointerId === 'mouse') return
+      if (palettePointer.pointerId !== ev.pointerId) return
+      ev.preventDefault()
+      movePalettePointer(ev.clientX, ev.clientY)
+    })
+    document.addEventListener('pointerup', function (ev) {
+      if (!palettePointer || palettePointer.pointerId === 'mouse') return
+      if (palettePointer.pointerId !== ev.pointerId) return
+      endPalettePointer(true, ev.clientX, ev.clientY)
+    })
+    document.addEventListener('pointercancel', function (ev) {
+      if (!palettePointer || palettePointer.pointerId === 'mouse') return
+      if (palettePointer.pointerId !== ev.pointerId) return
+      endPalettePointer(false, ev.clientX, ev.clientY)
     })
 
     const canvas = document.getElementById('drawflow')
