@@ -110,6 +110,7 @@ async function startBotHarness(options = {}) {
   const api = createFakeTelegram({ userId: USER_ID, firstName: 'Ada' })
   const startupTimeoutMs = options.startupTimeoutMs == null ? 8000 : options.startupTimeoutMs
   let botModule = null
+  let releaseInitialRefresh = () => {}
   const baseUrl = await api.listen()
   try {
     applyTestEnv(baseUrl)
@@ -121,7 +122,6 @@ async function startBotHarness(options = {}) {
     stubSupabase(supabase)
 
     const runtimeSettings = require('../../lib/runtime-settings')
-    let releaseInitialRefresh = () => {}
     if (options.holdInitialRefresh) {
       const originalRefresh = runtimeSettings.refresh
       let releaseHeldRefresh
@@ -171,6 +171,7 @@ async function startBotHarness(options = {}) {
       async stop() {
         try {
           await stopHarnessBot(botModule)
+          releaseInitialRefresh()
         } finally {
           await api.close()
           if (activeHarness === harness) activeHarness = null
@@ -180,6 +181,7 @@ async function startBotHarness(options = {}) {
     activeHarness = harness
     return harness
   } catch (err) {
+    try { releaseInitialRefresh() } catch (_) { /* ignore */ }
     await cleanupFailedStart(botModule, api)
     throw err
   }
