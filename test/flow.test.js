@@ -11,6 +11,7 @@ const jalurFlow = require.resolve('../lib/flow.js')
 
 function muatFlow({ nodes, entryKey = 'welcome', enabled = true } = {}) {
   delete require.cache[jalurFlow]
+  const setScreenCalls = []
   require.cache[jalurClient] = {
     id: jalurClient,
     filename: jalurClient,
@@ -68,10 +69,15 @@ function muatFlow({ nodes, entryKey = 'welcome', enabled = true } = {}) {
   require.cache[jalurSession] = {
     id: jalurSession, filename: jalurSession, loaded: true,
     exports: {
-      async setScreen() { return true },
+      async setScreen(userId, screenKey, opts) {
+        setScreenCalls.push({ userId, screenKey, opts })
+        return true
+      },
     },
   }
-  return require(jalurFlow)
+  const flow = require(jalurFlow)
+  flow._setScreenCalls = setScreenCalls
+  return flow
 }
 
 test.after(() => {
@@ -342,7 +348,7 @@ function callbackQuery(userId = 9) {
   }
 }
 
-function assertEditMedia(bot, type, mediaUrl, caption) {
+function assertEditMedia(bot, type, mediaUrl, caption, messageId = 88) {
   assert.equal(bot.calls.length, 1)
   assert.equal(bot.calls[0].method, 'editMessageMedia')
   assert.equal(bot.calls[0].media.type, type)
@@ -350,7 +356,7 @@ function assertEditMedia(bot, type, mediaUrl, caption) {
   assert.equal(bot.calls[0].media.caption, caption)
   assert.equal(bot.calls[0].media.parse_mode, 'Markdown')
   assert.equal(bot.calls[0].opts.chat_id, 12345)
-  assert.equal(bot.calls[0].opts.message_id, 88)
+  assert.equal(bot.calls[0].opts.message_id, messageId)
   assert.equal(bot.calls[0].opts.reply_markup.inline_keyboard[0][0].callback_data, 'f:saldo_menu')
 }
 
@@ -382,6 +388,7 @@ test('SIS-58: same media_url keeps editMessageCaption', async () => {
   const url = 'https://example.com/logo.jpg'
   const node = mediaNode('photo', url)
 
+  flow.rememberMessageMedia(12345, 88, node)
   await flow.dispatchFlowScreen(bot, 12345, node, 88, 'Same photo', {
     currentMediaUrl: url,
     currentMediaType: 'photo',
@@ -582,18 +589,15 @@ test('mediaOptsForScreen returns previous screen media identity', async () => {
   assert.deepEqual(flow.mediaOptsForScreen(null), {})
 })
 
-test('dispatchFlow captures previous screen media before goto overwrites it', () => {
+test('dispatchFlow uses per-message media identity, not the last navigated screen', () => {
   const indexSrc = fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8')
   const dispatchStart = indexSrc.indexOf('async function dispatchFlow')
   const dispatchEnd = indexSrc.indexOf('\nbot.on("callback_query"', dispatchStart)
   const dispatchSrc = indexSrc.slice(dispatchStart, dispatchEnd)
   assert.ok(dispatchStart >= 0, 'dispatchFlow is present')
-  assert.match(dispatchSrc, /session\.getNav\(/)
-  assert.match(dispatchSrc, /flow\.mediaOptsForScreen\(/)
-  assert.ok(
-    dispatchSrc.indexOf('session.getNav') < dispatchSrc.indexOf('flow.goto'),
-    'previous screen must be read before flow.goto overwrites screen_key',
-  )
+  assert.match(dispatchSrc, /mediaOptsForMessage\(/)
+  assert.doesNotMatch(dispatchSrc, /mediaOptsForScreen\(/)
+  assert.doesNotMatch(dispatchSrc, /session\.getNav\(/)
 
   const handleStart = indexSrc.indexOf('async function handleFlowResult')
   const handleSrc = indexSrc.slice(handleStart, dispatchStart)
@@ -614,5 +618,138 @@ test('SIS-58: different current media still uses editMessageMedia', async () => 
 
   assertEditMedia(bot, 'photo', 'https://example.com/promo.jpg', 'Promo')
   assert.equal(bot.calls.some((c) => c.method === 'editMessageCaption'), false)
+})
+
+test('goto does not store noop or product_card as the current screen', async () => {
+  const flow = muatFlow({
+    nodes: [
+      ...sampleNodes,
+      actionNode('noop', 'noop'),
+      actionNode('product_card', 'product_card'),
+    ],
+  })
+  await flow.refresh()
+
+  const noopResult = await flow.goto(9, 'noop', { vars: {}, push: true })
+  assert.equal(noopResult.type, 'action')
+  assert.equal(noopResult.action, 'noop')
+  assert.equal(flow._setScreenCalls.some((c) => c.screenKey === 'noop'), false)
+
+  const cardResult = await flow.goto(9, 'product_card', { vars: {}, push: true })
+  assert.equal(cardResult.type, 'action')
+  assert.equal(cardResult.action, 'product_card')
+  assert.equal(flow._setScreenCalls.some((c) => c.screenKey === 'product_card'), false)
+})
+
+test('goto still stores navigating screens and run-actions as the current screen', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  await flow.refresh()
+
+  await flow.goto(9, 'welcome', { vars: {}, push: false })
+  assert.deepEqual(flow._setScreenCalls[0], {
+    userId: 9,
+    screenKey: 'welcome',
+    opts: { push: false },
+  })
+
+  await flow.goto(9, 'product_list', { vars: {}, push: true })
+  assert.deepEqual(flow._setScreenCalls[1], {
+    userId: 9,
+    screenKey: 'product_list',
+    opts: { push: true },
+  })
+})
+
+test('dispatchFlowScreen uses stored media for that message, not session extraOpts', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot()
+  const welcome = mediaNode('photo', 'https://example.com/welcome.jpg')
+  const screenB = mediaNode('photo', 'https://example.com/screen-b.jpg')
+
+  flow.rememberMessageMedia(12345, 22, welcome)
+  await flow.dispatchFlowScreen(bot, 12345, screenB, 22, 'Screen B', {
+    currentMediaUrl: screenB.media_url,
+    currentMediaType: 'photo',
+  })
+
+  assertEditMedia(bot, 'photo', 'https://example.com/screen-b.jpg', 'Screen B', 22)
+  assert.equal(bot.calls.some((c) => c.method === 'editMessageCaption'), false)
+})
+
+test('dispatchFlowScreen uses editMessageMedia when this message media is unknown', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot()
+  const screenB = mediaNode('photo', 'https://example.com/screen-b.jpg')
+
+  await flow.dispatchFlowScreen(bot, 12345, screenB, 33, 'Screen B', {
+    currentMediaUrl: screenB.media_url,
+    currentMediaType: 'photo',
+  })
+
+  assertEditMedia(bot, 'photo', 'https://example.com/screen-b.jpg', 'Screen B', 33)
+  assert.equal(bot.calls.some((c) => c.method === 'editMessageCaption'), false)
+})
+
+test('dispatchFlowScreen caption-edits only when this message already has the same media', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot()
+  const url = 'https://example.com/logo.jpg'
+  const node = mediaNode('photo', url)
+
+  flow.rememberMessageMedia(12345, 88, node)
+  await flow.dispatchFlowScreen(bot, 12345, node, 88, 'Same photo')
+
+  assert.equal(bot.calls.length, 1)
+  assert.equal(bot.calls[0].method, 'editMessageCaption')
+  assert.equal(bot.calls[0].caption, 'Same photo')
+  assert.equal(bot.calls.some((c) => c.method === 'editMessageMedia'), false)
+})
+
+test('after an unknown-message media edit, the next same-media call caption-edits', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const node = mediaNode('photo', 'https://example.com/logo.jpg')
+
+  const first = recordingBot()
+  await flow.dispatchFlowScreen(first, 12345, node, 88, 'First')
+  assert.equal(first.calls[0].method, 'editMessageMedia')
+
+  const second = recordingBot()
+  await flow.dispatchFlowScreen(second, 12345, node, 88, 'Second')
+  assert.equal(second.calls[0].method, 'editMessageCaption')
+  assert.equal(second.calls[0].caption, 'Second')
+})
+
+test('two flow messages keep independent media identity', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const welcome = mediaNode('photo', 'https://example.com/welcome.jpg')
+  const screenB = mediaNode('photo', 'https://example.com/screen-b.jpg')
+  flow.rememberMessageMedia(12345, 11, screenB)
+  flow.rememberMessageMedia(12345, 22, welcome)
+
+  const botOnB = recordingBot()
+  await flow.dispatchFlowScreen(botOnB, 12345, screenB, 11, 'Still B')
+  assert.equal(botOnB.calls[0].method, 'editMessageCaption')
+
+  const botOnWelcome = recordingBot()
+  await flow.dispatchFlowScreen(botOnWelcome, 12345, screenB, 22, 'Screen B')
+  assertEditMedia(botOnWelcome, 'photo', 'https://example.com/screen-b.jpg', 'Screen B', 22)
+})
+
+test('dispatchFlowScreen remembers sent media by the returned message_id', async () => {
+  const flow = muatFlow({ nodes: sampleNodes })
+  const bot = recordingBot()
+  bot.sendPhoto = async (chatId, photo, opts) => {
+    bot.calls.push({ method: 'sendPhoto', chatId, media: photo, opts })
+    return { message_id: 101 }
+  }
+  const node = mediaNode('photo', 'https://example.com/welcome.jpg')
+
+  await flow.dispatchFlowScreen(bot, 12345, node, null, 'Welcome')
+
+  assert.deepEqual(flow.mediaOptsForMessage(12345, 101), {
+    currentMediaUrl: 'https://example.com/welcome.jpg',
+    currentMediaType: 'photo',
+  })
+  assert.deepEqual(flow.mediaOptsForMessage(12345, 99), {})
 })
 

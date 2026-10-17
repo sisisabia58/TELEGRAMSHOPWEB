@@ -2654,8 +2654,7 @@ async function dispatchFlow(userId, nodeKey, { msgId = null, push, firstName, qu
         nama_bot: NamaBot,
         saldo: formatrupiah(await cekSaldo(userId)),
       }
-  const previous = await session.getNav(userId)
-  const currentMedia = flow.mediaOptsForScreen(previous.screen_key)
+  const currentMedia = flow.mediaOptsForMessage(userId, msgId)
   const result = await flow.goto(userId, nodeKey, {
     vars,
     push: push !== undefined ? push : nodeKey !== entry,
