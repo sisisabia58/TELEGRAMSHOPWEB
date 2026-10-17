@@ -397,6 +397,18 @@ test('draftFromPublished and publishPlan preserve media_url and media_type', () 
   assert.strictEqual(plan.nodes[0].media_type, 'photo')
 })
 
+test('publishPlan trims media_url and uses null for empty or whitespace-only values', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[0].media_url = '  https://example.com/banner.png  '
+  d.nodes[1].media_url = '   '
+  d.nodes[2].media_url = ''
+  const plan = publishPlan(d)
+  const byKey = Object.fromEntries(plan.nodes.map((n) => [n.key, n.media_url]))
+  assert.strictEqual(byKey.welcome, 'https://example.com/banner.png')
+  assert.strictEqual(byKey.product_list, null)
+  assert.strictEqual(byKey.saldo_menu, null)
+})
+
 test('reorderButtons and generateButtonLabelKey maintain valid button rows', () => {
   const { reorderButtonRow, generateButtonLabelKey } = require('../lib/flow-draft')
   const buttons = [
