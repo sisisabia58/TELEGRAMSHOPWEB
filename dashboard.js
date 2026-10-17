@@ -5937,6 +5937,7 @@ app.post('/api/bot-copy', isAuthenticated, async (req, res) => {
 const FLOW_ACTIONS = [
   'product_list', 'product_card', 'kategori_menu', 'stok', 'riwayat', 'deposit_menu', 'noop',
 ]
+const FLOW_PICKER_ACTIONS = FLOW_ACTIONS.filter((a) => a !== 'product_card')
 
 async function loadAllCopyByKey() {
   const copyByKey = {}
@@ -6008,7 +6009,7 @@ app.get('/api/bot-flow', isAuthenticated, async (req, res) => {
       draft,
       enabled,
       envOverride,
-      actions: FLOW_ACTIONS,
+      actions: FLOW_PICKER_ACTIONS,
     })
   } catch (e) {
     console.error(e)
