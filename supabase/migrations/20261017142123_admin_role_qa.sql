@@ -7,7 +7,7 @@
 -- Rollback (do NOT restore the old CHECK while any Admin.role = 'qa'
 -- rows exist — Postgres will reject the narrower constraint):
 --   1. Deactivate or delete those rows first, e.g.
---        UPDATE "Admin" SET is_active = false WHERE role = 'qa';
+--        UPDATE "Admin" SET is_active = false, role = 'viewer' WHERE role = 'qa';
 --        DELETE FROM "Admin" WHERE role = 'qa';
 --   2. ALTER TABLE "Admin" DROP CONSTRAINT IF EXISTS "Admin_role_check";
 --   3. ALTER TABLE "Admin" ADD CONSTRAINT "Admin_role_check"
