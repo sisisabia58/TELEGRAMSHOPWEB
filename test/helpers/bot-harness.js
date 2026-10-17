@@ -51,6 +51,11 @@ function attachHarnessRejectionGuard() {
   attachHarnessRejectionGuard.installed = true
   process.on('unhandledRejection', (err) => {
     if (isTelegramFatal(err)) return
+    console.error('unhandledRejection:', err && err.message ? err.message : err)
+    process.exitCode = 1
+  })
+  process.on('uncaughtException', (err) => {
+    if (isTelegramFatal(err)) return
     throw err
   })
 }
@@ -136,8 +141,13 @@ async function startBotHarness(options = {}) {
     attachHarnessRejectionGuard()
     if (options.flowEnabled === true) process.env.FLOW_ENGINE_ENABLED = 'true'
     if (options.flowEnabled === false) process.env.FLOW_ENGINE_ENABLED = 'false'
-    if (options.holdInitialRefresh) process.env.BOT_TEST_FORCE_SETTINGS_POLL = '1'
-    else delete process.env.BOT_TEST_FORCE_SETTINGS_POLL
+    if (options.holdInitialRefresh) {
+      process.env.BOT_TEST_FORCE_SETTINGS_POLL = '1'
+      process.env.BOT_TEST_SKIP_TELEGRAM_POLL = '1'
+    } else {
+      delete process.env.BOT_TEST_FORCE_SETTINGS_POLL
+      delete process.env.BOT_TEST_SKIP_TELEGRAM_POLL
+    }
 
     const supabase = createMemorySupabase(options.fixtures || defaultBotFixtures())
     evictHarnessModules()
@@ -160,6 +170,13 @@ async function startBotHarness(options = {}) {
     }
 
     botModule = require('../../index.js')
+    if (botModule.bot && typeof botModule.bot.on === 'function') {
+      botModule.bot.on('error', (err) => {
+        if (!isTelegramFatal(err)) {
+          console.error('bot error:', err && err.message ? err.message : err)
+        }
+      })
+    }
     const copy = require('../../lib/copy')
     const flow = require('../../lib/flow')
     const fx = require('../../lib/fx')
@@ -196,6 +213,7 @@ async function startBotHarness(options = {}) {
           releaseInitialRefresh()
         } finally {
           delete process.env.BOT_TEST_FORCE_SETTINGS_POLL
+          delete process.env.BOT_TEST_SKIP_TELEGRAM_POLL
           await api.close()
           if (activeHarness === harness) activeHarness = null
         }
@@ -206,6 +224,7 @@ async function startBotHarness(options = {}) {
   } catch (err) {
     try { releaseInitialRefresh() } catch (_) { /* ignore */ }
     delete process.env.BOT_TEST_FORCE_SETTINGS_POLL
+    delete process.env.BOT_TEST_SKIP_TELEGRAM_POLL
     await cleanupFailedStart(botModule, api)
     throw err
   }

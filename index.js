@@ -104,10 +104,13 @@ runtimeSettings.refresh(true)
   })
   .catch((e) => console.error('[runtime-settings] gagal muat awal:', e.message))
 const TelegramBot = require("node-telegram-bot-api")
+const skipTelegramPoll = isBotTestHarness && process.env.BOT_TEST_SKIP_TELEGRAM_POLL === '1'
 const bot = new TelegramBot(TokenBot, { 
-  polling: isBotTestHarness
-    ? { interval: 50, params: { timeout: 0 } }
-    : true,
+  polling: skipTelegramPoll
+    ? false
+    : isBotTestHarness
+      ? { interval: 50, params: { timeout: 0 } }
+      : true,
   request: {
     agentOptions: {
       keepAlive: !isBotTestHarness,
@@ -124,14 +127,16 @@ const bot = new TelegramBot(TokenBot, {
 })
 
 // Configure Telegram chat column commands menu (autocomplete)
-bot.setMyCommands([
-  { command: 'start', description: 'mulai bot' },
-  { command: 'stok', description: 'laporan stok produk' }
-]).then(() => {
-  console.log('✅ Telegram bot commands set successfully')
-}).catch((err) => {
-  console.error('❌ Failed to set Telegram bot commands:', err && err.message ? err.message : err)
-})
+if (!skipTelegramPoll) {
+  bot.setMyCommands([
+    { command: 'start', description: 'mulai bot' },
+    { command: 'stok', description: 'laporan stok produk' }
+  ]).then(() => {
+    console.log('✅ Telegram bot commands set successfully')
+  }).catch((err) => {
+    console.error('❌ Failed to set Telegram bot commands:', err && err.message ? err.message : err)
+  })
+}
 // Enhanced error handling for polling errors
 bot.on("polling_error", (error) => {
   console.error("Polling error:", error.message);
