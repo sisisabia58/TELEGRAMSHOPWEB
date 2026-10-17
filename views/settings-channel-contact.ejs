@@ -62,6 +62,11 @@
                         <div class="setting-item">
                             <label class="setting-label">CS (Customer Service)</label>
                             <div class="setting-description">Link Customer Service untuk tombol "Hubungi CS" di bot. Contoh: https://t.me/your_cs</div>
+                            <% if (!isAllowedInlineUrl(settings.cs)) { %>
+                            <div class="alert alert-warning" role="status">
+                                Link Customer Service belum diisi atau tidak valid. Tombol Customer Service di bot disembunyikan sampai link http, https, atau tg:// diisi. Contoh: https://t.me/your_cs
+                            </div>
+                            <% } %>
                             <input type="text" name="cs" class="setting-input"
                                 value="<%= settings.cs %>"
                                 placeholder="https://t.me/your_cs">

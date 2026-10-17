@@ -26,6 +26,9 @@ const pakasir = require('./pakasir.js')
 // `function` declaration yang ter-hoist, sekarang binding `const`, jadi harus
 // terdefinisi sebelum ada kode lain yang memanggilnya.
 const { formatrupiah, formatWIB, formatWIBDetail, namaBulan } = require('./lib/format')
+const { sanitizeInlineKeyboard } = require('./lib/inline-keyboard')
+const { reportCallbackFailure } = require('./lib/telegram-user-error')
+const { installCommandMentionGuard, createBotUsernameCache } = require('./lib/command-mention')
 
 // Query tabel Stok. Di bot, "hitung stok" selalu berdasarkan kode produk —
 // karena itu getStokCount dialiaskan ke getStokCountByKode. Nama-nama lokal
@@ -108,6 +111,10 @@ const bot = new TelegramBot(TokenBot, {
   // Base URL dengan fallback
   baseApiUrl: process.env.TELEGRAM_API_URL || 'https://api.telegram.org'
 })
+
+// One check for every later onText handler. Bare /cmd and /cmd@thisBot run;
+// /cmd@AnotherBot is ignored. Username comes from getMe() and is cached.
+installCommandMentionGuard(bot, createBotUsernameCache(() => bot.getMe()))
 
 // Configure Telegram chat column commands menu (autocomplete)
 bot.setMyCommands([
@@ -319,7 +326,7 @@ function welcomeCaption(ctx) {
 
 function welcomeInlineKeyboard() {
   return {
-    inline_keyboard: [
+    inline_keyboard: sanitizeInlineKeyboard([
       [{ text: copy.get('msg.menu_daftar_produk'), callback_data: 'daftarproduk' }],
       [{ text: copy.get('msg.menu_kategori'), callback_data: 'kategori_menu' }],
       [
@@ -332,7 +339,7 @@ function welcomeInlineKeyboard() {
       ],
       [{ text: copy.get('msg.menu_channel'), url: channelContact.channelStore }],
       [{ text: copy.get('msg.menu_cs'), url: channelContact.cs }],
-    ],
+    ]),
   }
 }
 
@@ -522,11 +529,11 @@ Admin sudah kami beri tahu. Mohon hubungi CS dengan menyertakan Trx ID di atas a
     await sendMessage(userId, pesanPembeli, {
       parse_mode: 'Markdown',
       reply_markup: {
-        inline_keyboard: [[
+        inline_keyboard: sanitizeInlineKeyboard([[
           berhasil
             ? { text: copy.get('btn.kembali'), callback_data: 'kembaliawal' }
-            : { text: '💬 Hubungi CS', url: channelContact.cs || 'https://t.me' },
-        ]],
+            : { text: '💬 Hubungi CS', url: channelContact.cs },
+        ]]),
       },
     })
   } catch (e) {
@@ -1528,7 +1535,7 @@ Saldo Baru: ${formatrupiah(saldoBaru)}
     }
   } catch (err) {
     console.error(err)
-    await sendMessage(chatId, copy.get('err.deposit_create_failed', { error: err.message }))
+    await sendMessage(chatId, copy.get('err.deposit_create_failed'))
   }
 }
 
@@ -1669,7 +1676,7 @@ bot.onText(retiredCmdPattern, async (msg) => {
   })
 })
 
-bot.onText(/\/listuser/, async (msg) => {
+bot.onText(/^\/listuser(?:@\w+)?(?:\s|$)/, async (msg) => {
   if (!isOwner(msg)) return await sendMessage(msg.from.id, copy.get('err.owner_only'))
   
   await bot.sendMessage(msg.from.id, `⏳ Sedang mengambil data user...`)
@@ -1968,11 +1975,11 @@ async function imageUrlToBuffer(url, retries = 3) {
 }
 
 
-bot.onText(/\/getid/, async (msg) => {
+bot.onText(/^\/getid(?:@\w+)?(?:\s|$)/, async (msg) => {
   await sendMessage(msg.from.id, "ID Kamu: `" + msg.from.id + "`")
 })
 
-bot.onText(/\/saldo/, async (msg) => {
+bot.onText(/^\/saldo(?:@\w+)?(?:\s|$)/, async (msg) => {
   const saldo = await cekSaldo(msg.from.id)
   await bot.sendMessage(msg.from.id, `💰 *SALDO ANDA*
 =======================
@@ -1991,7 +1998,7 @@ bot.onText(/\/saldo/, async (msg) => {
   })
 })
 
-bot.onText(/\/deposit/, async (msg) => {
+bot.onText(/^\/deposit(?:@\w+)?(?:\s|$)/, async (msg) => {
   let text = msg.text.slice(9).trim()
   if (!text) {
     return await bot.sendMessage(msg.from.id, `💳 *TOP UP SALDO*
@@ -2038,7 +2045,7 @@ bot.onText(/\/deposit/, async (msg) => {
   createDepositTransaction(msg.from.id, msg.from.username, msg.from.first_name, jumlah, msg.from.id)
 })
 
-bot.onText(/\/riwayatdeposit/, async (msg) => {
+bot.onText(/^\/riwayatdeposit(?:@\w+)?(?:\s|$)/, async (msg) => {
   const { data: Deposits } = await supabase
     .from("Deposit")
     .select("*")
@@ -2081,7 +2088,8 @@ Status: *${dep.status.toUpperCase()}*
   })
 })
 
-bot.onText(/\/start/, async (msg) => {
+// Anchored so 'hello /start' does not fire. Allows `/start`, `/start payload`, `/start@BotName`.
+bot.onText(/^\/start(?:@\w+)?(?:\s|$)/, async (msg) => {
   try {
     // Cek registrasi user dulu (bisa parallel dengan query lain)
     const isReg = await isRegistered(msg.from.id)
@@ -2152,7 +2160,7 @@ bot.onText(/\/start/, async (msg) => {
 })
 
 
-bot.onText(/\/rekap/, async (msg) => {
+bot.onText(/^\/rekap(?:@\w+)?(?:\s|$)/, async (msg) => {
   if (!isOwner(msg)) return await sendMessage(msg.from.id, copy.get('err.owner_only'))
   const tahun = new Date().getFullYear()
   const keyboard = generateTahunKeyboard(tahun)
@@ -2164,7 +2172,7 @@ Pilih bulan untuk melihat rekap transaksi tahun *${tahun}*:`, {
   })
 })
 
-bot.onText(/\/stok/, async (msg) => {
+bot.onText(/^\/stok(?:@\w+)?(?:\s|$)/, async (msg) => {
 
   try {
     let { data: Produk } = await supabase
@@ -3551,7 +3559,7 @@ ${item.snk.length > 100 ? item.snk.substring(0, 100) + '...' : item.snk}
       }
       await editOrSendBannerMessage(query.from.id, query.message.message_id, confirmText, {
         reply_markup: {
-          inline_keyboard: keyboard
+          inline_keyboard: sanitizeInlineKeyboard(keyboard)
         }
       })
     }
@@ -4046,7 +4054,7 @@ ${item.snk.length > 150 ? item.snk.substring(0, 150) + '...' : item.snk}
       }
       await editOrSendBannerMessage(query.from.id, query.message.message_id, confirmText, {
         reply_markup: {
-          inline_keyboard: keyboard
+          inline_keyboard: sanitizeInlineKeyboard(keyboard)
         }
       })
     }
@@ -4828,7 +4836,7 @@ Terima kasih! 🙏`
 
     // Quick action keyboard
     const completionKeyboard = {
-      inline_keyboard: [
+      inline_keyboard: sanitizeInlineKeyboard([
         [
           { text: "📋 Detail Pesanan", callback_data: `detail_trx_${Data.trxid}` },
           { text: "📥 Unduh Ulang", callback_data: `redownload_${Data.trxid}` }
@@ -4845,7 +4853,7 @@ Terima kasih! 🙏`
           { text: "📊 Lihat Riwayat", callback_data: "riwayattransaksi" },
           { text: copy.get('btn.belanja_lagi'), callback_data: "daftarproduk" }
         ]
-      ]
+      ])
     }
     
     try {
@@ -5334,7 +5342,7 @@ Terima kasih! 🙏`
 
       // Quick action keyboard
       const completionKeyboard = {
-        inline_keyboard: [
+        inline_keyboard: sanitizeInlineKeyboard([
           [
             { text: "📋 Detail Pesanan", callback_data: `detail_trx_${Data.trxid}` },
             { text: "📥 Unduh Ulang", callback_data: `redownload_${Data.trxid}` }
@@ -5351,7 +5359,7 @@ Terima kasih! 🙏`
             { text: "📊 Lihat Riwayat", callback_data: "riwayattransaksi" },
             { text: copy.get('btn.belanja_lagi'), callback_data: "daftarproduk" }
           ]
-        ]
+        ])
       }
       
             try {
@@ -5654,7 +5662,7 @@ di *${NamaBot}*! 🙏`, {
       }
     } catch (err) {
       console.error('Error creating QRIS payment:', err)
-      await sendMessage(query.from.id, copy.get('err.deposit_qris_create_failed', { error: err.message }))
+      await sendMessage(query.from.id, copy.get('err.deposit_qris_create_failed'))
     }
   } else {
     await sendMessage(query.from.id, copy.get('err.cart_session_lost'))
@@ -6767,7 +6775,7 @@ ${mostExpensive ? `💰 *${formatrupiah(mostExpensive.harga)}*\n📦 ${mostExpen
     await bot.sendMessage(query.from.id, copy.get('screen.cara_order'), {
       parse_mode: "Markdown",
       reply_markup: {
-        inline_keyboard: [
+        inline_keyboard: sanitizeInlineKeyboard([
           [
             { text: copy.get('btn.mulai_order'), callback_data: "daftarproduk" },
             { text: copy.get('btn.top_up'), callback_data: "saldomenu" }
@@ -6783,7 +6791,7 @@ ${mostExpensive ? `💰 *${formatrupiah(mostExpensive.harga)}*\n📦 ${mostExpen
           [
             { text: copy.get('btn.kembali'), callback_data: "kembaliawal" }
           ]
-        ]
+        ])
       }
     })
   }
@@ -6843,7 +6851,7 @@ A: Untuk saat ini maksimal 5 item per transaksi. Jika ingin lebih, buat pesanan 
 ━━━━━━━━━━━━━━━━━━━━`, {
       parse_mode: "Markdown",
       reply_markup: {
-        inline_keyboard: [
+        inline_keyboard: sanitizeInlineKeyboard([
           [
             { text: "📖 Panduan Order", callback_data: "caraorder" },
             { text: copy.get('btn.metode_bayar'), callback_data: "caraorder_payment" }
@@ -6855,7 +6863,7 @@ A: Untuk saat ini maksimal 5 item per transaksi. Jika ingin lebih, buat pesanan 
           [
             { text: copy.get('btn.kembali'), callback_data: "kembaliawal" }
           ]
-        ]
+        ])
       }
     })
   }
@@ -6951,8 +6959,7 @@ A: Untuk saat ini maksimal 5 item per transaksi. Jika ingin lebih, buat pesanan 
     })
   }
  } catch (err) {
-   console.log(err)
-  await sendMessage(query.from.id, `⚠️ ERROR: ${err}`)
+  await reportCallbackFailure(err, { userId: query.from.id, copy, send: sendMessage })
 }
 })
 
