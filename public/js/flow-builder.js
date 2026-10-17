@@ -516,14 +516,18 @@
     if (!list) return
     list.innerHTML = ''
     const items = (result && result.issues) || []
-    items.forEach((item) => {
+    items.forEach((item, idx) => {
       const li = document.createElement('li')
       const btn = document.createElement('button')
       btn.type = 'button'
       btn.className = 'flow-validation-item is-' + item.level
+      btn.setAttribute('data-issue-index', String(idx))
       if (item.nodeKey) btn.setAttribute('data-node-key', item.nodeKey)
       btn.textContent = (item.level === 'error' ? '⛔ ' : '⚠ ') + item.message
-      btn.addEventListener('click', function () {
+      btn.addEventListener('mousedown', function (ev) { ev.stopPropagation() })
+      btn.addEventListener('click', function (ev) {
+        ev.preventDefault()
+        ev.stopPropagation()
         focusValidationIssue(item)
       })
       li.appendChild(btn)
@@ -1688,6 +1692,7 @@
       publishDraft()
     })
     const validationToggle = document.getElementById('validationToggle')
+    const validationList = document.getElementById('validationList')
     if (validationToggle) {
       validationToggle.addEventListener('click', function (ev) {
         ev.stopPropagation()
@@ -1701,6 +1706,18 @@
         } else {
           closeValidationList()
         }
+      })
+    }
+    if (validationList) {
+      validationList.addEventListener('mousedown', function (ev) { ev.stopPropagation() })
+      validationList.addEventListener('click', function (ev) {
+        ev.stopPropagation()
+        const btn = ev.target.closest('.flow-validation-item')
+          || (ev.target.closest('li') && ev.target.closest('li').querySelector('.flow-validation-item'))
+        if (!btn) return
+        const idx = Number(btn.getAttribute('data-issue-index'))
+        const item = (lastValidation.issues || [])[idx] || { nodeKey: btn.getAttribute('data-node-key') }
+        focusValidationIssue(item)
       })
     }
     document.addEventListener('click', closeValidationList)

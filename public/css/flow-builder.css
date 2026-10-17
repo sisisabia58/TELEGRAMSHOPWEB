@@ -289,13 +289,14 @@
   cursor: pointer;
 }
 
-.flow-dropdown-menu button:hover,
+.flow-dropdown-menu button:hover:not(:disabled),
 .flow-dropdown-menu .flow-toggle:hover {
   background: #f4f7f9;
 }
 
 .flow-dropdown-menu button:disabled {
   opacity: 0.45;
+  color: #9aa7b2;
   cursor: not-allowed;
 }
 
