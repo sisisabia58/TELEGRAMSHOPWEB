@@ -86,3 +86,16 @@ test('flow-builder JS puts a Start pill on entry_key and refuses deleting that n
   assert.match(js, /btnOverflowMenu/)
   assert.match(js, /applyCommand/)
 })
+
+test('Save and overflow dropdowns use a disclosure pattern, not ARIA menus', async () => {
+  const html = await renderFlowPage()
+
+  assert.match(html, /id="btnSaveMenu"[^>]*aria-expanded="false"[^>]*aria-controls="flowSaveMenu"/)
+  assert.match(html, /id="btnOverflowMenu"[^>]*aria-expanded="false"[^>]*aria-controls="flowOverflowMenu"/)
+  assert.match(html, /id="flowEnabled"/)
+  assert.match(html, /id="entryKeySelect"/)
+
+  assert.equal(html.includes('aria-haspopup'), false)
+  assert.equal(html.includes('role="menu"'), false)
+  assert.equal(html.includes('role="menuitem"'), false)
+})
