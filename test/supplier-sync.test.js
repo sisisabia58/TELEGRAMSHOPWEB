@@ -45,6 +45,15 @@ function buatQueryBerhalaman(halaman) {
   return { buatQuery, panggilan }
 }
 
+test('sapuan ketersediaan dilewati untuk katalog kosong, terpotong, atau anjlok', () => {
+  const sync = muatSync()
+  assert.equal(sync.bolehSapuKetersediaan({ fetched: 10, previousAvailable: 10, truncated: false }).ok, true)
+  assert.equal(sync.bolehSapuKetersediaan({ fetched: 0, previousAvailable: 40, truncated: false }).ok, false)
+  assert.equal(sync.bolehSapuKetersediaan({ fetched: 8, previousAvailable: 40, truncated: false }).ok, false)
+  assert.equal(sync.bolehSapuKetersediaan({ fetched: 40, previousAvailable: 40, truncated: true }).ok, false)
+  assert.equal(sync.bolehSapuKetersediaan({ fetched: 0, previousAvailable: 0, truncated: false }).ok, false)
+})
+
 test('fetchAllRows mengambil semua halaman berurutan berdasarkan id', async () => {
   const sync = muatSync()
   const halaman = [

@@ -13,8 +13,9 @@
 -- anon/authenticated even if table GRANTs exist.
 --
 -- Defense in depth: REVOKE table access from anon/authenticated/PUBLIC, and
--- additionally REVOKE SELECT(api_key) so a later GRANT SELECT ON TABLE
--- still cannot expose the credential column.
+-- additionally REVOKE SELECT(api_key). A later table-level GRANT SELECT would
+-- restore column access; the service_role-only RLS policy is the real second
+-- layer if table privileges are ever re-granted.
 --
 -- Do not apply this file to a database whose SUPABASE_KEY is a publishable
 -- / anon key — supplier pages and sync would start returning empty. Switch
@@ -48,6 +49,8 @@ GRANT ALL ON TABLE "Supplier" TO service_role;
 GRANT ALL ON TABLE "SupplierProduct" TO service_role;
 GRANT ALL ON TABLE "SupplierOrder" TO service_role;
 
--- Even if a future GRANT SELECT ON TABLE "Supplier" is added for a client
--- role, this column stays hidden. service_role keeps full access via GRANT ALL.
+-- NOTE: a column-level REVOKE does NOT override a table-level GRANT SELECT.
+-- If a client role is ever granted SELECT ON TABLE "Supplier" again, the
+-- service_role-only RLS policy above is what still hides every row
+-- (including api_key). Keep that policy in place.
 REVOKE SELECT (api_key) ON TABLE "Supplier" FROM PUBLIC, anon, authenticated;

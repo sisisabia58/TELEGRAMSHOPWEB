@@ -1,12 +1,14 @@
 # Phase 13 — Flow Builder Graph CRUD Completion Implementation Plan
 
+> **Status:** implemented. Publish is an atomic Postgres RPC (`publish_bot_flow_graph`), not the separate node/copy/flow writes in the original draft of this plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make Flow Builder canvas add/delete, action selection, media publish, and preview media work end-to-end through draft validation and publish — closing the Phase 12 UI/backend gap.
 
 **Architecture:** Replace Phase 6b fixed-key `validateDraft` with graph-integrity rules in `lib/flow-draft.js`. Add `diffPublishPlan(draft, publishedKeys, existingCopyKeys)` to compute INSERT/UPDATE/DELETE patches. `POST /api/bot-flow/publish` validates the draft (graph + screen message text) and the RPC argument shapes, then applies the diff atomically through `supabase.rpc('publish_bot_flow_graph', payload)`. `POST /api/bot-flow/draft` uses the same draft validation. Extend inspector UI and preview mock for action picker, media type, entry node selector, and image preview.
 
-**Tech Stack:** Node.js 20, Express 5 + EJS, vanilla JS, Drawflow (CDN), Supabase (`BotFlow`, `BotFlowNode`, `BotCopy`), `node --test`, Railway deploy from `main`.
+**Tech Stack:** Node.js 20, Express 5 + EJS, vanilla JS, Drawflow (CDN), Supabase (`BotFlow`, `BotFlowNode`, `BotCopy`, `publish_bot_flow_graph`), `node --test`, Railway deploy from `main`.
 
 **Design spec:** `docs/superpowers/specs/2026-08-24-flow-builder-graph-crud-design.md`
 

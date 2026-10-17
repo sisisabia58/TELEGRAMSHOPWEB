@@ -502,7 +502,7 @@ test('failover TIDAK membeli dari supplier yang lebih mahal dari yang ditagih', 
   assert.match(r.error, /di atas yang ditagih/)
 })
 
-test('stok sendiri tetap dicoba meski harganya di atas yang ditagih', async () => {
+test('stok sendiri dipakai dulu meski supplier lebih murah', async () => {
   const f = muatFulfillment()
   let supplierDipanggil = false
   const { deps } = buatDeps({
@@ -512,10 +512,9 @@ test('stok sendiri tetap dicoba meski harganya di atas yang ditagih', async () =
     ],
     getStokForTransaction: async () => [{ id: 'st1', data: 'akun' }],
     claimStok: async () => ({ ok: true, rows: [{ id: 'st1', data: 'akun' }] }),
-    createOrder: async (supplier) => {
+    createOrder: async () => {
       supplierDipanggil = true
-      if (supplier.id === 'murah') throw httpErr(409)
-      throw new Error('supplier mahal tidak boleh dipanggil')
+      throw new Error('supplier tidak boleh dipanggil selama stok sendiri cukup')
     },
   })
 
@@ -525,7 +524,7 @@ test('stok sendiri tetap dicoba meski harganya di atas yang ditagih', async () =
   assert.equal(r.ok, true)
   assert.equal(r.sumber, 'sendiri')
   assert.deepEqual(r.lines, ['akun'])
-  assert.equal(supplierDipanggil, true, 'supplier termurah tetap dicoba dulu')
+  assert.equal(supplierDipanggil, false, 'alokasi: stok sendiri dulu, baru supplier')
 })
 
 test('supplier dengan harga sama dengan yang ditagih tetap dicoba', async () => {
@@ -595,6 +594,19 @@ test('502 yang masih gelap diselesaikan lewat getOrder', async () => {
   assert.equal(getDipanggil.supplier, 'murah')
   assert.equal(dicatat[0].status, 'ok')
   assert.equal(dicatat[0].external_order_id, 'ord-77')
+})
+
+test('hasil ambigu TIDAK boleh di-refund otomatis', () => {
+  const f = muatFulfillment()
+  assert.equal(f.harusRefund({ ok: true }), false)
+  assert.equal(f.harusRefund({ ok: false, error: 'stok habis' }), true)
+  assert.equal(
+    f.harusRefund({ ok: false, stopFailover: true, error: `${f.REKON_PREFIX}: HTTP 502` }),
+    false,
+    'timeout/5xx yang masih gelap ditahan untuk rekonsiliasi, bukan dikembalikan'
+  )
+  assert.equal(f.perluRekonsiliasi({ ok: false, stopFailover: true }), true)
+  assert.equal(f.perluRekonsiliasi({ ok: false, error: 'HTTP 409' }), false)
 })
 
 test('markRefunded tidak menimpa jejak yang perlu rekonsiliasi', async () => {

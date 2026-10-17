@@ -231,8 +231,35 @@ test('listProducts berhenti di halaman terakhir yang tidak penuh', async () => {
       return { data: [{ id: panggilan, price: 1, stock: 1 }] }
     },
   })
-  await bitestore.listProducts(KREDENSIAL)
+  const hasil = await bitestore.listProducts(KREDENSIAL)
   assert.equal(panggilan, 1, 'halaman pendek berarti selesai')
+  assert.equal(hasil.truncated, false)
+})
+
+test('listProducts menandai katalog terpotong saat pagar halaman tercapai', async () => {
+  bitestore.__setPagingForTest({ maxPages: 2, jedaMs: 0 })
+  const perPage = 500
+  let panggilan = 0
+  bitestore.__setHttp({
+    get: async () => {
+      panggilan++
+      return {
+        data: Array.from({ length: perPage }, (_, i) => ({
+          id: panggilan * perPage + i,
+          price: 1,
+          stock: 1,
+        })),
+      }
+    },
+  })
+  try {
+    const hasil = await bitestore.listProducts(KREDENSIAL)
+    assert.equal(panggilan, 2)
+    assert.equal(hasil.truncated, true)
+    assert.equal(hasil.produk.length, 2 * perPage)
+  } finally {
+    bitestore.__setPagingForTest(null)
+  }
 })
 
 test('panggilan keluar menolak base_url di luar allowlist dan tidak mengirim api_key', async () => {

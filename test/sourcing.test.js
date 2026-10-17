@@ -285,6 +285,30 @@ test('pickBestOffer menormalkan qty yang aneh', () => {
 // rankOffers / summarize
 // ---------------------------------------------------------------------------
 
+test('rankOffers mengutamakan stok sendiri lalu supplier, meski sendiri lebih mahal', () => {
+  const s = muatSourcing()
+  const offers = s.buildOffers({
+    varian: { ...VARIAN, harga: 50000 }, ownStokCount: 2, pricing: PRICING,
+    supplierRows: [supplierRow({ id: 'murah', harga_asal: 2.0, stok: 10 })],
+  })
+  const urut = s.rankOffers(offers, 1)
+  assert.equal(urut[0].sumber, 'sendiri', 'alokasi: stok sendiri dulu')
+  assert.equal(urut[1].sumber, 'supplier')
+  assert.equal(s.pickBestOffer(offers, 1).sumber, 'supplier', 'harga tampilan tetap yang termurah')
+})
+
+test('rankOffers memakai stok gabungan: qty di atas stok sendiri tetap lolos ke supplier', () => {
+  const s = muatSourcing()
+  const offers = s.buildOffers({
+    varian: { ...VARIAN, harga: 50000 }, ownStokCount: 2, pricing: PRICING,
+    supplierRows: [supplierRow({ id: 'cadangan', harga_asal: 2.0, stok: 10 })],
+  })
+  const urut = s.rankOffers(offers, 3)
+  assert.equal(urut.length, 1)
+  assert.equal(urut[0].sumber, 'supplier')
+  assert.equal(s.summarize(offers).stok_total, 12)
+})
+
 test('rankOffers mengurutkan termurah dulu untuk failover', () => {
   const s = muatSourcing()
   const offers = s.buildOffers({

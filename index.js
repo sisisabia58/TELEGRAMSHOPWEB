@@ -40,7 +40,7 @@ const catalog = require('./lib/catalog')
 const pricing = require('./lib/pricing')
 
 // Sumber stok ketiga: katalog supplier (fase 13). Stok sendiri tetap jadi
-// sumber utama dan menang setiap kali harganya lebih murah — modul-modul ini
+// sumber utama dan diambil lebih dulu saat alokasi — modul-modul ini
 // hanya menambah pilihan, tidak menggantikan apa pun.
 const sourcing = require('./lib/sourcing')
 const fulfillment = require('./lib/fulfillment')
@@ -436,11 +436,9 @@ async function hargaUntukQty(item, qty) {
 }
 
 // Stok supplier tidak punya baris di tabel "Stok", jadi tidak ada yang bisa
-// dipilih satu per satu maupun direservasi. Untuk barang seperti itu layar yang
-// sama dipakai sebagai pemilih JUMLAH biasa.
-function pakaiPemilihStok(item) {
-  return Number(item?.stok_sendiri || 0) > 0
-}
+// dipilih satu per satu maupun direservasi. Varian campuran juga memakai
+// pemilih jumlah sampai stok gabungan — baris sendiri diambil saat fulfill.
+const pakaiPemilihStok = catalog.pakaiPemilihStok
 
 // Jumlah yang sedang dipilih di layar, apa pun sumbernya:
 // stok sendiri dihitung dari baris yang direservasi, stok supplier dari
@@ -560,6 +558,43 @@ ${berhasil ? '' : `Saldo sebelum: ${saldoSebelum === null ? 'tidak terbaca' : fo
   }
 
   return berhasil
+}
+
+// Pesanan supplier mungkin sudah terbit (timeout/5xx). Jangan refund dan
+// jangan suruh pembeli pesan ulang — dashboard menampilkan jejak ini.
+async function beritahuRekonsiliasi({ userId, harga, Data, item, alasan }) {
+  const pesanPembeli = `⚠️ *PESANAN SEDANG DICEK MANUAL*
+━━━━━━━━━━━━━━━━━━━━
+Pembayaran untuk *${item?.nama || 'produk ini'}* sudah kami terima, tapi konfirmasi pengiriman dari pemasok belum jelas.
+
+❗️ Saldo *belum dikembalikan* supaya tidak dobel jika barangnya ternyata sudah terbit.
+📋 Trx ID: \`${Data.trxid}\`
+💰 Nominal: *${formatrupiah(harga)}*
+
+Admin sedang meninjau. Mohon tunggu atau hubungi CS dengan Trx ID di atas — jangan pesan ulang dulu.`
+
+  try {
+    await bot.sendMessage(userId, pesanPembeli, { parse_mode: 'Markdown' })
+  } catch (e) {
+    console.error('[Rekon] gagal memberi tahu pembeli:', e)
+  }
+
+  try {
+    if (channelContact.channelLog) {
+      await bot.sendMessage(channelContact.channelLog, `🚨 *PESANAN PERLU REKONSILIASI MANUAL*
+=======================
+User: ${userId}
+Trx ID: *${Data.trxid}*
+Produk: *${item?.nama || Data.kode}*
+Jumlah: *${Data.jumlah}*
+Nominal: *${formatrupiah(harga)}*
+Alasan: ${alasan || 'tidak diketahui'}
+Saldo TIDAK dikembalikan otomatis.
+=======================`, { parse_mode: 'Markdown' })
+    }
+  } catch (e) {
+    console.error('[Rekon] gagal mengirim log:', e)
+  }
 }
 
 // Layar pemilih jumlah/stok. Dulu ditulis dua kali (blok "lanjut" dan
@@ -4721,9 +4756,8 @@ if (cmd === "bayarsaldo") {
     // Kurangi saldo
     await minSaldo(query.from.id, harga)
 
-    // Penuhi dari sumber termurah yang benar-benar bisa: stok sendiri kalau
-    // lebih murah, kalau tidak beli ke supplier. Gagal di satu sumber berarti
-    // turun ke sumber berikutnya, bukan langsung gagal.
+    // Penuhi dari stok sendiri dulu, lalu supplier. Gagal 4xx di satu sumber
+    // berarti turun ke sumber berikutnya; timeout/5xx ditahan untuk rekonsiliasi.
     const hasilPenuhi = await penuhiPesanan({
       item,
       Data,
@@ -4736,15 +4770,24 @@ if (cmd === "bayarsaldo") {
     }
 
     if (!hasilPenuhi.ok) {
-      // Saldo sudah dipotong di atas — WAJIB dikembalikan.
       console.error(`[Fulfillment] ${Data.trxid} gagal:`, hasilPenuhi.error)
-      await kembalikanSaldo({
-        userId: query.from.id,
-        harga,
-        Data,
-        item,
-        alasan: hasilPenuhi.error,
-      })
+      if (fulfillment.harusRefund(hasilPenuhi)) {
+        await kembalikanSaldo({
+          userId: query.from.id,
+          harga,
+          Data,
+          item,
+          alasan: hasilPenuhi.error,
+        })
+      } else {
+        await beritahuRekonsiliasi({
+          userId: query.from.id,
+          harga,
+          Data,
+          item,
+          alasan: hasilPenuhi.error,
+        })
+      }
       return
     }
 
@@ -5236,16 +5279,26 @@ Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik s
                 }
               });
 
-              // Pembayaran QRIS tidak bisa dibalikkan otomatis, jadi nilainya
-              // dikreditkan ke saldo — pembeli tetap utuh dan bisa langsung
-              // memakainya. Fee gateway di luar ini.
-              await kembalikanSaldo({
-                userId: query.from.id,
-                harga,
-                Data,
-                item,
-                alasan: `QRIS terbayar tapi pemenuhan gagal: ${hasilPenuhi.error}`,
-              })
+              if (fulfillment.harusRefund(hasilPenuhi)) {
+                // Pembayaran QRIS tidak bisa dibalikkan otomatis, jadi nilainya
+                // dikreditkan ke saldo — pembeli tetap utuh dan bisa langsung
+                // memakainya. Fee gateway di luar ini.
+                await kembalikanSaldo({
+                  userId: query.from.id,
+                  harga,
+                  Data,
+                  item,
+                  alasan: `QRIS terbayar tapi pemenuhan gagal: ${hasilPenuhi.error}`,
+                })
+              } else {
+                await beritahuRekonsiliasi({
+                  userId: query.from.id,
+                  harga,
+                  Data,
+                  item,
+                  alasan: `QRIS terbayar tapi pemenuhan gelap: ${hasilPenuhi.error}`,
+                })
+              }
               await cart.clear(query.from.id)
               return
             }
