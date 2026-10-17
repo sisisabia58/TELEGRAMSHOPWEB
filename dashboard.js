@@ -26,6 +26,7 @@ const { buildOverviewModel, summarizeStock } = require('./lib/dashboard-overview
 const { redactSecrets, secretUpdateRow, selectSupabaseTestKey, supabaseOriginChangeError } = require('./lib/secret-mask')
 const { requireRole, requireWriteAccess } = require('./lib/dashboard-auth')
 const security = require('./lib/http-security')
+const { safeErrorHandler } = require('./lib/safe-error-handler')
 
 const app = express()
 security.applyTrustProxy(app)
@@ -34,6 +35,9 @@ security.applyHttpHardening(app)
 // Set view engine
 app.set('view engine', 'ejs')
 app.set('views', path.join(__dirname, 'views'))
+// Available in every view. Per-render passes of the same helpers stay harmless.
+app.locals.formatTanggal = formatTanggal
+app.locals.formatrupiah = formatrupiah
 
 // Static files
 app.use(express.static(path.join(__dirname, 'public')))
@@ -4373,6 +4377,7 @@ app.get('/communication/templates', isAuthenticated, async (req, res) => {
       namaBot: NamaBot,
       username: req.session.username,
       templates: templates || [],
+      formatTanggal,
       success: req.query.success || null,
       error: req.query.error || null,
       req: req
@@ -7762,6 +7767,11 @@ app.post('/api/settings/reseller/kurs', isAuthenticated, async (req, res) => {
     res.status(500).json({ success: false, message: error.message })
   }
 })
+
+// Last middleware: EJS render failures already call next(err). Hide stacks
+// unless NODE_ENV is explicitly development or test (unset ≠ development).
+// CSRF failures are answered inside csrfProtection (403) and never reach here.
+app.use(safeErrorHandler)
 
 module.exports = app
 
