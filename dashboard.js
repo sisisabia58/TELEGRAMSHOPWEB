@@ -994,6 +994,13 @@ app.get('/', isAuthenticated, async (req, res) => {
         .limit(10),
     ])
 
+    // Query lain di halaman ini jatuh ke data kosong kalau PostgREST mengembalikan
+    // error (kartu stok/deposit tetap tampil). Daftar rekonsiliasi tidak boleh
+    // begitu: error yang ditelan terlihat seperti "Aman" dan menyembunyikan
+    // pesanan yang tidak boleh di-refund. Pola halaman ini untuk kegagalan yang
+    // harus terlihat adalah throw ke catch di bawah, yang membalas 500.
+    if (pendingReconResult.error) throw pendingReconResult.error
+
     const variants = variantsResult.data || []
     const stockCounts = await stock.getStokCountsByKode(variants.map((v) => v.kode))
     const thresholdsByVarianId = Object.create(null)

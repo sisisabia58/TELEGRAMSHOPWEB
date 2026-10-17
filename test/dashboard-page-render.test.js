@@ -288,6 +288,7 @@ const FIXTURES = {
 }
 
 const dbMode = { current: 'empty' }
+const forcedQueryError = { table: null, error: null }
 const queriedTables = new Set()
 const missingFixtures = new Set()
 const renders = []
@@ -393,6 +394,9 @@ function supabaseBuilder(table) {
   }
 
   function exec() {
+    if (forcedQueryError.table === table && forcedQueryError.error) {
+      return Promise.resolve({ data: null, error: forcedQueryError.error, count: null })
+    }
     if (state.op === 'write') {
       const data = state.single || state.maybe ? { id: 'write-1' } : []
       return Promise.resolve({ data, error: null, count: 0 })
@@ -657,7 +661,21 @@ test('every dashboard page renders with the locals its route passes', { timeout:
     assert.ok(skippedPartials.includes('variant-row'))
     assert.ok(emptySkips.length > 0)
     assert.ok(queriedTables.has('Trx'))
+
+    forcedQueryError.table = 'SupplierOrder'
+    forcedQueryError.error = { message: 'supplier order down' }
+    dbMode.current = 'seeded'
+    const reconRes = await fetch(`${url}/`, {
+      redirect: 'manual',
+      headers: { Cookie: cookie },
+    })
+    const reconBody = await reconRes.text()
+    assert.equal(reconRes.status, 500, reconBody.slice(0, 300))
+    assert.match(reconBody, /supplier order down/)
+    assert.equal(reconBody.includes('TRX-REKON-1'), false)
   } finally {
+    forcedQueryError.table = null
+    forcedQueryError.error = null
     await close(server)
   }
 })
