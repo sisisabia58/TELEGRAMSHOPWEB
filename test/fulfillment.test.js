@@ -73,6 +73,19 @@ function httpErr(status, extra = {}) {
   return e
 }
 
+async function denganLog(jalan) {
+  const log = []
+  const asli = console.error
+  console.error = (...args) => {
+    log.push(args.map((a) => (a instanceof Error ? a.message : String(a))).join(' '))
+  }
+  try {
+    return { r: await jalan(), log }
+  } finally {
+    console.error = asli
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Jalur stok sendiri — harus persis seperti sebelum fase ini
 // ---------------------------------------------------------------------------
@@ -674,7 +687,7 @@ test('fulfill menahan refund saat 502 tidak terselesaikan', async () => {
   assert.equal(f.perluRekonsiliasi(r), true)
 })
 
-test('pencatatan setelah pesanan sukses yang melempar ditahan untuk rekonsiliasi', async () => {
+test('pencatatan setelah pesanan sukses yang melempar tetap mengirim key', async () => {
   const f = muatFulfillment()
   const dicoba = []
   const { deps } = buatDeps({
@@ -689,14 +702,19 @@ test('pencatatan setelah pesanan sukses yang melempar ditahan untuk rekonsiliasi
     recordSupplierOrder: async () => { throw new Error('insert meledak') },
   })
 
-  const r = await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-CATAT-SUKSES', deps })
-  assert.equal(r.ok, false)
-  assert.equal(r.stopFailover, true)
+  const { r, log } = await denganLog(() => f.fulfill({
+    varian: VARIAN, qty: 1, trxid: 'TRX-CATAT-SUKSES', deps,
+  }))
+  assert.equal(r.ok, true, 'key sudah di tangan — jangan tahan pengiriman')
+  assert.deepEqual(r.lines, ['key-sukses'])
+  assert.equal(r.supplierOrder, null)
+  assert.equal(r.stopFailover, true, 'jangan pindah penjual dan jangan beli lagi')
   assert.equal(f.harusRefund(r), false)
-  assert.equal(f.perluRekonsiliasi(r), true)
+  assert.equal(f.perluRekonsiliasi(r), true, 'jejak yang hilang tetap ditandai rekonsiliasi')
   assert.deepEqual(dicoba, ['murah'], 'pesanan sudah terbit, jangan pindah penjual')
   assert.match(r.error, /perlu rekonsiliasi manual/)
   assert.match(r.error, /insert meledak/)
+  assert.ok(log.some((baris) => /perlu rekonsiliasi manual/.test(baris) && /TRX-CATAT-SUKSES/.test(baris)))
 })
 
 test('pencatatan jalur ambigu yang melempar tetap stopFailover', async () => {
@@ -724,7 +742,7 @@ test('pencatatan jalur ambigu yang melempar tetap stopFailover', async () => {
   assert.match(r.error, /jejak gagal/)
 })
 
-test('getOrder sukses yang pencatatannya melempar tetap ditahan', async () => {
+test('getOrder sukses yang pencatatannya melempar tetap mengirim key', async () => {
   const f = muatFulfillment()
   const dicoba = []
   const { deps } = buatDeps({
@@ -740,12 +758,19 @@ test('getOrder sukses yang pencatatannya melempar tetap ditahan', async () => {
     recordSupplierOrder: async () => { throw new Error('jejak getOrder gagal') },
   })
 
-  const r = await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-CATAT-GET', deps })
-  assert.equal(r.ok, false)
+  const { r, log } = await denganLog(() => f.fulfill({
+    varian: VARIAN, qty: 1, trxid: 'TRX-CATAT-GET', deps,
+  }))
+  assert.equal(r.ok, true, 'getOrder sudah mengembalikan key — tetap kirim')
+  assert.deepEqual(r.lines, ['dari-get'])
+  assert.equal(r.supplierOrder, null)
   assert.equal(r.stopFailover, true)
   assert.equal(f.harusRefund(r), false)
-  assert.deepEqual(dicoba, ['murah', 'murah'])
+  assert.equal(f.perluRekonsiliasi(r), true)
+  assert.deepEqual(dicoba, ['murah', 'murah'], 'retry sekali, jangan failover dan jangan beli lagi')
+  assert.match(r.error, /perlu rekonsiliasi manual/)
   assert.match(r.error, /jejak getOrder gagal/)
+  assert.ok(log.some((baris) => /perlu rekonsiliasi manual/.test(baris) && /TRX-CATAT-GET/.test(baris)))
 })
 
 test('kesalahan sebelum pesanan tidak menjadi ambigu', async () => {
