@@ -78,6 +78,12 @@ test('flow-builder CSS styles the dark top bar, palette, dotted canvas, Start pi
   assert.match(css, /@media \(max-width: 900px\)/)
 })
 
+test('action inspector keeps the current action even if it was removed from the picker', () => {
+  const js = fs.readFileSync(jsFile, 'utf8')
+  assert.match(js, /actionChoices\.indexOf\(node\.action\) === -1/)
+  assert.match(js, /actionChoices\.unshift\(node\.action\)/)
+})
+
 test('flow-builder JS puts a Start pill on entry_key and refuses deleting that node (M7)', () => {
   const js = fs.readFileSync(jsFile, 'utf8')
   assert.match(js, /sp-start-pill/)

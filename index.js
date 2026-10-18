@@ -1755,7 +1755,7 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
   const start = page * PRODUCTS_PER_PAGE
   const items = sortedProducts.slice(start, start + PRODUCTS_PER_PAGE)
 
-  if (callbackId) await bot.answerCallbackQuery(callbackId)
+  if (callbackId) await flow.answerCallbackQuerySafe(bot, callbackId)
 
   let rows = ''
   if (items.length === 0) {
@@ -2133,10 +2133,22 @@ bot.onText(/^\/start(?:@\w+)?(?:\s|$)/, async (msg) => {
     
     // Kirim foto + teks dalam satu bubble (banner merged)
     if (flow.isEnabled()) {
-      await dispatchFlow(msg.from.id, flow.getEntryKey(), {
+      const ok = await dispatchFlow(msg.from.id, flow.getEntryKey(), {
         firstName: msg.from.first_name,
         push: false,
+        msg,
       })
+      if (!ok) {
+        await sendBannerMessage(msg.from.id, welcomeCaption({
+          first_name: msg.from.first_name,
+          user_count: userCount,
+          stok_terjual: stokterjual,
+          stok_tersedia: stoktersedia,
+          saldo: userSaldo,
+        }), {
+          reply_markup: welcomeInlineKeyboard()
+        })
+      }
     } else {
       await sendBannerMessage(msg.from.id, welcomeCaption({
         first_name: msg.from.first_name,
@@ -2318,7 +2330,9 @@ async function openProductList(query) {
   const { data: Produk } = await supabase.from('Produk').select('*')
 
   try {
-    await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    if (query.message && query.message.message_id) {
+      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    }
   } catch (e) {
     // Ignore if message already deleted
   }
@@ -2347,7 +2361,11 @@ async function openKategoriMenu(query) {
   const { data: Produk } = await supabase.from('Produk').select('*')
 
   if (!Produk || Produk.length === 0) {
-    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_products'), show_alert: true })
+    if (query.id) {
+      await flow.answerCallbackQuerySafe(bot, query.id, { text: copy.get('err.no_products'), show_alert: true })
+    } else {
+      await sendMessage(query.from.id, copy.get('err.no_products'))
+    }
     return
   }
 
@@ -2405,7 +2423,7 @@ Pilih kategori produk yang ingin dilihat:
   buttons.push([{ text: copy.get('btn.semua_produk'), callback_data: 'daftarproduk' }])
   buttons.push([{ text: copy.get('btn.kembali'), callback_data: 'kembaliawal' }])
 
-  await bot.answerCallbackQuery(query.id)
+  if (query.id) await flow.answerCallbackQuerySafe(bot, query.id)
   await editOrSendBannerMessage(query.from.id, query.message.message_id, text, {
     reply_markup: { inline_keyboard: buttons },
   })
@@ -2415,7 +2433,7 @@ async function openStokBuyer(query) {
   const { data: Produk } = await supabase.from('Produk').select('*')
 
   if (!Produk || Produk.length === 0) {
-    await bot.answerCallbackQuery(query.id)
+    if (query.id) await flow.answerCallbackQuerySafe(bot, query.id)
     await sendMessage(query.from.id, copy.get('err.no_products'), { parse_mode: 'Markdown' })
     return
   }
@@ -2497,7 +2515,7 @@ async function openStokBuyer(query) {
 
   buttons.push([{ text: copy.get('btn.kembali'), callback_data: 'kembaliawal' }])
 
-  await bot.answerCallbackQuery(query.id)
+  if (query.id) await flow.answerCallbackQuerySafe(bot, query.id)
   await bot.sendMessage(query.from.id, tx, {
     parse_mode: 'Markdown',
     reply_markup: { inline_keyboard: buttons },
@@ -2509,18 +2527,87 @@ async function openRiwayat(query) {
   if (!Trx || Trx.length === 0) {
     return sendMessage(query.from.id, copy.get('err.no_transactions'))
   }
-  await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+  try {
+    if (query.message && query.message.message_id) {
+      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
+    }
+  } catch (e) {}
   await sendPage(Trx, query.from.id, 0)
 }
 
-async function handleFlowResult(userId, result, { msgId = null, query = null } = {}) {
+function depositMenuPayload() {
+  const text = `💳 *TOP UP SALDO*
+=======================
+*Cara Top Up:*
+1. Ketik \`/deposit Jumlah\`
+2. Scan QRIS yang muncul
+3. Saldo akan ditambahkan otomatis
+
+*Contoh:*
+\`/deposit 50000\`
+\`/deposit 100000\`
+
+=======================
+💡 *Minimum deposit:* Rp 1.000
+💡 Saldo akan ditambahkan setelah pembayaran berhasil`
+
+  const reply_markup = {
+    inline_keyboard: [
+      [
+        { text: "Rp 5.000", callback_data: "deposit_preset:5000" },
+        { text: "Rp 10.000", callback_data: "deposit_preset:10000" }
+      ],
+      [
+        { text: "Rp 25.000", callback_data: "deposit_preset:25000" },
+        { text: "Rp 50.000", callback_data: "deposit_preset:50000" }
+      ],
+      [
+        { text: "Rp 100.000", callback_data: "deposit_preset:100000" }
+      ],
+      [
+        { text: copy.get('btn.deposit_custom'), callback_data: "deposit_custom" }
+      ],
+      [{text: copy.get('btn.riwayat_deposit'), callback_data: "riwayatdeposit"}],
+      [{text: copy.get('btn.kembali'), callback_data: "saldomenu"}]
+    ]
+  }
+  return { text, reply_markup }
+}
+
+async function openDepositMenu(query) {
+  if (query.id) await flow.answerCallbackQuerySafe(bot, query.id)
+  const { text, reply_markup } = depositMenuPayload()
+  const chatId = (query.message && query.message.chat && query.message.chat.id) || query.from.id
+  const msgId = query.message && query.message.message_id
+  if (!msgId) {
+    await sendBannerMessage(query.from.id, text, { reply_markup })
+    return
+  }
+  await bot.editMessageCaption(text, {
+    chat_id: chatId,
+    message_id: msgId,
+    parse_mode: "Markdown",
+    reply_markup
+  }).catch(async () => {
+    try {
+      if (msgId) await bot.deleteMessage(chatId, msgId)
+    } catch (err) {}
+    await sendBannerMessage(query.from.id, text, { reply_markup })
+  })
+}
+
+async function handleFlowResult(userId, result, { msgId = null, query = null, msg = null, currentMediaUrl, currentMediaType } = {}) {
   if (!result || result.type === 'error') {
     console.error('[flow]', result && result.message)
     return false
   }
   if (result.type === 'screen') {
     if (result.node && result.node.media_url) {
-      await flow.dispatchFlowScreen(bot, userId, result.node, msgId, result.caption, { urlResolver: flowUrlResolver })
+      await flow.dispatchFlowScreen(bot, userId, result.node, msgId, result.caption, {
+        urlResolver: flowUrlResolver,
+        currentMediaUrl,
+        currentMediaType,
+      })
     } else if (msgId) {
       await editOrSendBannerMessage(userId, msgId, result.caption, { reply_markup: result.reply_markup })
     } else {
@@ -2529,32 +2616,50 @@ async function handleFlowResult(userId, result, { msgId = null, query = null } =
     return true
   }
   if (result.type === 'action') {
-    if (!query) {
-      console.error('[flow] action requires query context')
-      return false
+    const decision = flow.resolveFlowAction(result.action, { query, msg })
+    if (decision.type === 'run') {
+      switch (decision.action) {
+        case 'product_list':
+          await openProductList(decision.query)
+          break
+        case 'kategori_menu':
+          await openKategoriMenu(decision.query)
+          break
+        case 'stok':
+          await openStokBuyer(decision.query)
+          break
+        case 'riwayat':
+          await openRiwayat(decision.query)
+          break
+        case 'deposit_menu':
+          await openDepositMenu(decision.query)
+          break
+        default:
+          return false
+      }
+      return true
     }
-    switch (result.action) {
-      case 'product_list':
-        await openProductList(query)
-        break
-      case 'kategori_menu':
-        await openKategoriMenu(query)
-        break
-      case 'stok':
-        await openStokBuyer(query)
-        break
-      case 'riwayat':
-        await openRiwayat(query)
-        break
-      default:
-        return false
+    if (decision.type === 'answer') {
+      if (decision.query && decision.query.id) {
+        await bot.answerCallbackQuery(decision.query.id).catch(() => {})
+      }
+      return true
     }
-    return true
+    if (decision.type === 'notice') {
+      if (decision.query && decision.query.id) {
+        await bot.answerCallbackQuery(decision.query.id, {
+          text: decision.text,
+          show_alert: true,
+        }).catch(() => {})
+      }
+      return true
+    }
+    return false
   }
   return false
 }
 
-async function dispatchFlow(userId, nodeKey, { msgId = null, push, firstName, query = null } = {}) {
+async function dispatchFlow(userId, nodeKey, { msgId = null, push, firstName, query = null, msg = null } = {}) {
   const entry = flow.getEntryKey()
   const vars = nodeKey === entry || nodeKey === 'welcome'
     ? await collectWelcomeVars(userId, firstName)
@@ -2563,12 +2668,13 @@ async function dispatchFlow(userId, nodeKey, { msgId = null, push, firstName, qu
         nama_bot: NamaBot,
         saldo: formatrupiah(await cekSaldo(userId)),
       }
+  const currentMedia = flow.mediaOptsForMessage(userId, msgId)
   const result = await flow.goto(userId, nodeKey, {
     vars,
     push: push !== undefined ? push : nodeKey !== entry,
     urlResolver: flowUrlResolver,
   })
-  return handleFlowResult(userId, result, { msgId, query })
+  return handleFlowResult(userId, result, { msgId, query, msg, ...currentMedia })
 }
 
 bot.on("callback_query", async (query) => {
@@ -2639,7 +2745,10 @@ Silakan ketik \`/deposit <jumlah>\` untuk melakukan top up saldo dengan nominal 
   if (flow.isEnabled()) {
     const flowKey = flow.parseFlowCallback(cmd) || flow.legacyToKey(cmd)
     if (flowKey) {
-      await bot.answerCallbackQuery(query.id).catch(() => {})
+      const node = flow.getNode(flowKey)
+      if (!flow.flowCallbackNeedsCustomAnswer(node)) {
+        await bot.answerCallbackQuery(query.id).catch(() => {})
+      }
       await dispatchFlow(query.from.id, flowKey, {
         msgId: query.message?.message_id,
         firstName: query.from.first_name,
@@ -6316,54 +6425,7 @@ if (cmd === "saldomenu") {
 }
 
 if (cmd === "deposit_menu") {
-  await bot.answerCallbackQuery(query.id)
-  const text = `💳 *TOP UP SALDO*
-=======================
-*Cara Top Up:*
-1. Ketik \`/deposit Jumlah\`
-2. Scan QRIS yang muncul
-3. Saldo akan ditambahkan otomatis
-
-*Contoh:*
-\`/deposit 50000\`
-\`/deposit 100000\`
-
-=======================
-💡 *Minimum deposit:* Rp 1.000
-💡 Saldo akan ditambahkan setelah pembayaran berhasil`
-
-  const reply_markup = {
-    inline_keyboard: [
-      [
-        { text: "Rp 5.000", callback_data: "deposit_preset:5000" },
-        { text: "Rp 10.000", callback_data: "deposit_preset:10000" }
-      ],
-      [
-        { text: "Rp 25.000", callback_data: "deposit_preset:25000" },
-        { text: "Rp 50.000", callback_data: "deposit_preset:50000" }
-      ],
-      [
-        { text: "Rp 100.000", callback_data: "deposit_preset:100000" }
-      ],
-      [
-        { text: copy.get('btn.deposit_custom'), callback_data: "deposit_custom" }
-      ],
-      [{text: copy.get('btn.riwayat_deposit'), callback_data: "riwayatdeposit"}],
-      [{text: copy.get('btn.kembali'), callback_data: "saldomenu"}]
-    ]
-  }
-
-  await bot.editMessageCaption(text, {
-    chat_id: query.message.chat.id,
-    message_id: query.message.message_id,
-    parse_mode: "Markdown",
-    reply_markup
-  }).catch(async (e) => {
-    try {
-      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-    } catch (err) {}
-    await sendBannerMessage(query.from.id, text, { reply_markup })
-  })
+  await openDepositMenu(query)
 }
 
 if (cmd === "riwayatdeposit") {
