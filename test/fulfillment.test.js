@@ -649,6 +649,52 @@ test('hasil ambigu TIDAK boleh di-refund otomatis', () => {
   assert.equal(f.perluRekonsiliasi({ ok: false, error: 'HTTP 409' }), false)
 })
 
+test('fulfill menahan refund saat 502 tidak terselesaikan', async () => {
+  const f = muatFulfillment()
+  const dicoba = []
+  const { deps, dicatat } = buatDeps({
+    getOffers: async () => [
+      offerSupplier({ supplier_id: 'murah', external_id: 'A', harga: 20000 }),
+      offerSupplier({ supplier_id: 'mahal', external_id: 'B', harga: 30000 }),
+    ],
+    createOrder: async (supplier) => {
+      dicoba.push(supplier.id)
+      throw httpErr(502)
+    },
+  })
+
+  const r = await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-502-GELAP', deps })
+  assert.equal(r.ok, false)
+  assert.deepEqual(dicoba, ['murah', 'murah'], 'retry ke penjual yang sama, bukan failover')
+  assert.equal(dicatat.length, 1)
+  assert.equal(dicatat[0].status, 'failed')
+  assert.match(dicatat[0].error, /perlu rekonsiliasi manual/)
+  assert.match(r.error, /perlu rekonsiliasi manual/)
+  assert.equal(f.harusRefund(r), false, 'hasil fulfill yang masih gelap tidak boleh di-refund')
+  assert.equal(f.perluRekonsiliasi(r), true)
+})
+
+test('kegagalan 4xx di semua sumber tetap boleh di-refund', async () => {
+  const f = muatFulfillment()
+  const dicoba = []
+  const { deps } = buatDeps({
+    getOffers: async () => [
+      offerSupplier({ supplier_id: 'a', external_id: 'A', harga: 10000 }),
+      offerSupplier({ supplier_id: 'b', external_id: 'B', harga: 20000 }),
+    ],
+    createOrder: async (supplier) => {
+      dicoba.push(supplier.id)
+      throw httpErr(409)
+    },
+  })
+
+  const r = await f.fulfill({ varian: VARIAN, qty: 1, trxid: 'TRX-4XX-REFUND', deps })
+  assert.equal(r.ok, false)
+  assert.deepEqual(dicoba, ['a', 'b'], '4xx yang jelas tetap pindah penjual')
+  assert.equal(f.harusRefund(r), true)
+  assert.equal(f.perluRekonsiliasi(r), false)
+})
+
 test('markRefunded tidak menimpa jejak yang perlu rekonsiliasi', async () => {
   const f = muatFulfillment()
   const filter = []
