@@ -13,6 +13,9 @@ process.emitWarning = function(warning, ...args) {
 // Disable deprecation warning for Buffer filename
 process.env.NTBA_FIX_350 = '1'
 
+// In-process bot tests set this so we skip crons/outbound refresh and can stop polling.
+const isBotTestHarness = process.env.BOT_TEST_HARNESS === '1'
+
 const { TokenBot, NamaBot, OwnerID, ImagePath, Pakasir, ChannelLog, ChannelStore, CS } = require("./settings.js")
 const supabase = require('./lib/supabase')
 const runtimeSettings = require('./lib/runtime-settings')
@@ -74,14 +77,23 @@ const channelContact = {
 }
 
 // Muat pengaturan sekali di awal, lalu pantau perubahan dari dashboard.
+// Capture the boot generation so a pending refresh cannot start polling after
+// stopBot(); a later re-require of this module starts from 0 again.
+let settingsPollGeneration = 0
+const bootSettingsPollGeneration = settingsPollGeneration
 runtimeSettings.refresh(true)
   .then(async () => {
     await copy.refresh()
     await flow.refresh()
+    if (bootSettingsPollGeneration !== settingsPollGeneration) return
+    // Harness skips polling unless a lifecycle test explicitly opts in so it
+    // can observe startPolling after a held boot refresh.
+    if (isBotTestHarness && process.env.BOT_TEST_FORCE_SETTINGS_POLL !== '1') return
     runtimeSettings.startPolling(10000, () => {
       copy.refresh().catch(() => {})
       flow.refresh().catch(() => {})
     })
+    if (isBotTestHarness) return
     // Segarkan kurs sekali saat boot supaya harga produk supplier tidak
     // memakai angka basi sampai cron harian pertama berjalan. Kalau gagal,
     // kurs terakhir yang tersimpan tetap dipakai.
@@ -95,16 +107,21 @@ runtimeSettings.refresh(true)
   })
   .catch((e) => console.error('[runtime-settings] gagal muat awal:', e.message))
 const TelegramBot = require("node-telegram-bot-api")
+const skipTelegramPoll = isBotTestHarness && process.env.BOT_TEST_SKIP_TELEGRAM_POLL === '1'
 const bot = new TelegramBot(TokenBot, { 
-  polling: true,
+  polling: skipTelegramPoll
+    ? false
+    : isBotTestHarness
+      ? { interval: 50, params: { timeout: 0 } }
+      : true,
   request: {
     agentOptions: {
-      keepAlive: true,
+      keepAlive: !isBotTestHarness,
       keepAliveMsecs: 10000
     },
-    timeout: 60000, // 60 detik timeout untuk semua request ke Telegram API
+    timeout: isBotTestHarness ? 5000 : 60000, // 60 detik timeout untuk semua request ke Telegram API
     // Retry configuration untuk DNS errors
-    retry: true,
+    retry: !isBotTestHarness,
     maxRetries: 3,
     retryDelay: 1000
   },
@@ -117,14 +134,16 @@ const bot = new TelegramBot(TokenBot, {
 installCommandMentionGuard(bot, createBotUsernameCache(() => bot.getMe()))
 
 // Configure Telegram chat column commands menu (autocomplete)
-bot.setMyCommands([
-  { command: 'start', description: 'mulai bot' },
-  { command: 'stok', description: 'laporan stok produk' }
-]).then(() => {
-  console.log('✅ Telegram bot commands set successfully')
-}).catch((err) => {
-  console.error('❌ Failed to set Telegram bot commands:', err)
-})
+if (!skipTelegramPoll) {
+  bot.setMyCommands([
+    { command: 'start', description: 'mulai bot' },
+    { command: 'stok', description: 'laporan stok produk' }
+  ]).then(() => {
+    console.log('✅ Telegram bot commands set successfully')
+  }).catch((err) => {
+    console.error('❌ Failed to set Telegram bot commands:', err && err.message ? err.message : err)
+  })
+}
 // Enhanced error handling for polling errors
 bot.on("polling_error", (error) => {
   console.error("Polling error:", error.message);
@@ -136,11 +155,18 @@ bot.on("polling_error", (error) => {
   } else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET') {
     console.error("Connection timeout/reset - Akan retry otomatis...");
   } else {
-    console.error("Unknown polling error:", error);
+    console.error("Unknown polling error:", error && error.message ? error.message : error);
   }
 });
 
 const cron = require('node-cron');
+const cronTasks = []
+function scheduleCron(expression, handler, options) {
+  if (isBotTestHarness) return { stop() {} }
+  const task = options ? cron.schedule(expression, handler, options) : cron.schedule(expression, handler)
+  cronTasks.push(task)
+  return task
+}
 const moments = require('moment');
 require('moment/locale/id');
 moments.locale('id');
@@ -1162,7 +1188,10 @@ function cleanupExpiredReservations() {
 }
 
 // Jalankan cleanup setiap 1 menit
-setInterval(cleanupExpiredReservations, 60 * 1000)
+let reservationCleanupTimer = null
+if (!isBotTestHarness) {
+  reservationCleanupTimer = setInterval(cleanupExpiredReservations, 60 * 1000)
+}
 
 // Tambah stok baru ke tabel Stok
 async function addStokItems(varianId, varianKode, dataArray) {
@@ -7243,7 +7272,7 @@ console.log("Bot Elevate Digital siap dijalankan!");
 // 2 minutes; fulfillment is idempotent via the guarded paid -> fulfilled
 // status transition, so it can never double-credit or double-deliver.
 // ============================================
-cron.schedule('*/2 * * * *', async () => {
+scheduleCron('*/2 * * * *', async () => {
   try {
     const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString()
     const { data: rows } = await supabase
@@ -7326,7 +7355,7 @@ console.log("⏱️  [Pakasir Reconcile] Cron rekonsiliasi pembayaran aktif (set
 let terakhirSyncSupplier = 0
 let syncSupplierBerjalan = false
 
-cron.schedule('* * * * *', async () => {
+scheduleCron('* * * * *', async () => {
   if (syncSupplierBerjalan) return
   try {
     const menit = Number(runtimeSettings.get('supplier_sync_interval_menit', 5)) || 5
@@ -7354,7 +7383,7 @@ console.log('⏱️  [Supplier Sync] Cron sinkronisasi katalog supplier aktif.')
 // Kurs USD-IDR: sekali saat boot lalu tiap hari pukul 05:00 WIB. Kalau
 // pengambilan gagal, kurs terakhir yang diketahui baik tetap dipakai sehingga
 // harga tidak pernah melonjak liar karena API pihak ketiga bermasalah.
-cron.schedule('0 5 * * *', async () => {
+scheduleCron('0 5 * * *', async () => {
   try {
     const hasil = await fx.refreshRate()
     if (hasil.skipped) return
@@ -7377,7 +7406,7 @@ console.log('⏱️  [FX] Cron pembaruan kurs USD-IDR aktif (harian 05:00 WIB).'
 // Peringatan dompet supplier menipis. Dompet reseller dibayar di muka, jadi
 // saldo yang habis berarti setiap pembelian yang seharusnya dipenuhi supplier
 // akan gagal lalu direfund — mahal dan terlihat oleh pembeli.
-cron.schedule('0 */6 * * *', async () => {
+scheduleCron('0 */6 * * *', async () => {
   try {
     const minimal = Number(runtimeSettings.get('supplier_wallet_min_usd', 5)) || 5
     const suppliers = await supplierSync.listSuppliers({ activeOnly: true })
@@ -7404,3 +7433,22 @@ cron.schedule('0 */6 * * *', async () => {
   }
 })
 console.log('⏱️  [Supplier Wallet] Cron pengecekan saldo dompet supplier aktif (tiap 6 jam).')
+
+async function stopBot() {
+  settingsPollGeneration += 1
+  runtimeSettings.stopPolling()
+  if (reservationCleanupTimer) {
+    clearInterval(reservationCleanupTimer)
+    reservationCleanupTimer = null
+  }
+  for (const task of cronTasks) {
+    try { task.stop() } catch (_) { /* ignore */ }
+  }
+  if (bot && typeof bot.stopPolling === 'function') {
+    try {
+      await bot.stopPolling({ cancel: true })
+    } catch (_) { /* ignore */ }
+  }
+}
+
+module.exports = { bot, stopBot }
