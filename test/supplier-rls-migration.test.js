@@ -51,7 +51,7 @@ function peranKebijakan(stmt) {
     .filter(Boolean)
 }
 
-// Kebijakan yang masih ada setelah urutan DROP/CREATE, bukan setiap CREATE
+// Kebijakan yang masih ada setelah urutan DROP/CREATE/ALTER, bukan setiap CREATE
 // yang pernah tertulis. Kebijakan permisif kedua untuk anon/authenticated/PUBLIC
 // tetap efektif walau ada kebijakan service_role di sampingnya.
 function kebijakanEfektifSupplier(sql) {
@@ -74,9 +74,42 @@ function kebijakanEfektifSupplier(sql) {
         name: info.name,
         roles: peranKebijakan(stmt),
       })
+      continue
+    }
+    // ALTER POLICY ... TO mengganti peran kebijakan yang sudah ada.
+    // RENAME TO bukan perubahan peran. Tanpa klausa TO, peran tetap.
+    if (/^ALTER\s+POLICY\b/i.test(stmt)) {
+      if (/\bRENAME\s+TO\b/i.test(stmt)) continue
+      const info = namaDanTabel(stmt, 'ALTER\\s+POLICY')
+      if (!info || !TABEL_SUPPLIER.includes(info.tabel)) continue
+      if (!/\bTO\s+/i.test(stmt)) continue
+      const key = `${info.tabel}\0${info.name}`
+      const roles = peranKebijakan(stmt)
+      const ada = aktif.get(key)
+      if (ada) ada.roles = roles
+      else aktif.set(key, { tabel: info.tabel, name: info.name, roles })
     }
   }
   return [...aktif.values()]
+}
+
+// Baseline 20260818000000 sudah ENABLE ROW LEVEL SECURITY dan tidak ikut
+// dipindai (sqlSetelahBaseline). Keadaan awal = masih aktif. DISABLE belakangan
+// mematikan; ENABLE belakangan menyalakan lagi.
+function rlsEfektifSupplier(sql) {
+  const aktif = new Map(TABEL_SUPPLIER.map((tabel) => [tabel, true]))
+  for (const mentah of tanpaKomentarSql(sql).split(';')) {
+    const stmt = mentah.trim()
+    if (!stmt) continue
+    const m = stmt.match(
+      /^ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s+(ENABLE|DISABLE)\s+ROW\s+LEVEL\s+SECURITY\b/i
+    )
+    if (!m) continue
+    const tabel = m[1] || m[2]
+    if (!TABEL_SUPPLIER.includes(tabel)) continue
+    aktif.set(tabel, m[3].toUpperCase() === 'ENABLE')
+  }
+  return aktif
 }
 
 function assertKebijakanSupplierHanyaServiceRole(sql) {
@@ -92,6 +125,10 @@ function assertKebijakanSupplierHanyaServiceRole(sql) {
         throw new Error(`${tabel} kebijakan "${k.name}" menarget ${k.roles.join(', ') || '(kosong)'}`)
       }
     }
+  }
+  const rls = rlsEfektifSupplier(sql)
+  for (const tabel of TABEL_SUPPLIER) {
+    if (!rls.get(tabel)) throw new Error(`${tabel} RLS tidak aktif`)
   }
 }
 
@@ -140,6 +177,39 @@ ${sqlServiceRoleUntukSemuaTabel()}`
   assert.doesNotThrow(
     () => assertKebijakanSupplierHanyaServiceRole(diganti),
     'kebijakan klien yang di-DROP tidak lagi efektif'
+  )
+
+  const peranDiubah = `${sqlServiceRoleUntukSemuaTabel()}
+ALTER POLICY "Allow all for service role" ON "Supplier" TO PUBLIC;`
+  assert.throws(
+    () => assertKebijakanSupplierHanyaServiceRole(peranDiubah),
+    /PUBLIC/i,
+    'ALTER POLICY TO PUBLIC harus mengganti peran efektif'
+  )
+
+  const tanpaTo = `${sqlServiceRoleUntukSemuaTabel()}
+ALTER POLICY "Allow all for service role" ON "SupplierProduct" USING (true);`
+  assert.doesNotThrow(
+    () => assertKebijakanSupplierHanyaServiceRole(tanpaTo),
+    'ALTER POLICY tanpa klausa TO tidak mengubah peran'
+  )
+
+  for (const tabel of TABEL_SUPPLIER) {
+    const rlsMati = `${sqlServiceRoleUntukSemuaTabel()}
+ALTER TABLE "${tabel}" DISABLE ROW LEVEL SECURITY;`
+    assert.throws(
+      () => assertKebijakanSupplierHanyaServiceRole(rlsMati),
+      new RegExp(`${tabel} RLS tidak aktif`),
+      `DISABLE ROW LEVEL SECURITY pada ${tabel} setelah kebijakan harus ketahuan`
+    )
+  }
+
+  const rlsNyalaLagi = `${sqlServiceRoleUntukSemuaTabel()}
+ALTER TABLE "Supplier" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "Supplier" ENABLE ROW LEVEL SECURITY;`
+  assert.doesNotThrow(
+    () => assertKebijakanSupplierHanyaServiceRole(rlsNyalaLagi),
+    'ENABLE setelah DISABLE mengembalikan RLS efektif'
   )
 })
 
