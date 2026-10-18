@@ -973,6 +973,7 @@ app.get('/', isAuthenticated, async (req, res) => {
       recentTrxResult,
       activeFlowResult,
       pendingReconResult,
+      pendingReconCountResult,
     ] = await Promise.all([
       supabase.from('Deposit').select('*').eq('status', 'pending').order('tanggal', { ascending: true }).limit(10),
       supabase.from('Varian').select('id, produk_id, label, kode, harga, is_active, produk:Produk(nama, slug)').eq('is_active', true).order('urutan', { ascending: true }),
@@ -992,14 +993,27 @@ app.get('/', isAuthenticated, async (req, res) => {
         .like('error', `${fulfillment.REKON_PREFIX}%`)
         .order('created_at', { ascending: false })
         .limit(10),
+      // Ubin memakai hitungan exact. Preview di atas tetap 10 baris terurut;
+      // panjang array itu bukan jumlah antrean.
+      supabase
+        .from('SupplierOrder')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'failed')
+        .like('error', `${fulfillment.REKON_PREFIX}%`),
     ])
 
     // Query lain di halaman ini jatuh ke data kosong kalau PostgREST mengembalikan
     // error (kartu stok/deposit tetap tampil). Daftar rekonsiliasi tidak boleh
     // begitu: error yang ditelan terlihat seperti "Aman" dan menyembunyikan
-    // pesanan yang tidak boleh di-refund. Pola halaman ini untuk kegagalan yang
-    // harus terlihat adalah throw ke catch di bawah, yang membalas 500.
+    // pesanan yang tidak boleh di-refund. Hitungan ubin sama: error atau count
+    // yang tidak ada bukan nol. Pola halaman ini untuk kegagalan yang harus
+    // terlihat adalah throw ke catch di bawah, yang membalas 500.
     if (pendingReconResult.error) throw pendingReconResult.error
+    if (pendingReconCountResult.error) throw pendingReconCountResult.error
+    const pendingReconciliationCount = pendingReconCountResult.count
+    if (!Number.isFinite(pendingReconciliationCount) || pendingReconciliationCount < 0) {
+      throw new Error('SupplierOrder reconciliation count missing')
+    }
 
     const variants = variantsResult.data || []
     const stockCounts = await stock.getStokCountsByKode(variants.map((v) => v.kode))
@@ -1022,6 +1036,7 @@ app.get('/', isAuthenticated, async (req, res) => {
       recentTxns: recentTrxResult.data || [],
       flowDraftUpdatedAt: activeFlowResult.data?.draft_updated_at || null,
       pendingReconciliations: pendingReconResult.data || [],
+      pendingReconciliationCount,
     })
 
     res.render('dashboard', {

@@ -2,6 +2,10 @@
     const model = overview || {};
     const pendingDeposits = model.pendingDeposits || [];
     const pendingReconciliations = model.pendingReconciliations || [];
+    const pendingReconciliationCount = Number.isFinite(model.pendingReconciliationCount)
+        ? model.pendingReconciliationCount
+        : pendingReconciliations.length;
+    const butuhRekon = pendingReconciliationCount > 0;
     const outOfStock = model.outOfStock || [];
     const lowStock = model.lowStock || [];
     const recentTxns = model.recentTxns || [];
@@ -162,8 +166,8 @@
                 </div>
                 <div class="metric-tile">
                     <div class="label">Rekonsiliasi Supplier</div>
-                    <div class="value <%= pendingReconciliations.length ? 'warning' : 'success' %>"><%= pendingReconciliations.length %></div>
-                    <div class="sub"><%= pendingReconciliations.length ? 'Jangan refund otomatis' : 'Aman' %></div>
+                    <div class="value <%= butuhRekon ? 'warning' : 'success' %>"><%= pendingReconciliationCount %></div>
+                    <div class="sub"><%= butuhRekon ? 'Jangan refund otomatis' : 'Aman' %></div>
                 </div>
             </div>
 
@@ -249,8 +253,8 @@
                 <div class="card triage-card">
                     <div class="card-header">
                         <h2 class="card-title">Rekonsiliasi Supplier</h2>
-                        <span class="badge <%= pendingReconciliations.length ? 'badge-warning' : 'badge-success' %>">
-                            <%= pendingReconciliations.length ? 'Butuh cek' : 'Aman' %>
+                        <span class="badge <%= butuhRekon ? 'badge-warning' : 'badge-success' %>">
+                            <%= butuhRekon ? 'Butuh cek' : 'Aman' %>
                         </span>
                     </div>
                     <div class="card-body">
