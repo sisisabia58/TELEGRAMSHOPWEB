@@ -187,6 +187,18 @@ test('varian tanpa penawaran supplier berperilaku persis seperti sebelumnya', as
   assert.equal(catalog.hargaVarian(v), 50000)
 })
 
+test('pemilih baris hanya untuk stok sendiri murni, bukan campuran', () => {
+  const catalog = muatCatalog()
+  assert.equal(catalog.pakaiPemilihStok({ stok_sendiri: 2, punya_supplier: false, stok_count: 2 }), true)
+  assert.equal(
+    catalog.pakaiPemilihStok({ stok_sendiri: 2, punya_supplier: true, stok_count: 12 }),
+    false,
+    'campuran memakai pemilih jumlah, bukan pemilih baris'
+  )
+  assert.equal(catalog.pakaiPemilihStok({ stok_sendiri: 0, punya_supplier: true, stok_count: 10 }), false)
+  assert.equal(catalog.pakaiPemilihStok({ stok_sendiri: 0, punya_supplier: false, stok_count: 0 }), false)
+})
+
 test('stok supplier ditambahkan ke hitungan stok varian', async () => {
   const catalog = katalogNetflix({
     stockCounts: { 'netflix-30d': 2 },

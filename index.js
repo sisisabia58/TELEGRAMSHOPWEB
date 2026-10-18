@@ -40,7 +40,7 @@ const catalog = require('./lib/catalog')
 const pricing = require('./lib/pricing')
 
 // Sumber stok ketiga: katalog supplier (fase 13). Stok sendiri tetap jadi
-// sumber utama dan menang setiap kali harganya lebih murah — modul-modul ini
+// sumber utama dan diambil lebih dulu saat alokasi — modul-modul ini
 // hanya menambah pilihan, tidak menggantikan apa pun.
 const sourcing = require('./lib/sourcing')
 const fulfillment = require('./lib/fulfillment')
@@ -436,11 +436,10 @@ async function hargaUntukQty(item, qty) {
 }
 
 // Stok supplier tidak punya baris di tabel "Stok", jadi tidak ada yang bisa
-// dipilih satu per satu maupun direservasi. Untuk barang seperti itu layar yang
-// sama dipakai sebagai pemilih JUMLAH biasa.
-function pakaiPemilihStok(item) {
-  return Number(item?.stok_sendiri || 0) > 0
-}
+// dipilih satu per satu maupun direservasi. Varian campuran memakai pemilih
+// jumlah, dibatasi ke stok satu sumber terbesar (sourcing.batasBeli) — sama
+// dengan yang rankOffers/fulfill sanggup kirim. stok_count tetap gabungan.
+const pakaiPemilihStok = catalog.pakaiPemilihStok
 
 // Jumlah yang sedang dipilih di layar, apa pun sumbernya:
 // stok sendiri dihitung dari baris yang direservasi, stok supplier dari
@@ -562,6 +561,43 @@ ${berhasil ? '' : `Saldo sebelum: ${saldoSebelum === null ? 'tidak terbaca' : fo
   return berhasil
 }
 
+// Pesanan supplier mungkin sudah terbit (timeout/5xx). Jangan refund dan
+// jangan suruh pembeli pesan ulang — dashboard menampilkan jejak ini.
+async function beritahuRekonsiliasi({ userId, harga, Data, item, alasan }) {
+  const pesanPembeli = `⚠️ *PESANAN SEDANG DICEK MANUAL*
+━━━━━━━━━━━━━━━━━━━━
+Pembayaran untuk *${item?.nama || 'produk ini'}* sudah kami terima, tapi konfirmasi pengiriman dari pemasok belum jelas.
+
+❗️ Saldo *belum dikembalikan* supaya tidak dobel jika barangnya ternyata sudah terbit.
+📋 Trx ID: \`${Data.trxid}\`
+💰 Nominal: *${formatrupiah(harga)}*
+
+Admin sedang meninjau. Mohon tunggu atau hubungi CS dengan Trx ID di atas — jangan pesan ulang dulu.`
+
+  try {
+    await sendMessage(userId, pesanPembeli, { parse_mode: 'Markdown' })
+  } catch (e) {
+    console.error('[Rekon] gagal memberi tahu pembeli:', e)
+  }
+
+  try {
+    if (channelContact.channelLog) {
+      await bot.sendMessage(channelContact.channelLog, `🚨 *PESANAN PERLU REKONSILIASI MANUAL*
+=======================
+User: ${userId}
+Trx ID: *${Data.trxid}*
+Produk: *${item?.nama || Data.kode}*
+Jumlah: *${Data.jumlah}*
+Nominal: *${formatrupiah(harga)}*
+Alasan: ${alasan || 'tidak diketahui'}
+Saldo TIDAK dikembalikan otomatis.
+=======================`, { parse_mode: 'Markdown' })
+    }
+  } catch (e) {
+    console.error('[Rekon] gagal mengirim log:', e)
+  }
+}
+
 // Layar pemilih jumlah/stok. Dulu ditulis dua kali (blok "lanjut" dan
 // refreshStokView) dengan isi identik; sekarang satu sumber supaya keduanya
 // tidak bisa lagi berbeda.
@@ -573,7 +609,7 @@ async function buildStokPickerView(query, Data, item) {
     const semua = await getStokItems(item.kode)
     tersedia = semua.filter((s) => s.status === 'tersedia' && isStokAvailable(s.id, query.from.id)).length
   } else {
-    tersedia = item.stok_count || 0
+    tersedia = sourcing.batasBeli(item)
   }
 
   const qty = qtyDipilih(Data, item)
@@ -629,11 +665,11 @@ function applyVoucherPotongan(subtotal, userId, voucherKode, voucherList) {
 }
 
 async function showVariantQtyScreen(userId, msgId, varian) {
-  // item membawa stok gabungan (sendiri + supplier) dan harga efektif.
+  // Angka di tombol adalah qty yang satu sumber sanggup kirim, bukan stok gabungan.
   const item = await getVarianForCart(varian.kode)
   if (!item) return bot.sendMessage(userId, copy.get('err.product_not_found'))
 
-  const stokCount = item.stok_count || 0
+  const stokCount = sourcing.batasBeli(item)
   if (stokCount === 0) {
     return bot.sendMessage(userId, copy.get('err.stock_empty', { nama: varian.label }))
   }
@@ -2873,7 +2909,7 @@ ${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 
   const item = await getVarianForCart(itemName.toLowerCase())
     console.log(item)
     if (item) {
-      const stokCount = item.stok_count
+      const stokCount = sourcing.batasBeli(item)
       
       let Unique = require("crypto").randomBytes(6).toString("hex").toUpperCase()
       let data = {
@@ -3086,11 +3122,11 @@ if (cmd.startsWith("select_stok:")) {
 
     // Barang yang dipasok supplier tidak punya baris "Stok" untuk dipilih atau
     // direservasi, jadi tombol yang sama cuma menaik-turunkan jumlah. Batas
-    // atasnya stok gabungan yang dilaporkan supplier.
+    // atasnya stok satu sumber terbesar, sama dengan yang fulfill bisa kirim.
     {
       const itemQty = await getVarianForCart(Data.kode)
       if (itemQty && !pakaiPemilihStok(itemQty)) {
-        const maks = itemQty.stok_count || 0
+        const maks = sourcing.batasBeli(itemQty)
         const sekarang = Math.max(1, Math.trunc(Number(Data.jumlah) || 1))
         const diminta = sekarang + jumlah
         const baru = Math.min(maks, Math.max(1, diminta))
@@ -3236,13 +3272,14 @@ if (cmd.startsWith("checkout_payment:")) {
       // Update jumlah sesuai dengan jumlah stok yang dipilih
       Data.jumlah = Data.selectedStokIds.length
     } else {
-      // Barang supplier: tidak ada baris untuk divalidasi, cuma jumlahnya.
-      // Ketersediaan sebenarnya diuji saat memesan ke penjual, dan kalau gagal
-      // lib/fulfillment.js pindah ke sumber berikutnya.
+      // Barang supplier / campuran: tidak ada baris untuk divalidasi, cuma
+      // jumlahnya. Batasnya satu sumber, bukan stok gabungan — fulfill tidak
+      // memecah pesanan, jadi qty di atas itu tidak boleh sampai pembayaran.
       const jumlahMinta = Math.max(1, Math.trunc(Number(Data.jumlah) || 1))
-      if (jumlahMinta > (itemCek.stok_count || 0)) {
+      const batas = sourcing.batasBeli(itemCek)
+      if (jumlahMinta > batas) {
         await bot.answerCallbackQuery(query.id, {
-          text: copy.get('err.stock_insufficient', { count: itemCek.stok_count || 0 }),
+          text: copy.get('err.stock_insufficient', { count: batas }),
           show_alert: true
         })
         return
@@ -3334,7 +3371,7 @@ if (cmd === "reset") {
     await cart.save(query.from.id, Data)
      const item = await getVarianForCart(Data.kode)
      if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
-     const stokCountReset = item.stok_count
+     const stokCountReset = sourcing.batasBeli(item)
      const resolvedReset = await hargaUntukQty(item, Data.jumlah)
     await bot.editMessageText(`*KONFIRMASI PESANAN*
 =======================
@@ -4576,7 +4613,9 @@ if (cmd.startsWith("min:")) {
     await cart.save(query.from.id, Data)
      const item = await getVarianForCart(Data.kode)
      if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
-     const stokCount = item.stok_count ?? await getStokCount(item.kode)
+     const stokCount = (Array.isArray(item.offers) && item.offers.length > 0)
+       ? sourcing.batasBeli(item)
+       : (item.stok_count ?? await getStokCount(item.kode))
      const resolvedMin = await hargaUntukQty(item, Data.jumlah)
     await bot.editMessageText(`*KONFIRMASI PESANAN*
 =======================
@@ -4615,7 +4654,9 @@ if (cmd.startsWith("plus:")) {
     let Data = await cart.get(query.from.id)
     const item = await getVarianForCart(Data.kode)
      if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
-     const stokCount = item.stok_count ?? await getStokCount(item.kode)
+     const stokCount = (Array.isArray(item.offers) && item.offers.length > 0)
+       ? sourcing.batasBeli(item)
+       : (item.stok_count ?? await getStokCount(item.kode))
      if (stokCount < (Data.jumlah+Number(jumlah))) {
        await bot.answerCallbackQuery(query.id, { text: copy.get('err.stock_insufficient', { count: stokCount }), show_alert: true })
        return
@@ -4624,7 +4665,9 @@ if (cmd.startsWith("plus:")) {
     await cart.save(query.from.id, Data)
      const itemUpdated = await getVarianForCart(Data.kode)
      if (!itemUpdated) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
-     const stokCountUpdated = itemUpdated.stok_count ?? await getStokCount(itemUpdated.kode)
+     const stokCountUpdated = (Array.isArray(itemUpdated.offers) && itemUpdated.offers.length > 0)
+       ? sourcing.batasBeli(itemUpdated)
+       : (itemUpdated.stok_count ?? await getStokCount(itemUpdated.kode))
      const resolvedPlus = await hargaUntukQty(itemUpdated, Data.jumlah)
      
      await bot.editMessageText(`*KONFIRMASI PESANAN*
@@ -4718,12 +4761,22 @@ if (cmd === "bayarsaldo") {
       }
     }
 
+    // Debit saldo hanya setelah qty lolos batas satu sumber. Keranjang yang
+    // sudah terlanjur menyimpan jumlah gabungan tidak boleh terpotong dulu
+    // lalu gagal di fulfill.
+    if (!pakaiPemilihStok(item)) {
+      const batas = sourcing.batasBeli(item)
+      const minta = Math.max(1, Math.trunc(Number(Data.jumlah) || 1))
+      if (minta > batas) {
+        return await sendMessage(query.from.id, copy.get('err.stock_insufficient', { count: batas }))
+      }
+    }
+
     // Kurangi saldo
     await minSaldo(query.from.id, harga)
 
-    // Penuhi dari sumber termurah yang benar-benar bisa: stok sendiri kalau
-    // lebih murah, kalau tidak beli ke supplier. Gagal di satu sumber berarti
-    // turun ke sumber berikutnya, bukan langsung gagal.
+    // Penuhi dari stok sendiri dulu, lalu supplier. Gagal 4xx di satu sumber
+    // berarti turun ke sumber berikutnya; timeout/5xx ditahan untuk rekonsiliasi.
     const hasilPenuhi = await penuhiPesanan({
       item,
       Data,
@@ -4736,15 +4789,24 @@ if (cmd === "bayarsaldo") {
     }
 
     if (!hasilPenuhi.ok) {
-      // Saldo sudah dipotong di atas — WAJIB dikembalikan.
       console.error(`[Fulfillment] ${Data.trxid} gagal:`, hasilPenuhi.error)
-      await kembalikanSaldo({
-        userId: query.from.id,
-        harga,
-        Data,
-        item,
-        alasan: hasilPenuhi.error,
-      })
+      if (fulfillment.harusRefund(hasilPenuhi)) {
+        await kembalikanSaldo({
+          userId: query.from.id,
+          harga,
+          Data,
+          item,
+          alasan: hasilPenuhi.error,
+        })
+      } else {
+        await beritahuRekonsiliasi({
+          userId: query.from.id,
+          harga,
+          Data,
+          item,
+          alasan: hasilPenuhi.error,
+        })
+      }
       return
     }
 
@@ -5236,16 +5298,26 @@ Scan QRIS diatas sebelum expired. Produk akan terkirim otomatis beberapa detik s
                 }
               });
 
-              // Pembayaran QRIS tidak bisa dibalikkan otomatis, jadi nilainya
-              // dikreditkan ke saldo — pembeli tetap utuh dan bisa langsung
-              // memakainya. Fee gateway di luar ini.
-              await kembalikanSaldo({
-                userId: query.from.id,
-                harga,
-                Data,
-                item,
-                alasan: `QRIS terbayar tapi pemenuhan gagal: ${hasilPenuhi.error}`,
-              })
+              if (fulfillment.harusRefund(hasilPenuhi)) {
+                // Pembayaran QRIS tidak bisa dibalikkan otomatis, jadi nilainya
+                // dikreditkan ke saldo — pembeli tetap utuh dan bisa langsung
+                // memakainya. Fee gateway di luar ini.
+                await kembalikanSaldo({
+                  userId: query.from.id,
+                  harga,
+                  Data,
+                  item,
+                  alasan: `QRIS terbayar tapi pemenuhan gagal: ${hasilPenuhi.error}`,
+                })
+              } else {
+                await beritahuRekonsiliasi({
+                  userId: query.from.id,
+                  harga,
+                  Data,
+                  item,
+                  alasan: `QRIS terbayar tapi pemenuhan gelap: ${hasilPenuhi.error}`,
+                })
+              }
               await cart.clear(query.from.id)
               return
             }

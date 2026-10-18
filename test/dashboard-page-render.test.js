@@ -24,6 +24,7 @@ const IDS = {
   history: '99999999-9999-4999-8999-999999999999',
   supplier: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   supplierProduct: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  supplierOrder: 'abababab-abab-4aba-8aba-abababababab',
   tier: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
   flow: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   flowNode: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
@@ -245,6 +246,33 @@ const FIXTURES = {
       produk: { nama: 'Netflix' },
     },
   }],
+  // 12 rows match the recon filter. The home preview stays capped at 10;
+  // the tile must show 12. The last row fails the filter so an unfiltered
+  // count cannot pass as the exact backlog.
+  SupplierOrder: [
+    ...Array.from({ length: 12 }, (_, i) => ({
+      id: i === 0
+        ? IDS.supplierOrder
+        : `abababab-abab-4aba-8aba-${String(i + 1).padStart(12, '0')}`,
+      trx_id: i === 0 ? 'TRX-REKON-1' : `TRX-REKON-${i + 1}`,
+      user_id: IDS.user,
+      quantity: 1,
+      jual_idr: 50000,
+      error: 'perlu rekonsiliasi manual: HTTP 502',
+      created_at: ISO,
+      status: 'failed',
+    })),
+    {
+      id: 'abababab-abab-4aba-8aba-ffffffffffff',
+      trx_id: 'TRX-BUKAN-REKON',
+      user_id: IDS.user,
+      quantity: 1,
+      jual_idr: 1000,
+      error: 'stok habis',
+      created_at: ISO,
+      status: 'failed',
+    },
+  ],
   NotificationSettings: [
     { setting_key: 'cache_version', setting_value: { value: 3 } },
     { setting_key: 'low_stock_threshold', setting_value: { default: 5, enabled: true } },
@@ -277,7 +305,9 @@ const FIXTURES = {
 }
 
 const dbMode = { current: 'empty' }
+const forcedQueryError = { table: null, error: null, head: null }
 const queriedTables = new Set()
+const supplierOrderQueries = []
 const missingFixtures = new Set()
 const renders = []
 
@@ -329,6 +359,7 @@ function supabaseBuilder(table) {
     limit: null,
     range: null,
     head: false,
+    countMode: null,
     op: 'select',
     single: false,
     maybe: false,
@@ -337,6 +368,7 @@ function supabaseBuilder(table) {
   const builder = {
     select(_cols, opts) {
       if (opts && opts.head) state.head = true
+      if (opts && opts.count) state.countMode = opts.count
       return builder
     },
     insert() { state.op = 'write'; return builder },
@@ -382,6 +414,13 @@ function supabaseBuilder(table) {
   }
 
   function exec() {
+    if (
+      forcedQueryError.table === table
+      && forcedQueryError.error
+      && (forcedQueryError.head == null || forcedQueryError.head === state.head)
+    ) {
+      return Promise.resolve({ data: null, error: forcedQueryError.error, count: null })
+    }
     if (state.op === 'write') {
       const data = state.single || state.maybe ? { id: 'write-1' } : []
       return Promise.resolve({ data, error: null, count: 0 })
@@ -394,16 +433,26 @@ function supabaseBuilder(table) {
     const count = rows.length
     if (state.range) rows = rows.slice(state.range[0], state.range[1] + 1)
     else if (state.limit != null) rows = rows.slice(0, state.limit)
+    // A limited preview does not carry PostgREST's exact total unless the
+    // caller asked for count. The recon tile needs its own count query.
+    const reportedCount = state.head || state.countMode ? count : null
+    if (table === 'SupplierOrder' && state.op !== 'write') {
+      supplierOrderQueries.push({
+        head: state.head,
+        limit: state.limit,
+        countMode: state.countMode,
+      })
+    }
 
-    if (state.head) return Promise.resolve({ data: null, error: null, count })
+    if (state.head) return Promise.resolve({ data: null, error: null, count: reportedCount })
     if (state.single) {
       if (rows.length !== 1) {
-        return Promise.resolve({ data: null, error: { message: 'not found', code: 'PGRST116' }, count })
+        return Promise.resolve({ data: null, error: { message: 'not found', code: 'PGRST116' }, count: reportedCount })
       }
-      return Promise.resolve({ data: rows[0], error: null, count })
+      return Promise.resolve({ data: rows[0], error: null, count: reportedCount })
     }
-    if (state.maybe) return Promise.resolve({ data: rows[0] || null, error: rows.length > 1 ? { message: 'multiple' } : null, count })
-    return Promise.resolve({ data: rows, error: null, count })
+    if (state.maybe) return Promise.resolve({ data: rows[0] || null, error: rows.length > 1 ? { message: 'multiple' } : null, count: reportedCount })
+    return Promise.resolve({ data: rows, error: null, count: reportedCount })
   }
 
   return builder
@@ -450,7 +499,7 @@ const skippedPartials = [...partialNames].map((name) => name.replace(/\.ejs$/, '
 
 const PAGES = [
   { view: 'login', path: '/login', auth: false },
-  { view: 'dashboard', path: '/', marker: { seeded: 'DEP-SMOKE-1' } },
+  { view: 'dashboard', path: '/', marker: { seeded: ['DEP-SMOKE-1', 'TRX-REKON-1'] } },
   { view: 'produk', path: '/produk', marker: { seeded: 'Netflix' } },
   { view: 'stok', path: '/stok', marker: { seeded: 'Netflix' } },
   { view: 'pricing', path: '/pricing', marker: { seeded: 'netflix-1b' } },
@@ -547,8 +596,9 @@ function csrfFromHtml(html) {
 
 function markerFor(page, mode) {
   if (!page.marker) return null
-  if (typeof page.marker === 'string') return page.marker
-  return page.marker[mode] || null
+  const value = typeof page.marker === 'string' ? page.marker : (page.marker[mode] || null)
+  if (!value) return null
+  return Array.isArray(value) ? value : [value]
 }
 
 async function login(url) {
@@ -611,8 +661,12 @@ test('every dashboard page renders with the locals its route passes', { timeout:
         assert.match(body, /<html/i, `${where} should return HTML`)
         assert.ok(seen.includes(page.view), `${where} rendered [${seen.join(', ')}] instead of ${page.view}`)
         rendered[mode].add(page.view)
-        const marker = markerFor(page, mode)
-        if (marker) assert.ok(body.includes(marker), `${where} should include ${marker}`)
+        const markers = markerFor(page, mode)
+        if (markers) {
+          for (const marker of markers) {
+            assert.ok(body.includes(marker), `${where} should include ${marker}`)
+          }
+        }
       }
     }
 
@@ -641,7 +695,59 @@ test('every dashboard page renders with the locals its route passes', { timeout:
     assert.ok(skippedPartials.includes('variant-row'))
     assert.ok(emptySkips.length > 0)
     assert.ok(queriedTables.has('Trx'))
+
+    dbMode.current = 'seeded'
+    const beforeReconQueries = supplierOrderQueries.length
+    const reconCountRes = await fetch(`${url}/`, {
+      redirect: 'manual',
+      headers: { Cookie: cookie },
+    })
+    const reconCountBody = await reconCountRes.text()
+    assert.equal(reconCountRes.status, 200, reconCountBody.slice(0, 300))
+    const homeQueries = supplierOrderQueries.slice(beforeReconQueries)
+    assert.ok(
+      homeQueries.some((q) => q.head && q.countMode === 'exact' && q.limit == null),
+      'home must count the recon backlog with a separate exact query'
+    )
+    assert.ok(
+      homeQueries.some((q) => !q.head && q.limit === 10 && !q.countMode),
+      'home preview query stays ordered and limited to 10'
+    )
+    assert.match(
+      reconCountBody,
+      /Rekonsiliasi Supplier<\/div>\s*<div class="value warning">12<\/div>/
+    )
+    assert.match(reconCountBody, /TRX-REKON-1/)
+    assert.equal(reconCountBody.includes('TRX-BUKAN-REKON'), false)
+
+    forcedQueryError.table = 'SupplierOrder'
+    forcedQueryError.error = { message: 'supplier order down' }
+    forcedQueryError.head = null
+    const reconRes = await fetch(`${url}/`, {
+      redirect: 'manual',
+      headers: { Cookie: cookie },
+    })
+    const reconBody = await reconRes.text()
+    assert.equal(reconRes.status, 500, reconBody.slice(0, 300))
+    assert.match(reconBody, /supplier order down/)
+    assert.equal(reconBody.includes('TRX-REKON-1'), false)
+    assert.equal(reconBody.includes('Aman'), false)
+
+    forcedQueryError.error = { message: 'supplier order count down' }
+    forcedQueryError.head = true
+    const reconCountErr = await fetch(`${url}/`, {
+      redirect: 'manual',
+      headers: { Cookie: cookie },
+    })
+    const reconCountErrBody = await reconCountErr.text()
+    assert.equal(reconCountErr.status, 500, reconCountErrBody.slice(0, 300))
+    assert.match(reconCountErrBody, /supplier order count down/)
+    assert.equal(reconCountErrBody.includes('TRX-REKON-1'), false)
+    assert.equal(reconCountErrBody.includes('Aman'), false)
   } finally {
+    forcedQueryError.table = null
+    forcedQueryError.error = null
+    forcedQueryError.head = null
     await close(server)
   }
 })

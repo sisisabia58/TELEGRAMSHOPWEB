@@ -117,6 +117,34 @@ const cases = [
   },
 ]
 
+test('dashboard overview menampilkan pesanan supplier yang perlu rekonsiliasi', async () => {
+  const html = await ejs.renderFile(
+    path.join(viewRoot, 'dashboard.ejs'),
+    {
+      ...baseLocals,
+      currentPage: 'dashboard',
+      pageTitle: 'Overview',
+      overview: {
+        pendingDeposits: [],
+        pendingReconciliations: [
+          { trx_id: 'TRX-REKON-1', user_id: 42, quantity: 2, error: 'perlu rekonsiliasi manual: HTTP 502' },
+        ],
+        pendingReconciliationCount: 12,
+        outOfStock: [],
+        lowStock: [],
+        recentTxns: [],
+        todayRevenue: 0,
+        todayTxnCount: 0,
+      },
+    },
+    { views: [viewRoot] }
+  )
+  assert.match(html, /Rekonsiliasi Supplier/)
+  assert.match(html, /TRX-REKON-1/)
+  assert.match(html, /Saldo tidak dikembalikan otomatis|Jangan refund otomatis/)
+  assert.match(html, /Rekonsiliasi Supplier<\/div>\s*<div class="value warning">12<\/div>/)
+})
+
 test('pengaturan reseller menjelaskan harga cadangan menyusul di sync berikutnya', async () => {
   const html = await ejs.renderFile(
     path.join(viewRoot, 'supplier-pengaturan.ejs'),

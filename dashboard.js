@@ -28,6 +28,7 @@ const { requireRole, requireWriteAccess } = require('./lib/dashboard-auth')
 const security = require('./lib/http-security')
 const { safeErrorHandler } = require('./lib/safe-error-handler')
 const { isAllowedInlineUrl } = require('./lib/inline-keyboard')
+const fulfillment = require('./lib/fulfillment')
 
 const app = express()
 security.applyTrustProxy(app)
@@ -971,6 +972,8 @@ app.get('/', isAuthenticated, async (req, res) => {
       todayRevenue,
       recentTrxResult,
       activeFlowResult,
+      pendingReconResult,
+      pendingReconCountResult,
     ] = await Promise.all([
       supabase.from('Deposit').select('*').eq('status', 'pending').order('tanggal', { ascending: true }).limit(10),
       supabase.from('Varian').select('id, produk_id, label, kode, harga, is_active, produk:Produk(nama, slug)').eq('is_active', true).order('urutan', { ascending: true }),
@@ -983,7 +986,34 @@ app.get('/', isAuthenticated, async (req, res) => {
       sumTodayRevenue(todayStart, todayEnd),
       supabase.from('Trx').select('*').order('tanggal', { ascending: false }).limit(5),
       supabase.from('BotFlow').select('draft_updated_at').eq('is_active', true).maybeSingle(),
+      supabase
+        .from('SupplierOrder')
+        .select('id, trx_id, user_id, quantity, jual_idr, error, created_at, status')
+        .eq('status', 'failed')
+        .like('error', `${fulfillment.REKON_PREFIX}%`)
+        .order('created_at', { ascending: false })
+        .limit(10),
+      // Ubin memakai hitungan exact. Preview di atas tetap 10 baris terurut;
+      // panjang array itu bukan jumlah antrean.
+      supabase
+        .from('SupplierOrder')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'failed')
+        .like('error', `${fulfillment.REKON_PREFIX}%`),
     ])
+
+    // Query lain di halaman ini jatuh ke data kosong kalau PostgREST mengembalikan
+    // error (kartu stok/deposit tetap tampil). Daftar rekonsiliasi tidak boleh
+    // begitu: error yang ditelan terlihat seperti "Aman" dan menyembunyikan
+    // pesanan yang tidak boleh di-refund. Hitungan ubin sama: error atau count
+    // yang tidak ada bukan nol. Pola halaman ini untuk kegagalan yang harus
+    // terlihat adalah throw ke catch di bawah, yang membalas 500.
+    if (pendingReconResult.error) throw pendingReconResult.error
+    if (pendingReconCountResult.error) throw pendingReconCountResult.error
+    const pendingReconciliationCount = pendingReconCountResult.count
+    if (!Number.isFinite(pendingReconciliationCount) || pendingReconciliationCount < 0) {
+      throw new Error('SupplierOrder reconciliation count missing')
+    }
 
     const variants = variantsResult.data || []
     const stockCounts = await stock.getStokCountsByKode(variants.map((v) => v.kode))
@@ -1005,6 +1035,8 @@ app.get('/', isAuthenticated, async (req, res) => {
       todayTxnCount: todayTxnCountResult.count ?? 0,
       recentTxns: recentTrxResult.data || [],
       flowDraftUpdatedAt: activeFlowResult.data?.draft_updated_at || null,
+      pendingReconciliations: pendingReconResult.data || [],
+      pendingReconciliationCount,
     })
 
     res.render('dashboard', {
@@ -7510,17 +7542,20 @@ app.get('/supplier/:id/edit', isAuthenticated, async (req, res) => {
 app.post('/supplier/simpan', isAuthenticated, async (req, res) => {
   const { id, nama, adapter, base_url, api_key, prioritas, is_active } = req.body
 
-  const renderError = (pesan) => res.render('supplier-form', {
-    title: `${id ? 'Edit' : 'Tambah'} Supplier - ${NamaBot}`,
-    namaBot: NamaBot,
-    username: req.session.username,
-    supplier: supplierAdapters.tanpaApiKey({
-      id, nama, adapter, base_url, prioritas, is_active: is_active === 'on',
-    }),
-    adapters: supplierAdapters.listAdapters(),
-    error: pesan,
-    req,
-  })
+  const renderError = (pesan, status = 200) => {
+    res.status(status)
+    return res.render('supplier-form', {
+      title: `${id ? 'Edit' : 'Tambah'} Supplier - ${NamaBot}`,
+      namaBot: NamaBot,
+      username: req.session.username,
+      supplier: supplierAdapters.tanpaApiKey({
+        id, nama, adapter, base_url, prioritas, is_active: is_active === 'on',
+      }),
+      adapters: supplierAdapters.listAdapters(),
+      error: pesan,
+      req,
+    })
+  }
 
   try {
     if (!nama || !nama.trim()) return renderError('Nama supplier wajib diisi!')
@@ -7548,8 +7583,11 @@ app.post('/supplier/simpan', isAuthenticated, async (req, res) => {
     else if (!id) row.api_key = ''
 
     if (id) {
-      const { error } = await supabase.from('Supplier').update(row).eq('id', id)
+      const { data: updated, error } = await supabase.from('Supplier').update(row).eq('id', id).select('id')
       if (error) throw error
+      if (supplierAdapters.updateTidakMenemukanBaris(updated)) {
+        return renderError('Supplier tidak ditemukan', 404)
+      }
       await logActivity(req, 'update_supplier', 'Supplier', id, { nama: row.nama })
     } else {
       const { error } = await supabase.from('Supplier').insert(row)

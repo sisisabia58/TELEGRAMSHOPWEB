@@ -171,6 +171,12 @@ test('assertSafeOutbound MENOLAK kalau DNS gagal', async () => {
   registry.__setLookup(async () => [{ address: '203.0.113.10', family: 4 }])
 })
 
+test('edit supplier dengan id yang tidak ketemu dianggap tidak ditemukan', () => {
+  assert.equal(registry.updateTidakMenemukanBaris(null), true)
+  assert.equal(registry.updateTidakMenemukanBaris([]), true)
+  assert.equal(registry.updateTidakMenemukanBaris([{ id: 'ada' }]), false)
+})
+
 test('tanpaApiKey menghapus api_key dari objek yang dikirim ke frontend', () => {
   const bersih = registry.tanpaApiKey({
     id: 's1',
