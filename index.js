@@ -563,14 +563,25 @@ ${berhasil ? '' : `Saldo sebelum: ${saldoSebelum === null ? 'tidak terbaca' : fo
 
 // Pesanan supplier mungkin sudah terbit (timeout/5xx). Jangan refund dan
 // jangan suruh pembeli pesan ulang — dashboard menampilkan jejak ini.
+//
+// parse_mode Markdown hanya menghormati \_ \* \` \[ di luar entitas.
+// Nilai dinamis tidak dibungkus bold atau code: backslash di dalam entitas
+// tidak lolos, dan garis bawah di dalam bold membuat Telegram menolak pesan.
+function escapeTelegramMarkdown(value) {
+  return String(value).replace(/([_*`\[])/g, '\\$1')
+}
+
 async function beritahuRekonsiliasi({ userId, harga, Data, item, alasan }) {
+  const nama = escapeTelegramMarkdown(item?.nama || 'produk ini')
+  const trxid = escapeTelegramMarkdown(Data.trxid)
+  const nominal = escapeTelegramMarkdown(formatrupiah(harga))
   const pesanPembeli = `⚠️ *PESANAN SEDANG DICEK MANUAL*
 ━━━━━━━━━━━━━━━━━━━━
-Pembayaran untuk *${item?.nama || 'produk ini'}* sudah kami terima, tapi konfirmasi pengiriman dari pemasok belum jelas.
+Pembayaran untuk ${nama} sudah kami terima, tapi konfirmasi pengiriman dari pemasok belum jelas.
 
 ❗️ Saldo *belum dikembalikan* supaya tidak dobel jika barangnya ternyata sudah terbit.
-📋 Trx ID: \`${Data.trxid}\`
-💰 Nominal: *${formatrupiah(harga)}*
+📋 Trx ID: ${trxid}
+💰 Nominal: ${nominal}
 
 Admin sedang meninjau. Mohon tunggu atau hubungi CS dengan Trx ID di atas — jangan pesan ulang dulu.`
 
@@ -584,12 +595,12 @@ Admin sedang meninjau. Mohon tunggu atau hubungi CS dengan Trx ID di atas — ja
     if (channelContact.channelLog) {
       await bot.sendMessage(channelContact.channelLog, `🚨 *PESANAN PERLU REKONSILIASI MANUAL*
 =======================
-User: ${userId}
-Trx ID: *${Data.trxid}*
-Produk: *${item?.nama || Data.kode}*
-Jumlah: *${Data.jumlah}*
-Nominal: *${formatrupiah(harga)}*
-Alasan: ${alasan || 'tidak diketahui'}
+User: ${escapeTelegramMarkdown(userId)}
+Trx ID: ${trxid}
+Produk: ${escapeTelegramMarkdown(item?.nama || Data.kode)}
+Jumlah: ${escapeTelegramMarkdown(Data.jumlah)}
+Nominal: ${nominal}
+Alasan: ${escapeTelegramMarkdown(alasan || 'tidak diketahui')}
 Saldo TIDAK dikembalikan otomatis.
 =======================`, { parse_mode: 'Markdown' })
     }
