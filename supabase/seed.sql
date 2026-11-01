@@ -25,6 +25,10 @@ REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC, anon, authenticated;
 
 -- Defense in depth for Supplier.api_key (already locked by 20261016000000).
+-- NOTE: a column-level REVOKE does NOT override a table-level GRANT SELECT.
+-- If anon/authenticated are ever granted SELECT ON TABLE "Supplier" again, the
+-- service_role-only RLS policy is what still hides every row (including
+-- api_key). Keep that policy in place.
 REVOKE ALL ON TABLE "Supplier", "SupplierProduct", "SupplierOrder" FROM anon, authenticated, PUBLIC;
 REVOKE SELECT (api_key) ON TABLE "Supplier" FROM anon, authenticated, PUBLIC;
 GRANT ALL ON TABLE "Supplier", "SupplierProduct", "SupplierOrder" TO service_role;

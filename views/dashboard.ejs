@@ -1,6 +1,11 @@
 <%
     const model = overview || {};
     const pendingDeposits = model.pendingDeposits || [];
+    const pendingReconciliations = model.pendingReconciliations || [];
+    const pendingReconciliationCount = Number.isFinite(model.pendingReconciliationCount)
+        ? model.pendingReconciliationCount
+        : pendingReconciliations.length;
+    const butuhRekon = pendingReconciliationCount > 0;
     const outOfStock = model.outOfStock || [];
     const lowStock = model.lowStock || [];
     const recentTxns = model.recentTxns || [];
@@ -159,6 +164,11 @@
                     <div class="value"><%= model.todayTxnCount || 0 %></div>
                     <div class="sub">Revenue: <%= formatrupiah(model.todayRevenue || 0) %></div>
                 </div>
+                <div class="metric-tile">
+                    <div class="label">Rekonsiliasi Supplier</div>
+                    <div class="value <%= butuhRekon ? 'warning' : 'success' %>"><%= pendingReconciliationCount %></div>
+                    <div class="sub"><%= butuhRekon ? 'Jangan refund otomatis' : 'Aman' %></div>
+                </div>
             </div>
 
             <div class="triage-grid">
@@ -237,6 +247,31 @@
                             </ul>
                         <% } %>
                         <a href="/stok" class="btn btn-secondary" style="margin-top: 14px;">Buka Stok</a>
+                    </div>
+                </div>
+
+                <div class="card triage-card">
+                    <div class="card-header">
+                        <h2 class="card-title">Rekonsiliasi Supplier</h2>
+                        <span class="badge <%= butuhRekon ? 'badge-warning' : 'badge-success' %>">
+                            <%= butuhRekon ? 'Butuh cek' : 'Aman' %>
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <p class="triage-copy">Timeout/5xx ke pemasok: pesanan mungkin sudah terbit, saldo tidak dikembalikan otomatis.</p>
+                        <% if (pendingReconciliations.length) { %>
+                            <ul class="triage-list">
+                                <% pendingReconciliations.slice(0, 3).forEach((row) => { %>
+                                    <li class="triage-row">
+                                        <div class="triage-main">
+                                            <strong><%= row.trx_id %></strong>
+                                            <span>User <%= row.user_id %> · qty <%= row.quantity || 1 %></span>
+                                        </div>
+                                    </li>
+                                <% }) %>
+                            </ul>
+                        <% } %>
+                        <a href="/supplier" class="btn btn-warning" style="margin-top: 14px;">Buka Supplier</a>
                     </div>
                 </div>
 

@@ -5,6 +5,15 @@
 - `supabase/migrations/20260818000000_supplier_sourcing.sql` (additive; no `DROP`, no data rewrite)
 - `supabase/migrations/20261016000000_restrict_supplier_rls.sql` (locks `Supplier*` to `service_role`; `anon` cannot read `api_key`)
 
+That migration is already recorded on `phase14-flow-builder-ux` and must stay
+byte-identical. Its header still says a later `GRANT SELECT ON TABLE "Supplier"`
+cannot expose `api_key` because of `REVOKE SELECT (api_key)`. Postgres does not
+work that way: a column-level REVOKE does NOT override a table-level GRANT SELECT.
+If a client role is ever granted `SELECT ON TABLE "Supplier"` again, column
+access comes back with that grant. The `service_role`-only RLS policy is the
+layer that still hides every row (including `api_key`). Keep that policy in
+place. `service_role` keeps full access through `GRANT ALL` and bypasses RLS.
+
 ## What this adds
 
 A **third way stock enters the shop**, alongside the two that already existed:
