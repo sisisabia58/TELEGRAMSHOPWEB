@@ -50,6 +50,17 @@ test('rejects incomplete or empty Markdown links', () => {
   assert.equal(validateTelegramMarkdown('[label]()').ok, false)
 })
 
+test('rejects literal [[marker]] brackets and accepts a backslash-escaped opening bracket', () => {
+  // Legacy Markdown links are `[label](url)`. A `[` with no `](` is unbalanced,
+  // including doubled brackets used as plain bot copy. `\` before `[` is the
+  // escape this checker honors (`]` is not a delimiter by itself).
+  const raw = validateTelegramMarkdown('lihat [[marker]] di sini')
+  assert.equal(raw.ok, false)
+  assert.match(raw.reason, /unbalanced Markdown link/)
+  assert.equal(validateTelegramMarkdown('lihat \\[\\[marker]] di sini').ok, true)
+  assert.equal(validateTelegramMarkdown('[CS](https://t.me/example)').ok, true)
+})
+
 test('rejects non-string input', () => {
   assert.equal(validateTelegramMarkdown(null).ok, false)
   assert.equal(validateTelegramMarkdown(12).ok, false)
