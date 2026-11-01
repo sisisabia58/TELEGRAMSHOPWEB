@@ -16,6 +16,12 @@ test('formatrupiah memakai format Rupiah tanpa desimal', () => {
   assert.strictEqual(spasiNormal(formatrupiah(1500500)), 'Rp 1.500.500')
 })
 
+test('formatrupiah tidak menulis RpNaN untuk harga yang tidak ada', () => {
+  assert.strictEqual(formatrupiah(undefined), '—')
+  assert.strictEqual(formatrupiah(null), '—')
+  assert.strictEqual(formatrupiah('bukan-angka'), '—')
+})
+
 test('formatrupiah membulatkan desimal', () => {
   // maximumFractionDigits: 0 — penting supaya harga tidak pernah tampil "Rp 1.000,5"
   assert.ok(!formatrupiah(1000.5).includes(','))
