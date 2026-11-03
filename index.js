@@ -52,6 +52,7 @@ const { getAdapter, assertSafeOutbound } = require('./lib/suppliers')
 // baca v.harga langsung: untuk varian yang dipasok supplier, v.harga cuma angka
 // cadangan sementara harga sebenarnya dihitung dari kurs + margin yang berlaku.
 const hargaVarian = catalog.hargaVarian
+const purchaseFlow = require('./lib/purchase-flow')
 
 const stock = require('./lib/stock')
 const getStokCount = stock.getStokCountByKode
@@ -371,13 +372,13 @@ async function generateReplyKeyboard(userId) {
 }
 
 // Resolve varian by kode for cart/checkout flows.
-async function getVarianForCart(kode) {
+async function getVarianForCart(kode, pin = null) {
   const v = await catalog.getVariantByKode(kode)
   if (!v) return null
   // attachStock menghitung stok gabungan (stok sendiri + semua supplier yang
   // memetakan ke varian ini) sekaligus harga_efektif = penawaran termurah.
   const [denganStok] = await catalog.attachStock([v])
-  return {
+  const dasar = {
     ...denganStok,
     nama: `${v.produk?.nama || 'Produk'} — ${v.label}`,
     namaProduk: v.produk?.nama || 'Produk',
@@ -387,6 +388,12 @@ async function getVarianForCart(kode) {
     slug: v.produk?.slug || '',
     produk_id: v.produk_id,
   }
+  // Pembeli yang sudah memilih penjual ditagih dan dipenuhi dari penjual itu,
+  // bukan dari penawaran termurah yang lain.
+  if (pin && (pin.sumber === purchaseFlow.SENDIRI || pin.sumber === purchaseFlow.SUPPLIER)) {
+    return purchaseFlow.applyPin(dasar, pin)
+  }
+  return dasar
 }
 
 // Harga untuk JUMLAH tertentu.
@@ -459,6 +466,16 @@ function qtyDipilih(Data, item) {
 // dipakai (bukan FIFO), supaya yang diterima persis yang ditunjukkan ke dia.
 async function penuhiPesanan({ item, Data, userId, hargaSatuan }) {
   const deps = {}
+
+  // Pilihan penjual di layar durasi mengunci sumber. Jangan pindah ke penjual
+  // lain yang harganya berbeda dari yang dibayar pembeli.
+  if (Data && Data.seller_pin) {
+    deps.getOffers = async (varian) => {
+      const all = await sourcing.getOffersForVarian(varian)
+      const pinned = purchaseFlow.applyPin({ ...varian, offers: all }, Data.seller_pin)
+      return pinned.offers || []
+    }
+  }
 
   if (Data.selectedStokIds && Data.selectedStokIds.length > 0) {
     deps.getStokForTransaction = async (kode, jumlah) => {
@@ -628,42 +645,106 @@ function applyVoucherPotongan(subtotal, userId, voucherKode, voucherList) {
   return Math.max(0, subtotal - getVoucherPotongan(userId, voucherKode, voucherList))
 }
 
-async function showVariantQtyScreen(userId, msgId, varian) {
-  // item membawa stok gabungan (sendiri + supplier) dan harga efektif.
-  const item = await getVarianForCart(varian.kode)
-  if (!item) return bot.sendMessage(userId, copy.get('err.product_not_found'))
+function sellerButtonLabel(option) {
+  const raw = `${purchaseFlow.plainLabel(option.label, purchaseFlow.OWN_LABEL)} · ${formatrupiah(option.harga_satuan)} (${option.stok})`
+  return raw.length > 64 ? `${raw.slice(0, 61)}…` : raw
+}
 
-  const stokCount = item.stok_count || 0
-  if (stokCount === 0) {
-    return bot.sendMessage(userId, copy.get('err.stock_empty', { nama: varian.label }))
-  }
-  const data = {
-    kode: varian.kode,
+async function showSellerPicker(userId, msgId, item) {
+  const options = purchaseFlow.sellerOptions(item.offers)
+  const lines = options.map((o, i) => (
+    `${i + 1}. *${purchaseFlow.plainLabel(o.label, purchaseFlow.OWN_LABEL)}* — ${formatrupiah(o.harga_satuan)} (Stok ${o.stok})`
+  )).join('\n')
+  const text = `🛒 *${item.namaProduk}* — *${item.namaLabel}*
+Stok total: *${purchaseFlow.combinedStock(item.offers)}*
+
+Pilih penjual:
+${lines}`
+  const buttons = options.map((o) => [{
+    text: sellerButtonLabel(o),
+    callback_data: purchaseFlow.sellerCallbackData(o),
+  }])
+  const back = item.slug && Buffer.byteLength(`p:${item.slug}`, 'utf8') <= 64
+    ? `p:${item.slug}`
+    : 'daftarproduk'
+  buttons.push([{ text: copy.get('msg.btn_kembali'), callback_data: back }])
+  await cart.save(userId, {
+    kode: item.kode,
     jumlah: 1,
     trxid: `TRX-${Date.now()}`,
     voucher: '',
     voucher_status: '',
     selectedStokIds: [],
+    seller_pin: null,
+  })
+  await editOrSendBannerMessage(userId, msgId, text, {
+    reply_markup: { inline_keyboard: buttons },
+  })
+}
+
+async function showVariantQtyScreen(userId, msgId, varian, pin = null) {
+  const kode = varian && varian.kode ? varian.kode : varian
+  const item = await getVarianForCart(kode, pin)
+  if (!item) return bot.sendMessage(userId, copy.get('err.product_not_found'))
+
+  if (!pin && purchaseFlow.needsSellerPicker(item.offers)) {
+    return showSellerPicker(userId, msgId, item)
+  }
+
+  let chosen = item
+  let sellerPin = pin || null
+  if (!sellerPin) {
+    const options = purchaseFlow.sellerOptions(item.offers)
+    if (options.length === 1) {
+      sellerPin = purchaseFlow.pinFromOption(options[0])
+      chosen = purchaseFlow.applyPin(item, sellerPin)
+    }
+  }
+
+  const stokCount = chosen.stok_count || 0
+  if (stokCount === 0) {
+    return bot.sendMessage(userId, copy.get('err.stock_empty', { nama: (varian && varian.label) || chosen.namaLabel }))
+  }
+  const data = {
+    kode: chosen.kode,
+    jumlah: 1,
+    trxid: `TRX-${Date.now()}`,
+    voucher: '',
+    voucher_status: '',
+    selectedStokIds: [],
+    seller_pin: sellerPin,
   }
   await cart.save(userId, data)
-  const stokItems = await getStokItems(varian.kode, 1)
+  const stokItems = await getStokItems(chosen.kode, 1)
   const sampleData = stokItems.length > 0 ? [stokItems[0].data] : []
-  const formatDetected = detectProductFormat(sampleData, varian.format)
+  const formatDetected = detectProductFormat(sampleData, chosen.format || (varian && varian.format))
   const momentTz = require('moment-timezone')
   const formattedTime = momentTz().tz('Asia/Jakarta').format('hh:mm:ss A')
+  const offer = (chosen.offers && chosen.offers[0]) || null
+  const sellerName = offer
+    ? (offer.sumber === purchaseFlow.SUPPLIER
+      ? purchaseFlow.plainLabel(offer.supplier_nama, 'Seller')
+      : purchaseFlow.OWN_LABEL)
+    : ''
+  const produkLabel = pin && sellerName
+    ? `${chosen.namaProduk.toUpperCase()} — ${chosen.namaLabel.toUpperCase()} (${sellerName})`
+    : `${chosen.namaProduk.toUpperCase()} — ${chosen.namaLabel.toUpperCase()}`
   const caption = copy.get('screen.qty', {
-    produk_label: `${item.namaProduk.toUpperCase()} — ${item.namaLabel.toUpperCase()}`,
-    terjual: varian.terjual || 0,
-    deskripsi: item.deskripsi,
-    harga: formatrupiah(hargaVarian(item)),
+    produk_label: produkLabel,
+    terjual: chosen.terjual || (varian && varian.terjual) || 0,
+    deskripsi: chosen.deskripsi,
+    harga: formatrupiah(hargaVarian(chosen)),
     stok: stokCount,
     waktu: formattedTime,
   })
+  const lanjutLabel = pin && sellerName
+    ? `${sellerName} · ${chosen.namaLabel} (${stokCount})`
+    : `${chosen.namaLabel} (${stokCount})`
   await editOrSendBannerMessage(userId, msgId, caption, {
     reply_markup: {
       inline_keyboard: [
-        [{ text: `${item.namaLabel} (${stokCount})`, callback_data: 'lanjut' }],
-        [{ text: copy.get('btn.kembali'), callback_data: 'daftarproduk' }],
+        [{ text: lanjutLabel.length > 64 ? lanjutLabel.slice(0, 61) + '…' : lanjutLabel, callback_data: 'lanjut' }],
+        [{ text: copy.get('btn.kembali'), callback_data: pin ? `v:${chosen.kode}` : 'daftarproduk' }],
       ],
     },
   })
@@ -1267,6 +1348,19 @@ async function getProdukWithStok() {
   }
 }
 
+// Stok dan harga ada di varian. Produk.kode / Produk.harga sudah tidak ada.
+function decorateShopProducts(products) {
+  return (products || []).map((p) => {
+    const facts = purchaseFlow.buyerStockFacts(p)
+    return {
+      ...p,
+      stok_count: facts.stok,
+      terjual: facts.terjual,
+      harga_label: purchaseFlow.formatHargaRange(facts.minHarga, facts.maxHarga, formatrupiah),
+    }
+  })
+}
+
 // ============================================
 // OPTIMIZED HELPER FUNCTIONS untuk /start
 // ============================================
@@ -1693,18 +1787,83 @@ bot.onText(/^\/listuser(?:@\w+)?(?:\s|$)/, async (msg) => {
 })
 
 // Function untuk menampilkan halaman list produk dengan pagination
-async function sendProductPage(products, chatId, page, msgId = null, callbackId = null, filterOptions = {}, isOwner = false) {
-  const productStok = (p) => {
-    if (p.stok_count !== undefined) return p.stok_count
-    return (p.variants || []).reduce((s, v) => s + (v.stok_count || 0), 0)
+// Daftar yang baru ditampilkan, supaya balasan "2" / "NETFLIX FAMILY" memilih
+// baris yang sama dengan nomor di layar (bukan urutan lain).
+const shownProductLists = new Map()
+
+function rememberShownProducts(chatId, products) {
+  if (!chatId) return
+  shownProductLists.set(String(chatId), (products || []).map((p) => ({
+    slug: p.slug,
+    nama: p.nama,
+    stok_count: purchaseFlow.productDisplayedStock(p),
+  })))
+}
+
+async function defaultShownProducts() {
+  const products = await getProdukWithStok()
+  return products
+    .slice()
+    .sort((a, b) => (a.urutan || 0) - (b.urutan || 0) || String(a.nama || '').localeCompare(String(b.nama || '')))
+    .map((p) => ({
+      slug: p.slug,
+      nama: p.nama,
+      stok_count: purchaseFlow.productDisplayedStock(p),
+    }))
+}
+
+async function replyToProductQuery(msg, text) {
+  const cached = shownProductLists.get(String(msg.from.id))
+  const numbered = purchaseFlow.parseProductNumber(text)
+  const list = numbered
+    ? (cached && cached.length ? cached : await defaultShownProducts())
+    : null
+  if (numbered) {
+    const hit = purchaseFlow.matchProductQuery(list, text)
+    if (hit && hit.outOfRange) {
+      await bot.sendMessage(msg.from.id, `Nomor *${hit.index}* tidak ada. Pilih 1–${hit.total || 0}.`, { parse_mode: 'Markdown' })
+      return true
+    }
+    if (hit && hit.product && hit.product.slug) {
+      await sendProductCard(msg.from.id, hit.product.slug, null)
+      return true
+    }
+    return false
   }
+  const pools = []
+  if (cached && cached.length) pools.push(cached)
+  pools.push(await defaultShownProducts())
+  for (const pool of pools) {
+    const hit = purchaseFlow.matchProductQuery(pool, text)
+    if (hit && hit.ambiguous) {
+      const lines = hit.ambiguous.map((row) => `${row.index}. ${row.product.nama}`).join('\n')
+      await bot.sendMessage(msg.from.id, `Beberapa produk cocok. Balas nomornya:\n${lines}`)
+      return true
+    }
+    if (hit && hit.product && hit.product.slug) {
+      await sendProductCard(msg.from.id, hit.product.slug, null)
+      return true
+    }
+  }
+  return false
+}
+
+async function sendProductPage(products, chatId, page, msgId = null, callbackId = null, filterOptions = {}, isOwner = false) {
+  // Pemanggil lama mengisi stok_count lewat getStokCount(produk.kode). Kolom
+  // kode sudah tidak ada di Produk, jadi angkanya selalu 0 dan tombol ikut hilang.
+  // Kalau varian tidak ikut termuat, ambil katalog yang sudah menjumlah stok.
+  let source = products || []
+  if (!purchaseFlow.hasAttachedVariants(source)) {
+    source = await getProdukWithStok()
+  }
+  const productStok = (p) => purchaseFlow.productDisplayedStock(p)
   const productTerjual = (p) => (p.variants || []).reduce((s, v) => s + (v.terjual || 0), 0)
   const minHarga = (p) => {
-    const prices = (p.variants || []).filter((v) => v.is_active !== false).map((v) => v.harga || 0)
+    const prices = (p.variants || []).filter((v) => v.is_active !== false).map((v) => hargaVarian(v) || 0)
     return prices.length ? Math.min(...prices) : 0
   }
 
-  let sortedProducts = [...(products || [])]
+  let sortedProducts = [...source]
 
   switch (filterOptions.sortBy) {
     case 'price_high':
@@ -1748,8 +1907,9 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
   }
 
   for (const p of sortedProducts) {
-    if (p.stok_count === undefined) p.stok_count = productStok(p)
+    p.stok_count = productStok(p)
   }
+  rememberShownProducts(chatId, sortedProducts)
 
   const totalPages = Math.max(1, Math.ceil(sortedProducts.length / PRODUCTS_PER_PAGE))
   const start = page * PRODUCTS_PER_PAGE
@@ -1768,7 +1928,8 @@ async function sendProductPage(products, chatId, page, msgId = null, callbackId 
     const momentTz = require('moment-timezone')
     const formattedTime = momentTz().tz('Asia/Jakarta').format('hh:mm:ss A')
     rows += `\n📄 Halaman ${page + 1} / ${totalPages}\n`
-    rows += `📅 ${formattedTime}`
+    rows += `📅 ${formattedTime}\n`
+    rows += `💡 Balas nomor atau nama produk untuk memilih`
   }
 
   const text = copy.get('screen.product_list', { rows })
@@ -1850,11 +2011,7 @@ async function sendProductCard(chatId, slug, msgId = null) {
 
     let variasiLines = ''
     active.forEach((v) => {
-      if (v.stok_count > 0) {
-        variasiLines += `*${v.label}* - ${formatrupiah(hargaVarian(v))} (Stok ${v.stok_count})\n`
-      } else {
-        variasiLines += `~${v.label}~ - ${formatrupiah(hargaVarian(v))} _(Habis)_\n`
-      }
+      variasiLines += `${purchaseFlow.durationLine(v, formatrupiah).text}\n`
     })
 
     const text = copy.get('screen.product_card', {
@@ -1865,7 +2022,7 @@ async function sendProductCard(chatId, slug, msgId = null) {
     })
 
     const varButtons = []
-    const available = active.filter((v) => v.stok_count > 0)
+    const available = active.filter((v) => purchaseFlow.variantDisplayedStock(v) > 0)
     for (let i = 0; i < available.length; i += 2) {
       const row = [{ text: available[i].label, callback_data: `v:${available[i].kode}` }]
       if (available[i + 1]) {
@@ -2185,10 +2342,7 @@ bot.onText(/^\/stok(?:@\w+)?(?:\s|$)/, async (msg) => {
     }
     
     // Hitung stok untuk setiap produk
-    const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-      const stokCount = await getStokCount(p.kode)
-      return { ...p, stok_count: stokCount }
-    }))
+    const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
     
     // Calculate statistics
     let totalStok = 0
@@ -2245,7 +2399,7 @@ bot.onText(/^\/stok(?:@\w+)?(?:\s|$)/, async (msg) => {
       
       tx += `${emoji} *${p.nama.toUpperCase()}*
 📊 Stok: *${p.stok_count}* | Terjual: *${p.terjual}* | ${persentase}% terjual
-🔖 Kode: \`${p.kode}\` | 💰 ${formatrupiah(p.harga)}
+💰 ${p.harga_label || '—'}
 ━━━━━━━━━━━━━━━━━━━━\n`
     })
     
@@ -2264,12 +2418,12 @@ bot.onText(/^\/stok(?:@\w+)?(?:\s|$)/, async (msg) => {
       const row = []
       row.push({ 
         text: `${i + 1}️⃣ ${sortedProduk[i].nama.substring(0, 15)}${sortedProduk[i].nama.length > 15 ? '...' : ''}`, 
-        callback_data: `stok_detail_${sortedProduk[i].kode}` 
+        callback_data: `stok_detail:${sortedProduk[i].slug}` 
       })
       if (sortedProduk[i + 1]) {
         row.push({ 
           text: `${i + 2}️⃣ ${sortedProduk[i + 1].nama.substring(0, 15)}${sortedProduk[i + 1].nama.length > 15 ? '...' : ''}`, 
-          callback_data: `stok_detail_${sortedProduk[i + 1].kode}` 
+          callback_data: `stok_detail:${sortedProduk[i + 1].slug}` 
         })
       }
       productRows.push(row)
@@ -2334,10 +2488,7 @@ async function openProductList(query) {
     })
   }
 
-  const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-    const stokCount = await getStokCount(p.kode)
-    return { ...p, stok_count: stokCount }
-  }))
+  const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
 
   const isOwnerUser = isOwner(query)
   await sendProductPage(ProdukWithStok, query.from.id, 0, query.message.message_id, query.id, {}, isOwnerUser)
@@ -2420,10 +2571,7 @@ async function openStokBuyer(query) {
     return
   }
 
-  const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-    const stokCount = await getStokCount(p.kode)
-    return { ...p, stok_count: stokCount }
-  }))
+  const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
 
   let totalStok = 0
   let totalTerjual = 0
@@ -2468,7 +2616,7 @@ async function openStokBuyer(query) {
 
     tx += `${emoji} *${p.nama.toUpperCase()}*
 📊 Stok: *${p.stok_count}* | Terjual: *${p.terjual}* | ${persentase}% terjual
-🔖 Kode: \`${p.kode}\` | 💰 ${formatrupiah(p.harga)}
+💰 ${p.harga_label || '—'}
 ━━━━━━━━━━━━━━━━━━━━\n`
   })
 
@@ -2483,12 +2631,12 @@ async function openStokBuyer(query) {
     const row = []
     row.push({
       text: `${i + 1}️⃣ ${sortedProduk[i].nama.substring(0, 15)}${sortedProduk[i].nama.length > 15 ? '...' : ''}`,
-      callback_data: `stok_detail_${sortedProduk[i].kode}`,
+      callback_data: `stok_detail:${sortedProduk[i].slug}`,
     })
     if (sortedProduk[i + 1]) {
       row.push({
         text: `${i + 2}️⃣ ${sortedProduk[i + 1].nama.substring(0, 15)}${sortedProduk[i + 1].nama.length > 15 ? '...' : ''}`,
-        callback_data: `stok_detail_${sortedProduk[i + 1].kode}`,
+        callback_data: `stok_detail:${sortedProduk[i + 1].slug}`,
       })
     }
     productRows.push(row)
@@ -2581,11 +2729,20 @@ try {
     await bot.answerCallbackQuery(query.id)
     const varian = await catalog.getVariantByKode(kode)
     if (!varian) return bot.sendMessage(query.from.id, copy.get('err.product_not_found'))
-    const stokCount = await getStokCount(varian.kode)
-    if (stokCount === 0) {
-      return bot.answerCallbackQuery(query.id, { text: copy.get('err.stock_empty', { nama: varian.label }), show_alert: true })
-    }
     await showVariantQtyScreen(query.from.id, query.message.message_id, varian)
+    return
+  }
+
+  const sellerPin = purchaseFlow.pinFromCallback(cmd)
+  if (sellerPin) {
+    await bot.answerCallbackQuery(query.id)
+    const Data = await cart.get(query.from.id)
+    if (!Data || !Data.kode) {
+      return bot.sendMessage(query.from.id, copy.get('err.cart_session_lost'))
+    }
+    const varian = await catalog.getVariantByKode(Data.kode)
+    if (!varian) return bot.sendMessage(query.from.id, copy.get('err.product_not_found'))
+    await showVariantQtyScreen(query.from.id, query.message.message_id, varian, sellerPin)
     return
   }
 
@@ -2870,54 +3027,12 @@ ${userSaldo >= minimalSaldo ? 'Klik tombol di bawah untuk mendapatkan akses:' : 
       return
     }
   }
-  const item = await getVarianForCart(itemName.toLowerCase())
-    console.log(item)
-    if (item) {
-      const stokCount = item.stok_count
-      
-      let Unique = require("crypto").randomBytes(6).toString("hex").toUpperCase()
-      let data = {
-        id: query.from.id,
-        kode: item.kode,
-        jumlah: 1,
-        trxid: Unique,
-        voucher: "",
-        voucher_status: "",
-        selectedStokIds: []
-      }
-      await cart.save(query.from.id, data)
-      
-      const stokItems = await getStokItems(item.kode, 1)
-      const sampleData = stokItems.length > 0 ? [stokItems[0].data] : []
-      detectProductFormat(sampleData, item.format)
-      
-      const momentTz = require('moment-timezone')
-      const formattedTime = momentTz().tz("Asia/Jakarta").format("hh:mm:ss A")
-
-      await editOrSendBannerMessage(query.from.id, query.message.message_id, `tambahkan jumlah pembelian:
-
-┌──────────────────
-│ • Produk : ${item.namaProduk.toUpperCase()} — ${item.namaLabel.toUpperCase()}
-│ • Stok Terjual : ${item.terjual || 0}
-│ • Desk : ${item.deskripsi}
-└──────────────────
-
-┌──────────────────
-│ Variasi, Harga - (Stok):
-│ • ${item.namaLabel}: ${formatrupiah(hargaVarian(item))} - (${stokCount})
-└──────────────────
-
-Current Date: ${formattedTime}`, {
-        reply_markup: {
-          inline_keyboard: [
-            [{text: `${item.namaLabel} (${stokCount})`, callback_data: "lanjut"}],
-            [{text: copy.get('btn.kembali'), callback_data: "daftarproduk"}]
-          ]
-        }
-      })
-    } else {
-      await bot.sendMessage(query.from.id, copy.get('err.product_not_found'))
-    }
+  const varianDipilih = await catalog.getVariantByKode(itemName.toLowerCase())
+  if (!varianDipilih) {
+    await bot.sendMessage(query.from.id, copy.get('err.product_not_found'))
+  } else {
+    await showVariantQtyScreen(query.from.id, query.message.message_id, varianDipilih)
+  }
 }
 
 
@@ -2926,7 +3041,7 @@ if (cmd === "lanjut") {
   if (await cart.exists(query.from.id)) {
     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     let Data = await cart.get(query.from.id)
-    const item = await getVarianForCart(Data.kode)
+    const item = await getVarianForCart(Data.kode, Data.seller_pin)
     if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
     
     const stokCount = item.stok_count
@@ -2961,7 +3076,7 @@ if (cmd === "lanjut") {
 
 // Helper function untuk refresh tampilan stok
 async function refreshStokView(query, Data, msgId = null) {
-  const item = await getVarianForCart(Data.kode)
+  const item = await getVarianForCart(Data.kode, Data.seller_pin)
   if (!item) return false
   
   if (!Data.selectedStokIds) {
@@ -3038,7 +3153,7 @@ if (cmd.startsWith('stok_page:')) {
     
     if (!Data.stokPage) Data.stokPage = 0
     
-    const item = await getVarianForCart(Data.kode)
+    const item = await getVarianForCart(Data.kode, Data.seller_pin)
     if (!item) return
     
     const allStokItems = await getStokItems(item.kode)
@@ -3088,7 +3203,7 @@ if (cmd.startsWith("select_stok:")) {
     // direservasi, jadi tombol yang sama cuma menaik-turunkan jumlah. Batas
     // atasnya stok gabungan yang dilaporkan supplier.
     {
-      const itemQty = await getVarianForCart(Data.kode)
+      const itemQty = await getVarianForCart(Data.kode, Data.seller_pin)
       if (itemQty && !pakaiPemilihStok(itemQty)) {
         const maks = itemQty.stok_count || 0
         const sekarang = Math.max(1, Math.trunc(Number(Data.jumlah) || 1))
@@ -3133,7 +3248,7 @@ if (cmd.startsWith("select_stok:")) {
       return
     }
     
-    const item = await getVarianForCart(Data.kode)
+    const item = await getVarianForCart(Data.kode, Data.seller_pin)
     if (!item) return
     
     // Ambil semua stok tersedia (urutkan berdasarkan created_at untuk FIFO)
@@ -3199,7 +3314,7 @@ if (cmd.startsWith("checkout_payment:")) {
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
 
-    const itemCek = await getVarianForCart(Data.kode)
+    const itemCek = await getVarianForCart(Data.kode, Data.seller_pin)
     if (!itemCek) {
       return await sendMessage(query.from.id, copy.get('err.product_not_found'))
     }
@@ -3262,7 +3377,7 @@ if (cmd.startsWith("checkout_payment:")) {
       query.data = "bayar"
       cmd = "bayar"
     } else {
-      const item = await getVarianForCart(Data.kode)
+      const item = await getVarianForCart(Data.kode, Data.seller_pin)
       if (!item) {
         return await sendMessage(query.from.id, copy.get('err.product_not_found'))
       }
@@ -3332,7 +3447,7 @@ if (cmd === "reset") {
     } else {
       Data.jumlah = 1
     await cart.save(query.from.id, Data)
-     const item = await getVarianForCart(Data.kode)
+     const item = await getVarianForCart(Data.kode, Data.seller_pin)
      if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
      const stokCountReset = item.stok_count
      const resolvedReset = await hargaUntukQty(item, Data.jumlah)
@@ -3372,7 +3487,7 @@ Klik ✅ Konfirmasi untuk melakukan pembayaran`, {
 if (cmd === "konfirmasi") {
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
-    const item = await getVarianForCart(Data.kode)
+    const item = await getVarianForCart(Data.kode, Data.seller_pin)
     if (!item) {
       return await sendMessage(query.from.id, copy.get('err.product_not_found'))
     }
@@ -3572,7 +3687,7 @@ ${item.snk.length > 100 ? item.snk.substring(0, 100) + '...' : item.snk}
 if (cmd === "pilih_payment_method") {
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
-    const item = await getVarianForCart(Data.kode)
+    const item = await getVarianForCart(Data.kode, Data.seller_pin)
     if (!item) {
       await sendMessage(query.from.id, copy.get('err.product_not_found'))
     } else {
@@ -3670,7 +3785,7 @@ Tersedia ${availableVouchers.length} voucher:`
 if (cmd === "lihat_voucher") {
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
-    const item = await getVarianForCart(Data.kode)
+    const item = await getVarianForCart(Data.kode, Data.seller_pin)
     if (!item) {
       await sendMessage(query.from.id, copy.get('err.product_not_found'))
     } else {
@@ -3742,7 +3857,7 @@ if (cmd.startsWith("apply_voucher_")) {
   
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
-    const item = await getVarianForCart(Data.kode)
+    const item = await getVarianForCart(Data.kode, Data.seller_pin)
     if (!item) {
       await sendMessage(query.from.id, copy.get('err.product_not_found'))
     } else {
@@ -3962,7 +4077,7 @@ if (cmd === "cek_saldo") {
 if (cmd === "konfirmasi_kembali") {
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
-    const item = await getVarianForCart(Data.kode)
+    const item = await getVarianForCart(Data.kode, Data.seller_pin)
     if (!item) {
       await sendMessage(query.from.id, copy.get('err.product_not_found'))
     } else {
@@ -4065,80 +4180,36 @@ if (cmd === "stok") {
   await openStokBuyer(query)
 }
 
-// Handler untuk detail produk di stok
-if (cmd.startsWith("stok_detail_")) {
-  const kode = cmd.replace("stok_detail_", "")
-  
-  let { data: Produk } = await supabase
-    .from("Produk")
-    .select("*")
-    .eq("kode", kode.toLowerCase())
-    .single()
-  
-  if (!Produk) {
+// Handler untuk detail produk di stok. Callback memakai slug: Produk tidak
+// punya kolom kode/harga lagi, dan "lihat semua stok" tidak mengirim isi akun.
+if (cmd.startsWith("stok_detail:")) {
+  const slug = cmd.slice("stok_detail:".length)
+  const produk = await catalog.getProductBySlug(slug)
+  if (!produk) {
     await bot.answerCallbackQuery(query.id, { text: copy.get('err.product_not_found'), show_alert: true })
     return
   }
-  
-  const stokCount = await getStokCount(Produk.kode)
-  
-  const persentase = Produk.terjual > 0 
-    ? Math.round((Produk.terjual / (Produk.terjual + stokCount)) * 100) 
-    : 0
-  
-  const statusEmoji = stokCount === 0 ? "❌" 
-    : stokCount <= 5 ? "⚠️" 
-    : stokCount <= 20 ? "✅" 
-    : "🟢"
-  
-  const statusText = stokCount === 0 ? "HABIS" 
-    : stokCount <= 5 ? "RENDAH" 
-    : stokCount <= 20 ? "NORMAL" 
-    : "BANYAK"
-  
-  // Get recent transactions for this product
-  const { data: recentTrx } = await supabase
-    .from("Trx")
-    .select("*")
-    .eq("kode", kode.toLowerCase())
-    .order("tanggal", { ascending: false })
-    .limit(5)
-  
-  let detailText = `📦 *DETAIL PRODUK*
+  const facts = purchaseFlow.buyerStockFacts(produk)
+  const hargaLabel = purchaseFlow.formatHargaRange(facts.minHarga, facts.maxHarga, formatrupiah)
+  const lines = (produk.variants || [])
+    .filter((v) => v.is_active !== false)
+    .map((v) => purchaseFlow.durationLine(v, formatrupiah).text)
+    .join('\n')
+  const detailText = `📦 *${produk.nama}*
 ━━━━━━━━━━━━━━━━━━━━
-${statusEmoji} *${Produk.nama}* (${statusText})
-━━━━━━━━━━━━━━━━━━━━
-🔖 *Kode:* \`${Produk.kode}\`
-💰 *Harga:* ${formatrupiah(Produk.harga)}
-📊 *Stok Tersedia:* ${stokCount}
-📈 *Terjual:* ${Produk.terjual}
-📊 *Persentase:* ${persentase}% terjual
+📊 *Stok total:* ${facts.stok}
+📈 *Terjual:* ${facts.terjual}
+💰 *Harga:* ${hargaLabel}
 
+${lines || '_Tidak ada varian_'}
 ━━━━━━━━━━━━━━━━━━━━
-📝 *Deskripsi:*
-${Produk.deskripsi}
-
-━━━━━━━━━━━━━━━━━━━━
-📊 *Transaksi Terakhir:* ${recentTrx ? recentTrx.length : 0} transaksi
-━━━━━━━━━━━━━━━━━━━━`
-  
-  const buttons = []
-  
-  buttons.push([
-    { text: "📋 Lihat Semua Stok", callback_data: `stok_viewall_${Produk.kode}` },
-    { text: "📊 Riwayat Penjualan", callback_data: `stok_history_${Produk.kode}` }
-  ])
-  
-  buttons.push([
-    { text: copy.get('btn.kembali'), callback_data: "stok" }
-  ])
-  
+${produk.deskripsi || ''}`
   await bot.answerCallbackQuery(query.id)
   await bot.sendMessage(query.from.id, detailText, {
     parse_mode: "Markdown",
     reply_markup: {
-      inline_keyboard: buttons
-    }
+      inline_keyboard: [[{ text: copy.get('btn.kembali'), callback_data: "stok" }]],
+    },
   })
 }
 
@@ -4186,10 +4257,7 @@ if (cmd.startsWith("stok_filter_")) {
   }
   
   // Hitung stok untuk setiap produk
-  const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-    const stokCount = await getStokCount(p.kode)
-    return { ...p, stok_count: stokCount }
-  }))
+  const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
   
   // Filter products based on type
   let filteredProduk = []
@@ -4265,7 +4333,7 @@ if (cmd.startsWith("stok_filter_")) {
     
     tx += `${emoji} *${p.nama.toUpperCase()}*
 📊 Stok: *${p.stok_count}* | Terjual: *${p.terjual}* | ${persentase}% terjual
-🔖 Kode: \`${p.kode}\` | 💰 ${formatrupiah(p.harga)}
+💰 ${p.harga_label || '—'}
 ━━━━━━━━━━━━━━━━━━━━\n`
   })
   
@@ -4278,12 +4346,12 @@ if (cmd.startsWith("stok_filter_")) {
     const row = []
     row.push({ 
       text: `${i + 1}️⃣ ${sortedProduk[i].nama.substring(0, 15)}${sortedProduk[i].nama.length > 15 ? '...' : ''}`, 
-      callback_data: `stok_detail_${sortedProduk[i].kode}` 
+      callback_data: `stok_detail:${sortedProduk[i].slug}` 
     })
     if (sortedProduk[i + 1]) {
       row.push({ 
         text: `${i + 2}️⃣ ${sortedProduk[i + 1].nama.substring(0, 15)}${sortedProduk[i + 1].nama.length > 15 ? '...' : ''}`, 
-        callback_data: `stok_detail_${sortedProduk[i + 1].kode}` 
+        callback_data: `stok_detail:${sortedProduk[i + 1].slug}` 
       })
     }
     productRows.push(row)
@@ -4318,10 +4386,7 @@ if (cmd === "stok_statistik") {
   }
   
   // Hitung stok untuk setiap produk
-  const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-    const stokCount = await getStokCount(p.kode)
-    return { ...p, stok_count: stokCount }
-  }))
+  const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
   
   // Calculate statistics
   let totalStok = 0
@@ -4532,7 +4597,7 @@ if (cmd === "batalvoucher") {
     await cart.save(query.from.id, Data)
     await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     const userSaldo = await cekSaldo(query.from.id)
-    const item = await getVarianForCart(Data.kode)
+    const item = await getVarianForCart(Data.kode, Data.seller_pin)
     if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
     const resolvedSaldo = await hargaUntukQty(item, Data.jumlah)
     let { data: Voucher } = await supabase.from("Voucher").select("*")
@@ -4574,7 +4639,7 @@ if (cmd.startsWith("min:")) {
    }
     Data.jumlah -= Number(jumlah)
     await cart.save(query.from.id, Data)
-     const item = await getVarianForCart(Data.kode)
+     const item = await getVarianForCart(Data.kode, Data.seller_pin)
      if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
      const stokCount = item.stok_count ?? await getStokCount(item.kode)
      const resolvedMin = await hargaUntukQty(item, Data.jumlah)
@@ -4613,7 +4678,7 @@ if (cmd.startsWith("plus:")) {
   let jumlah = cmd.split("plus:")[1]
   if (await cart.exists(query.from.id)) {
     let Data = await cart.get(query.from.id)
-    const item = await getVarianForCart(Data.kode)
+    const item = await getVarianForCart(Data.kode, Data.seller_pin)
      if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
      const stokCount = item.stok_count ?? await getStokCount(item.kode)
      if (stokCount < (Data.jumlah+Number(jumlah))) {
@@ -4622,7 +4687,7 @@ if (cmd.startsWith("plus:")) {
      }
      Data.jumlah += Number(jumlah)
     await cart.save(query.from.id, Data)
-     const itemUpdated = await getVarianForCart(Data.kode)
+     const itemUpdated = await getVarianForCart(Data.kode, Data.seller_pin)
      if (!itemUpdated) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
      const stokCountUpdated = itemUpdated.stok_count ?? await getStokCount(itemUpdated.kode)
      const resolvedPlus = await hargaUntukQty(itemUpdated, Data.jumlah)
@@ -4681,7 +4746,7 @@ if (cmd === "bayarsaldo") {
       await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     } catch (e) {}
     let Data = await cart.get(query.from.id)
-    const item = await getVarianForCart(Data.kode)
+    const item = await getVarianForCart(Data.kode, Data.seller_pin)
     if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
     
     const resolvedSaldo = await hargaUntukQty(item, Data.jumlah)
@@ -5057,7 +5122,7 @@ if (cmd === "bayar") {
       await bot.deleteMessage(query.message.chat.id, query.message.message_id)
     } catch (e) {}
     let Data = await cart.get(query.from.id)
-    const item = await getVarianForCart(Data.kode)
+    const item = await getVarianForCart(Data.kode, Data.seller_pin)
     if (!item) return await sendMessage(query.from.id, copy.get('err.product_not_found'))
     let DataProduk = ""
     const resolvedBayar = await hargaUntukQty(item, Data.jumlah)
@@ -6125,10 +6190,7 @@ if (cmd === "produk_filter_tersedia") {
   }
   
   // Hitung stok untuk setiap produk
-  const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-    const stokCount = await getStokCount(p.kode)
-    return { ...p, stok_count: stokCount }
-  }))
+  const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
   
   const isOwnerUser = isOwner(query)
   await sendProductPage(ProdukWithStok, query.from.id, 0, query.message.message_id, query.id, {
@@ -6150,10 +6212,7 @@ if (cmd === "produk_filter_habis") {
   }
   
   // Hitung stok untuk setiap produk
-  const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-    const stokCount = await getStokCount(p.kode)
-    return { ...p, stok_count: stokCount }
-  }))
+  const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
   
   const isOwnerUser = isOwner(query)
   await sendProductPage(ProdukWithStok, query.from.id, 0, query.message.message_id, query.id, {
@@ -6175,10 +6234,7 @@ if (cmd === "produk_filter_rendah") {
   }
   
   // Hitung stok untuk setiap produk
-  const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-    const stokCount = await getStokCount(p.kode)
-    return { ...p, stok_count: stokCount }
-  }))
+  const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
   
   const isOwnerUser = isOwner(query)
   await sendProductPage(ProdukWithStok, query.from.id, 0, query.message.message_id, query.id, {
@@ -6200,10 +6256,7 @@ if (cmd === "produk_filter_banyak") {
   }
   
   // Hitung stok untuk setiap produk
-  const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-    const stokCount = await getStokCount(p.kode)
-    return { ...p, stok_count: stokCount }
-  }))
+  const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
   
   const isOwnerUser = isOwner(query)
   await sendProductPage(ProdukWithStok, query.from.id, 0, query.message.message_id, query.id, {
@@ -6225,10 +6278,7 @@ if (cmd === "produk_filter_bestseller") {
   }
   
   // Hitung stok untuk setiap produk
-  const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-    const stokCount = await getStokCount(p.kode)
-    return { ...p, stok_count: stokCount }
-  }))
+  const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
   
   const isOwnerUser = isOwner(query)
   await sendProductPage(ProdukWithStok, query.from.id, 0, query.message.message_id, query.id, {
@@ -6255,10 +6305,7 @@ if (cmd.startsWith("produk_prev:") || cmd.startsWith("produk_next:")) {
   }
   
   // Hitung stok untuk setiap produk
-  const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-    const stokCount = await getStokCount(p.kode)
-    return { ...p, stok_count: stokCount }
-  }))
+  const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
   
   const newPage = isNext ? page + 1 : page - 1
   const filterOptions = {
@@ -6557,10 +6604,7 @@ if (cmd.startsWith("bataldeposit_")) {
     }
     
     // Hitung stok untuk setiap produk
-    const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-      const stokCount = await getStokCount(p.kode)
-      return { ...p, stok_count: stokCount }
-    }))
+    const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
     
     // Filter produk berdasarkan kategori
     const kategoriProduk = ProdukWithStok.filter(p => 
@@ -7119,7 +7163,7 @@ Ketik \`/batal\` untuk membatalkan.`, {
       Data.voucher = vv.kode
       await cart.save(msg.from.id, Data)
       
-      const itemVoucher = await getVarianForCart(Data.kode)
+      const itemVoucher = await getVarianForCart(Data.kode, Data.seller_pin)
       const resolvedVoucher = itemVoucher
         ? await hargaUntukQty(itemVoucher, Data.jumlah)
         : { subtotal: 0, harga_satuan: 0 }
@@ -7171,10 +7215,7 @@ ${infoText}`, {
         })
       }
       
-      const ProdukWithStok = await Promise.all(Produk.map(async (p) => {
-        const stokCount = await getStokCount(p.kode)
-        return { ...p, stok_count: stokCount }
-      }))
+      const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
       
       const isOwnerUser = msg.from.id === OwnerID
       await sendProductPage(ProdukWithStok, msg.from.id, 0, null, null, {}, isOwnerUser)
@@ -7219,6 +7260,8 @@ ${infoText}`, {
       await sendBannerMessage(msg.from.id, textResponse, { reply_markup })
       return
     }
+
+    if (await replyToProductQuery(msg, cleanText)) return
   }
   
 })

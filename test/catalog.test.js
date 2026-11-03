@@ -269,6 +269,43 @@ test('attachStock tetap membawa offers di jalur cadangan tanpa supplier', async 
   assert.equal(v.offers[0].stok, 4)
 })
 
+test('Netflix multi-penjual: stok durasi = sendiri + setiap supplier', async () => {
+  const purchase = require('../lib/purchase-flow')
+  const catalog = muatCatalog({
+    products: [{ id: 'p1', nama: 'Netflix Family', slug: 'netflix-family', is_active: true, urutan: 0, kategori: 'streaming' }],
+    variants: [
+      { id: 'v7', produk_id: 'p1', label: '7 Hari', kode: 'netflix-7d', harga: 15000, is_active: true, urutan: 1, sumber: 'sendiri' },
+      { id: 'v30', produk_id: 'p1', label: '30 Hari', kode: 'netflix-30d', harga: 45000, is_active: true, urutan: 2, sumber: 'sendiri' },
+    ],
+    settings: PENGATURAN_HARGA,
+    stockCounts: { 'netflix-7d': 3, 'netflix-30d': 2 },
+    supplierProducts: [
+      {
+        id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', supplier_id: 's1', external_id: 'a', varian_id: 'v30',
+        harga_asal: 3, currency: 'USD', stok: 4, in_stock: true, is_available: true,
+        supplier: { id: 's1', nama: 'Seller A', prioritas: 1, is_active: true },
+      },
+      {
+        id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', supplier_id: 's2', external_id: 'b', varian_id: 'v30',
+        harga_asal: 5, currency: 'USD', stok: 6, in_stock: true, is_available: true,
+        supplier: { id: 's2', nama: 'Seller B', prioritas: 2, is_active: true },
+      },
+    ],
+  })
+  const [produk] = await catalog.listProducts()
+  assert.equal(purchase.productDisplayedStock({ ...produk, stok_count: 0 }), 15, '3 + 2 sendiri + 4 + 6 supplier')
+  const tigaPuluh = produk.variants.find((v) => v.kode === 'netflix-30d')
+  assert.equal(tigaPuluh.stok_count, 12)
+  const options = purchase.sellerOptions(tigaPuluh.offers)
+  assert.equal(options.length, 3)
+  assert.equal(purchase.needsSellerPicker(tigaPuluh.offers), true)
+  const prices = options.map((o) => o.harga_satuan)
+  assert.equal(new Set(prices).size, prices.length, 'harga tiap penjual berbeda')
+  const tujuh = produk.variants.find((v) => v.kode === 'netflix-7d')
+  assert.equal(purchase.needsSellerPicker(tujuh.offers), false)
+  assert.equal(tujuh.stok_count, 3)
+})
+
 test('hargaVarian aman untuk masukan kosong', () => {
   const catalog = muatCatalog()
   assert.equal(catalog.hargaVarian(null), 0)
