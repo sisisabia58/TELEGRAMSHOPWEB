@@ -7373,7 +7373,7 @@ app.get('/bulk/export', isAuthenticated, async (req, res) => {
 async function getResellerSettings() {
   const kunci = [
     'reseller_margin_persen', 'reseller_rounding', 'fx_mode', 'fx_usd_idr',
-    'fx_buffer_persen', 'fx_updated_at', 'supplier_sync_interval_menit',
+    'fx_buffer_persen', 'fx_updated_at', 'fx_usdt_per_usd', 'supplier_sync_interval_menit',
     'supplier_kategori_default', 'supplier_wallet_min_usd',
   ]
   const { data } = await supabase.from('NotificationSettings').select('*').in('setting_key', kunci)
@@ -7392,6 +7392,7 @@ async function getResellerSettings() {
     syncIntervalMenit: Number(map.supplier_sync_interval_menit ?? 5),
     kategoriDefault: map.supplier_kategori_default || 'reseller',
     walletMinUsd: Number(map.supplier_wallet_min_usd ?? 5),
+    usdtPerUsd: Number(map.fx_usdt_per_usd ?? 1),
   }
 }
 
@@ -7404,6 +7405,7 @@ function pricingDari(settings) {
     marginPersen: settings.marginPersen,
     bufferPersen: settings.fxBufferPersen,
     roundTo: settings.rounding,
+    usdtPerUsd: settings.usdtPerUsd,
   }
 }
 
@@ -7595,7 +7597,11 @@ app.post('/api/supplier/:id/test', isAuthenticated, async (req, res) => {
     const hasil = await adapter.testConnection({ baseUrl, apiKey: supplier.api_key })
     const settings = await getResellerSettings()
     const contohIdr = hasil.sampleNormalized
-      ? fx.computeIdrPrice(hasil.sampleNormalized.hargaAsal, pricingDari(settings))
+      ? fx.hargaJualIdr(
+        hasil.sampleNormalized.hargaAsal,
+        hasil.sampleNormalized.currency,
+        pricingDari(settings),
+      )
       : null
 
     res.json({ success: true, ...hasil, contohIdr })
@@ -7649,7 +7655,7 @@ app.get('/supplier/:id/produk', isAuthenticated, async (req, res) => {
     const pricing = pricingDari(settings)
     const rows = (produk || []).map((p) => ({
       ...p,
-      harga_idr: fx.computeIdrPrice(p.harga_asal, pricing),
+      harga_idr: fx.hargaJualIdr(p.harga_asal, p.currency, pricing),
       varian_nama: p.varian ? `${p.varian.produk?.nama || ''} — ${p.varian.label}` : null,
     }))
 
@@ -7734,7 +7740,7 @@ app.post('/api/supplier/produk/:id/petakan', isAuthenticated, async (req, res) =
 app.post('/api/settings/reseller', isAuthenticated, async (req, res) => {
   try {
     const {
-      margin_persen, rounding, fx_mode, fx_usd_idr, fx_buffer_persen,
+      margin_persen, rounding, fx_mode, fx_usd_idr, fx_buffer_persen, usdt_per_usd,
       sync_interval_menit, kategori_default, wallet_min_usd,
     } = req.body
 
@@ -7746,6 +7752,12 @@ app.post('/api/settings/reseller', isAuthenticated, async (req, res) => {
     if (!Number.isFinite(kurs) || kurs <= 0) {
       return res.status(400).json({ success: false, message: 'Kurs harus angka > 0' })
     }
+    const peg = usdt_per_usd === undefined || usdt_per_usd === null || usdt_per_usd === ''
+      ? 1
+      : Number(usdt_per_usd)
+    if (!Number.isFinite(peg) || peg <= 0) {
+      return res.status(400).json({ success: false, message: 'Peg USDT per USD harus angka > 0' })
+    }
 
     const now = new Date().toISOString()
     const updates = [
@@ -7754,6 +7766,7 @@ app.post('/api/settings/reseller', isAuthenticated, async (req, res) => {
       ['fx_mode', fx_mode === 'manual' ? 'manual' : 'auto'],
       ['fx_usd_idr', kurs],
       ['fx_buffer_persen', Math.max(0, Number(fx_buffer_persen) || 0)],
+      ['fx_usdt_per_usd', peg],
       ['supplier_sync_interval_menit', Math.max(1, Number(sync_interval_menit) || 5)],
       ['supplier_kategori_default', (kategori_default || 'reseller').trim()],
       ['supplier_wallet_min_usd', Math.max(0, Number(wallet_min_usd) || 0)],

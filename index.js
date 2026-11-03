@@ -7431,11 +7431,13 @@ cron.schedule('0 */6 * * *', async () => {
       try {
         const baseUrl = await assertSafeOutbound(s.adapter, s.base_url)
         const saldo = await adapter.getBalance({ baseUrl, apiKey: s.api_key })
-        if (saldo.usd >= minimal) continue
-        console.warn(`[Supplier Wallet] ${s.nama}: USD ${saldo.usd} di bawah ambang ${minimal}`)
+        const unit = saldo.currency || 'USD'
+        const jumlah = unit === 'USDT' && saldo.usdt != null ? saldo.usdt : saldo.usd
+        if (jumlah >= minimal) continue
+        console.warn(`[Supplier Wallet] ${s.nama}: ${unit} ${jumlah} di bawah ambang ${minimal}`)
         if (channelContact.channelLog) {
           await bot.sendMessage(channelContact.channelLog,
-            `⚠️ *DOMPET SUPPLIER MENIPIS*\nSupplier: *${s.nama}*\nSaldo: *USD ${saldo.usd}*\nAmbang: USD ${minimal}\n\nIsi ulang sebelum pesanan mulai gagal.`,
+            `⚠️ *DOMPET SUPPLIER MENIPIS*\nSupplier: *${s.nama}*\nSaldo: *${unit} ${jumlah}*\nAmbang: ${minimal}\n\nIsi ulang sebelum pesanan mulai gagal.`,
             { parse_mode: 'Markdown' }).catch(() => {})
         }
       } catch (e) {

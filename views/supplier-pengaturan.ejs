@@ -112,6 +112,17 @@ harga_jual = harga_supplier &times; kurs &times; (1 + buffer%) &times; (1 + marg
                                 </div>
                             </div>
                             <div class="form-group">
+                                <label for="usdt_per_usd">Peg HubX: 1 USDT = … USD</label>
+                                <input type="number" id="usdt_per_usd" name="usdt_per_usd" class="form-control"
+                                       step="0.0001" min="0.0001" value="<%= settings.usdtPerUsd != null ? settings.usdtPerUsd : 1 %>" required>
+                                <div class="form-hint">
+                                    HubX menyimpan modal sebagai <code>price_usdt</code> (bukan rupiah).
+                                    Harga jual = price_usdt × peg ini × kurs USD→IDR × (1 + buffer) × (1 + margin).
+                                    Bawaan 1 berarti 1 USDT dihitung 1 USD. Ubah angkanya kalau peg-nya bukan 1.
+                                    Mata uang selain USD dan USDT tidak dikonversi.
+                                </div>
+                            </div>
+                            <div class="form-group">
                                 <label for="fx_buffer_persen">Buffer Pengaman (%)</label>
                                 <input type="number" id="fx_buffer_persen" name="fx_buffer_persen" class="form-control"
                                        step="0.1" min="0" value="<%= settings.fxBufferPersen %>">

@@ -91,3 +91,7 @@ Dashboard login uses the `Admin` table first, then falls back to `ADMIN_USERNAME
 ### Optional integrations
 
 `Pakasir` payment gateway (`pakasir.js`) is optional (unit-tested with a mocked HTTP client) and only needed for top-up/checkout flows.
+
+### HubX supplier
+
+HubX Store is a supplier adapter (`lib/suppliers/hubx.js`, dashboard adapter **HubX Store**). Do not commit an API key. Leave **Catalog → Supplier** `api_key` empty until the operator pastes `rsk_live_…` or `rsk_test_…`, or set server env `HUBX_API_KEY` (row value wins). Empty key means the supplier row exists but calls fail with HTTP 401 before any request. Prices stay in USDT (`SupplierProduct.harga_asal` + `currency = USDT`) and sell through `fx_usdt_per_usd` (default 1 USDT = 1 USD) then the existing USD→IDR rate. Operator steps: `docs/suppliers/hubx.md`.

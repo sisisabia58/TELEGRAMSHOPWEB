@@ -51,6 +51,8 @@
                                 <% adapters.forEach(a => { %>
                                     <option value="<%= a.key %>"
                                             data-base="<%= a.defaultBaseUrl %>"
+                                            data-hint="<%= a.authHint || '' %>"
+                                            data-placeholder="<%= a.keyPlaceholder || '' %>"
                                             <%= supplier && supplier.adapter === a.key ? 'selected' : '' %>><%= a.label %></option>
                                 <% }) %>
                             </select>
@@ -68,12 +70,8 @@
                             <label for="api_key">API Key</label>
                             <input type="password" id="api_key" name="api_key" class="form-control" autocomplete="new-password"
                                    placeholder="<%= supplier && supplier.id ? 'Biarkan kosong untuk tidak mengubah' : 'bsk_...' %>">
-                            <div class="form-hint">
-                                <% if (supplier && supplier.id) { %>
-                                    Kunci yang tersimpan tidak ditampilkan. Isi hanya kalau mau menggantinya.
-                                <% } else { %>
-                                    Dikirim sebagai header <code>X-API-Key</code> di setiap permintaan.
-                                <% } %>
+                            <div class="form-hint" id="api-key-hint">
+                                Kunci yang tersimpan tidak pernah ditampilkan. Saat edit, kosongkan untuk mempertahankan kunci lama.
                             </div>
                         </div>
 
@@ -110,9 +108,21 @@
     <script>
         function isiBaseUrl() {
             const sel = document.getElementById('adapter');
+            const opt = sel.options[sel.selectedIndex];
             const base = document.getElementById('base_url');
-            const bawaan = sel.options[sel.selectedIndex].dataset.base;
-            if (!base.value.trim()) base.value = bawaan;
+            const bawaan = opt.dataset.base || '';
+            const sekarang = base.value.trim();
+            const bawaanLain = [...sel.options].map((o) => (o.dataset.base || '').trim());
+            // Kosong, atau masih URL bawaan adapter lain: ganti. URL yang
+            // memang diketik admin (path kustom di host yang diizinkan) dibiarkan.
+            if (!sekarang || bawaanLain.includes(sekarang)) base.value = bawaan;
+            const hint = document.getElementById('api-key-hint');
+            const khusus = opt.dataset.hint || '';
+            hint.textContent = khusus
+                ? khusus + ' Kunci yang tersimpan tidak pernah ditampilkan. Saat edit, kosongkan untuk mempertahankan kunci lama.'
+                : 'Kunci yang tersimpan tidak pernah ditampilkan. Saat edit, kosongkan untuk mempertahankan kunci lama.';
+            const key = document.getElementById('api_key');
+            if (opt.dataset.placeholder) key.placeholder = opt.dataset.placeholder;
         }
         document.addEventListener('DOMContentLoaded', isiBaseUrl);
 

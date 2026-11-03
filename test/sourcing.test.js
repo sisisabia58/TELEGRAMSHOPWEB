@@ -72,7 +72,7 @@ function supplierRow(over = {}) {
     external_id: over.external_id || '100',
     varian_id: 'v1',
     harga_asal: 'harga_asal' in over ? over.harga_asal : 2.5,
-    currency: 'USD',
+    currency: over.currency || 'USD',
     stok: over.stok ?? 10,
     in_stock: over.in_stock ?? true,
     is_available: over.is_available ?? true,
@@ -122,6 +122,31 @@ test('buildOffers membuang penawaran supplier yang tidak bisa dipakai', () => {
   ]
   const offers = s.buildOffers({ varian: VARIAN, ownStokCount: 0, supplierRows: baris, pricing: PRICING })
   assert.deepEqual(offers, [], 'tidak ada satu pun yang layak ditawarkan')
+})
+
+test('buildOffers mengonversi USDT lewat peg, bukan kurs tersembunyi', () => {
+  const s = muatSourcing()
+  const offers = s.buildOffers({
+    varian: VARIAN,
+    ownStokCount: 0,
+    supplierRows: [supplierRow({ harga_asal: 2, currency: 'USDT' })],
+    pricing: { ...PRICING, usdtPerUsd: 1.5 },
+  })
+  assert.equal(offers.length, 1)
+  assert.equal(offers[0].harga_satuan, 30000) // 2 USDT × 1.5 × 10000
+  assert.equal(offers[0].harga_asal, 2)
+  assert.equal(offers[0].currency, 'USDT')
+})
+
+test('buildOffers membuang mata uang yang tidak punya kurs', () => {
+  const s = muatSourcing()
+  const offers = s.buildOffers({
+    varian: VARIAN,
+    ownStokCount: 0,
+    supplierRows: [supplierRow({ currency: 'EUR' })],
+    pricing: PRICING,
+  })
+  assert.deepEqual(offers, [])
 })
 
 test('buildOffers TIDAK PERNAH menawarkan harga yang gagal dihitung', () => {
