@@ -125,6 +125,16 @@ test('computeIdrPrice memperlakukan harga nol sebagai nol, bukan null', () => {
   assert.equal(fx.computeIdrPrice(0, OPSI), 0)
 })
 
+test('hargaJualIdr mengalikan USDT dengan peg lalu kurs, dan menolak mata uang lain', () => {
+  const fx = muatFx()
+  const opsi = { rate: 10000, marginPersen: 0, bufferPersen: 0, roundTo: 0, usdtPerUsd: 1 }
+  assert.equal(fx.hargaJualIdr(3.5, 'USDT', opsi), 35000)
+  assert.equal(fx.hargaJualIdr(3.5, 'USDT', { ...opsi, usdtPerUsd: 2 }), 70000)
+  assert.equal(fx.hargaJualIdr(2.5, 'USD', { ...opsi, marginPersen: 10 }), 27500)
+  assert.equal(fx.hargaJualIdr(3.5, 'EUR', opsi), null)
+  assert.equal(fx.hargaJualIdr(3.5, 'USDT', { ...opsi, usdtPerUsd: 0 }), null)
+})
+
 test('computeIdrPrice memakai default kalau opsi tidak diberikan', () => {
   const fx = muatFx()
   assert.equal(typeof fx.computeIdrPrice(1), 'number')
@@ -140,6 +150,7 @@ test('getPricingConfig membaca pengaturan runtime dan jatuh ke default', () => {
   assert.equal(cfg.marginPersen, 25)
   assert.equal(cfg.bufferPersen, fx.DEFAULTS.bufferPersen)
   assert.equal(cfg.roundTo, fx.DEFAULTS.roundTo)
+  assert.equal(cfg.usdtPerUsd, fx.DEFAULTS.usdtPerUsd)
 })
 
 test('getPricingConfig mengabaikan nilai pengaturan yang rusak', () => {

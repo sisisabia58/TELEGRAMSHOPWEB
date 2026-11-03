@@ -213,7 +213,7 @@
                 // pemetaan field kita terhadap data sungguhan.
                 tampilkan(
                     '✅ Koneksi berhasil\n' +
-                    'Saldo dompet: ' + (d.balance ? 'USD ' + d.balance.usd + ' (' + d.balance.points + ' poin)' : '(tidak tersedia)') + '\n' +
+                    'Saldo dompet: ' + (d.balance ? (d.balance.currency === 'USDT' ? ('USDT ' + (d.balance.usdt != null ? d.balance.usdt : d.balance.usd)) : ('USD ' + d.balance.usd + ' (' + d.balance.points + ' poin)')) : '(tidak tersedia)') + '\n' +
                     'Contoh produk terambil: ' + d.sampleCount + '\n\n' +
                     '--- BARIS MENTAH DARI API ---\n' +
                     JSON.stringify(d.sampleRaw, null, 2) + '\n\n' +

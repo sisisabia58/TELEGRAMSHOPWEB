@@ -597,6 +597,37 @@ test('502 yang masih gelap diselesaikan lewat getOrder', async () => {
   assert.equal(dicatat[0].external_order_id, 'ord-77')
 })
 
+test('pesanan supplier yang sudah terbit tanpa key tidak pindah penjual', async () => {
+  const f = muatFulfillment()
+  const dicoba = []
+  const { deps, dicatat } = buatDeps({
+    getOffers: async () => [
+      offerSupplier({ supplier_id: 'hubx', harga: 20000, prioritas: 0 }),
+      offerSupplier({ supplier_id: 'lain', harga: 20000, prioritas: 1 }),
+    ],
+    createOrder: async (supplier) => {
+      dicoba.push(supplier.id)
+      return {
+        ok: false,
+        orderId: 'hx-1',
+        keys: [],
+        status: 'awaiting_manual_delivery',
+        placed: true,
+      }
+    },
+  })
+
+  const r = await f.fulfill({
+    varian: VARIAN, qty: 1, trxid: 'TRX-HUBX', hargaSatuan: 20000, deps,
+  })
+  assert.equal(r.ok, false)
+  assert.match(r.error, /perlu rekonsiliasi manual/)
+  assert.deepEqual(dicoba, ['hubx'])
+  assert.match(dicatat[0].error, /perlu rekonsiliasi manual/)
+  assert.equal(dicatat[0].external_order_id, 'hx-1')
+  assert.equal(dicatat[0].status, 'failed')
+})
+
 test('markRefunded tidak menimpa jejak yang perlu rekonsiliasi', async () => {
   const f = muatFulfillment()
   const filter = []
