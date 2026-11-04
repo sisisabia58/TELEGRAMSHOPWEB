@@ -29,8 +29,10 @@ cheaper** — in that case not a single supplier call is made and the old purcha
 | `lib/fulfillment.js` | Spends the money: cheapest-first with failover to the next source |
 | `lib/suppliers/bitestore.js` | Bite Store API adapter |
 | `lib/suppliers/hubx.js` | HubX Store Reseller API adapter (USDT, Bearer key) |
+| `lib/suppliers/insightx.js` | InsightX Pro Developer API adapter (USD, Bearer key) |
 | `lib/suppliers/index.js` | Adapter registry + the contract a new seller must implement |
 | `docs/suppliers/hubx.md` | How to add HubX, paste the key, sandbox vs live |
+| `docs/suppliers/insightx.md` | How to add InsightX Pro; USD cost, no new FX peg |
 | `lib/catalog.js` `attachStock()` | The single choke point where stock and effective price are resolved |
 
 ## Pricing formula
@@ -64,7 +66,8 @@ Nothing else changes — sourcing, fulfillment, and every screen work off the ad
   so mappings and order history survive.
 - **Bite Store** only syncs instant-key products. File-based and manual/`pending` rows are dropped
   during normalization and counted as `skipped`. **HubX** keeps manual-delivery products and polls
-  `GET /orders/:id` on purchase; see `docs/suppliers/hubx.md`.
+  `GET /orders/:id` on purchase; see `docs/suppliers/hubx.md`. **InsightX Pro** stores USD `price`
+  (not `list_price`) and delivers `items[].delivered` on purchase; see `docs/suppliers/insightx.md`.
 
 ## Verify
 

@@ -177,6 +177,7 @@ test('memesan ke supplier dan mengembalikan key sebagai isi kiriman', async () =
   assert.deepEqual(r.lines, ['k1', 'k2'])
   assert.equal(dipesan.externalId, '100')
   assert.equal(dipesan.quantity, 2)
+  assert.equal(dipesan.maxPrice, 2.5, 'modal tersinkron ikut sebagai batas harga adapter yang memakainya')
 
   assert.equal(dicatat.length, 1)
   assert.equal(dicatat[0].status, 'ok')

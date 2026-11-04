@@ -193,6 +193,16 @@
     <script>
         const out = () => document.getElementById('testOutput');
 
+        function teksSaldo(b) {
+            if (!b) return '(tidak tersedia)';
+            if (b.currency === 'USDT') {
+                return 'USDT ' + (b.usdt != null ? b.usdt : b.usd);
+            }
+            const usd = 'USD ' + b.usd;
+            if (b.points) return usd + ' (' + b.points + ' poin)';
+            return usd;
+        }
+
         function tampilkan(teks, ok) {
             const el = out();
             el.textContent = teks;
@@ -213,7 +223,7 @@
                 // pemetaan field kita terhadap data sungguhan.
                 tampilkan(
                     '✅ Koneksi berhasil\n' +
-                    'Saldo dompet: ' + (d.balance ? (d.balance.currency === 'USDT' ? ('USDT ' + (d.balance.usdt != null ? d.balance.usdt : d.balance.usd)) : ('USD ' + d.balance.usd + ' (' + d.balance.points + ' poin)')) : '(tidak tersedia)') + '\n' +
+                    'Saldo dompet: ' + teksSaldo(d.balance) + '\n' +
                     'Contoh produk terambil: ' + d.sampleCount + '\n\n' +
                     '--- BARIS MENTAH DARI API ---\n' +
                     JSON.stringify(d.sampleRaw, null, 2) + '\n\n' +

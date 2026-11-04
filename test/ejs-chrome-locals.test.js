@@ -225,5 +225,7 @@ test('laporan test koneksi dan sync memakai newline JS, dan menjaga d.balance', 
   assert.equal(html.includes('Koneksi berhasil\\\\n'), false)
   assert.match(html, /Diambil: ' \+ l\.fetched \+ '\\n'/)
   assert.match(html, /tidak tersedia/)
-  assert.match(html, /d\.balance\s*\?/)
+  assert.match(html, /teksSaldo\(d\.balance\)/)
+  assert.match(html, /b\.currency === 'USDT'/)
+  assert.match(html, /b\.points/)
 })
