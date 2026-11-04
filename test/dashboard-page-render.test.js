@@ -494,7 +494,7 @@ const PAGES = [
   { view: 'settings-supabase', path: '/settings/supabase' },
   { view: 'bulk-operations', path: '/bulk' },
   { view: 'supplier', path: '/supplier', marker: { seeded: 'Bite Uji' } },
-  { view: 'supplier-form', path: '/supplier/tambah', marker: 'HubX Store' },
+  { view: 'supplier-form', path: '/supplier/tambah', marker: 'InsightX Pro' },
   { view: 'supplier-form', path: `/supplier/${IDS.supplier}/edit`, needsRow: true, marker: { seeded: 'Bite Uji' } },
   { view: 'supplier-pengaturan', path: '/supplier/pengaturan', marker: 'Peg HubX' },
   { view: 'supplier-produk', path: `/supplier/${IDS.supplier}/produk`, needsRow: true, marker: { seeded: 'Netflix 1 Bulan' } },

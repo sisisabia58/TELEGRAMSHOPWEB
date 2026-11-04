@@ -95,3 +95,7 @@ Dashboard login uses the `Admin` table first, then falls back to `ADMIN_USERNAME
 ### HubX supplier
 
 HubX Store is a supplier adapter (`lib/suppliers/hubx.js`, dashboard adapter **HubX Store**). Do not commit an API key. Leave **Catalog → Supplier** `api_key` empty until the operator pastes `rsk_live_…` or `rsk_test_…`, or set server env `HUBX_API_KEY` (row value wins). Empty key means the supplier row exists but calls fail with HTTP 401 before any request. Prices stay in USDT (`SupplierProduct.harga_asal` + `currency = USDT`) and sell through `fx_usdt_per_usd` (default 1 USDT = 1 USD) then the existing USD→IDR rate. Operator steps: `docs/suppliers/hubx.md`.
+
+### InsightX Pro supplier
+
+InsightX Pro is a supplier adapter (`lib/suppliers/insightx.js`, dashboard adapter **InsightX Pro**). Do not commit an API key. Leave **Catalog → Supplier** `api_key` empty until the operator pastes `sk_live_…`, or set server env `INSIGHTX_API_KEY` (row value wins). Empty key means the supplier row exists but calls fail with HTTP 401 before any request. Prices stay in USD (`SupplierProduct.harga_asal` = API `price`, `currency = USD`) and sell through the existing USD→IDR rate. There is no extra FX peg. Operator steps: `docs/suppliers/insightx.md`.
