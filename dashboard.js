@@ -7546,7 +7546,9 @@ app.post('/supplier/simpan', isAuthenticated, async (req, res) => {
 
     // API key kosong saat edit berarti "biarkan seperti semula" — supaya admin
     // tidak perlu mengetik ulang kunci rahasia setiap kali mengubah nama.
-    if (api_key && api_key.trim()) row.api_key = api_key.trim()
+    // InsightX menormalisasi tempelan "Bearer sk_live_…" sebelum disimpan.
+    const kunciMasuk = supplierAdapters.normalizeStoredApiKey(adapter, api_key)
+    if (kunciMasuk) row.api_key = kunciMasuk
     else if (!id) row.api_key = ''
 
     if (id) {
@@ -7606,11 +7608,10 @@ app.post('/api/supplier/:id/test', isAuthenticated, async (req, res) => {
 
     res.json({ success: true, ...hasil, contohIdr })
   } catch (error) {
-    const status = error.response?.status
-    res.status(200).json({
-      success: false,
-      message: status ? `HTTP ${status} — ${error.message}` : error.message,
-    })
+    const message = supplierAdapters.formatSupplierError(error, { sep: ' — ' })
+    // Pesan sudah tanpa Authorization. Jangan log objek error axios.
+    console.error(`[Supplier Test] ${req.params.id} ${message}`)
+    res.status(200).json({ success: false, message })
   }
 })
 

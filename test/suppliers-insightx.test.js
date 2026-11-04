@@ -299,7 +299,7 @@ test('402, 409, dan 404 dilempar tanpa membawa header Authorization', async () =
         assert.equal(e.response.data.error.code, code)
         assert.equal(e.config, undefined)
         assert.equal(JSON.stringify(e).includes(KUNCI), false)
-        assert.match(e.message, new RegExp(String(status)))
+        assert.equal(e.message, `HTTP ${status}: ${code}: ditolak`)
         return true
       },
     )
@@ -402,4 +402,88 @@ test('registry mendaftarkan insightx', () => {
   assert.match(baris.authHint, /Bearer/)
   assert.match(baris.authHint, /USD/)
   assert.match(baris.keyPlaceholder, /sk_live_/)
+})
+
+test('tempelan Bearer, Authorization, kutip, dan spasi tidak dibungkus dua kali', async () => {
+  const auth = []
+  insightx.__setHttp({
+    get: async (_url, cfg) => {
+      auth.push(cfg.headers.Authorization)
+      assert.equal(cfg.headers['X-API-Key'], undefined)
+      return { data: { ok: true, data: { products: [] } } }
+    },
+  })
+  const kotor = [
+    'Bearer sk_live_dari_baris_palsu',
+    'bearer   sk_live_dari_baris_palsu',
+    'Bearer Bearer sk_live_dari_baris_palsu',
+    'Authorization: Bearer sk_live_dari_baris_palsu',
+    '"sk_live_dari_baris_palsu"',
+    "'sk_live_dari_baris_palsu'",
+    '  sk_live_dari_baris_palsu\n',
+    'sk_live_\u200Bdari_baris_palsu',
+    'sk_live_dari_baris_palsu\r\n',
+  ]
+  for (const apiKey of kotor) {
+    await insightx.listProducts({ baseUrl: insightx.defaultBaseUrl, apiKey })
+  }
+  assert.deepEqual(auth, kotor.map(() => 'Bearer sk_live_dari_baris_palsu'))
+})
+
+test('hanya kata Bearer tidak mengirim request', async () => {
+  let terkirim = false
+  insightx.__setHttp({
+    get: async () => { terkirim = true; return { data: {} } },
+  })
+  delete process.env.INSIGHTX_API_KEY
+  await assert.rejects(
+    () => insightx.getBalance({ baseUrl: insightx.defaultBaseUrl, apiKey: 'Bearer   ' }),
+    /api_key kosong/,
+  )
+  assert.equal(terkirim, false)
+})
+
+test('401 InsightX menampilkan code dan message tanpa rahasia', async () => {
+  insightx.__setHttp({
+    get: async () => {
+      throw httpErr(401, {
+        ok: false,
+        error: { code: 'unauthorized', message: `Invalid or missing API key. ${KUNCI}` },
+      })
+    },
+  })
+  await assert.rejects(
+    () => insightx.getBalance(KREDENSIAL),
+    (e) => {
+      assert.equal(e.response.status, 401)
+      assert.equal(e.response.data.error.code, 'unauthorized')
+      assert.equal(e.config, undefined)
+      assert.match(e.message, /^HTTP 401: unauthorized: Invalid or missing API key\. \[redacted\]/)
+      assert.match(e.message, new RegExp(`kunci terkirim panjang ${KUNCI.length}, bentuk sk_live_`))
+      assert.equal(e.message.includes(KUNCI), false)
+      assert.equal(e.message.includes('fake_bukan'), false)
+      return true
+    },
+  )
+})
+
+test('formatSupplierError tidak menggandakan HTTP 401', () => {
+  const upstream = new Error('HTTP 401: unauthorized: Invalid or missing API key.')
+  upstream.response = { status: 401, data: { ok: false, error: { code: 'unauthorized' } } }
+  assert.equal(registry.formatSupplierError(upstream), upstream.message)
+  assert.equal(registry.formatSupplierError(upstream, { sep: ' — ' }), upstream.message)
+
+  const polos = new Error('gagal jaringan')
+  assert.equal(registry.formatSupplierError(polos), 'gagal jaringan')
+  const tanpaPesan = new Error('timeout')
+  tanpaPesan.response = { status: 504 }
+  assert.equal(registry.formatSupplierError(tanpaPesan), 'HTTP 504: timeout')
+  assert.equal(registry.formatSupplierError(tanpaPesan, { sep: ' — ' }), 'HTTP 504 — timeout')
+})
+
+test('normalizeStoredApiKey hanya membuang Bearer untuk insightx', () => {
+  assert.equal(registry.normalizeStoredApiKey('insightx', '  Bearer sk_live_dari_baris_palsu  '), 'sk_live_dari_baris_palsu')
+  assert.equal(registry.normalizeStoredApiKey('hubx', '  Bearer rsk_test_palsu  '), 'Bearer rsk_test_palsu')
+  assert.equal(registry.normalizeStoredApiKey('insightx', null), '')
+  assert.equal(registry.normalizeStoredApiKey('insightx', ['sk_live_x']), '')
 })

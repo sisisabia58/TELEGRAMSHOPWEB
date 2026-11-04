@@ -16,9 +16,9 @@ Tidak ada API key di repo. Jangan commit `sk_live_…`.
 2. Nama bebas (misalnya `InsightX`). Nama ini yang tampil di langkah penjual bot.
 3. Adapter: **InsightX Pro**.
 4. Base URL: kosongkan supaya terisi URL bawaan di atas (path `/api/v1` wajib ikut).
-5. API Key: **kosongkan** sampai kunci siap. Boleh juga mengisi env server `INSIGHTX_API_KEY` (Railway variable, bukan file `.env` yang di-commit). Kalau keduanya kosong, baris supplier tetap tersimpan tetapi setiap panggilan gagal `HTTP 401` (“terpasang, belum diautentikasi”) dan tidak mengirim header.
+5. API Key: **kosongkan** sampai kunci siap. Boleh juga mengisi env server `INSIGHTX_API_KEY` (Railway variable, bukan file `.env` yang di-commit). Kalau keduanya kosong, baris supplier tetap tersimpan tetapi setiap panggilan gagal `HTTP 401` (“api_key kosong — terpasang, belum diautentikasi”) dan tidak mengirim header. Tempel rahasia `sk_live_…` saja. Kalau yang tersalin masih berawalan `Bearer ` atau `Authorization:`, adapter membuang awalan itu sebelum request. Jangan tempel ulang kunci lama sesudah regenerate di InsightX: kunci sebelumnya langsung mati.
 6. Prioritas dan Aktif seperti supplier lain. Simpan.
-7. Setelah kunci ditempel (form, atau env lalu restart proses), **Test koneksi**. Saldo tampil sebagai USD.
+7. Setelah kunci ditempel (form, atau env lalu restart proses), **Test koneksi**. Saldo tampil sebagai USD. Kalau InsightX menolak kunci, Test menampilkan `HTTP 401: <code>: <message>` plus panjang dan bentuk awalan (`sk_live_` / `sk_test_` / tidak dikenal) — bukan rahasianya. `unauthorized: Invalid or missing API key` berarti host menerima request dan menolak nilai kunci itu.
 8. **Sync sekarang**. Produk masuk ke `SupplierProduct` (`external_id` = id InsightX, `currency` = `USD`, `harga_asal` = `price` — harga yang kunci ini bayar, bukan `list_price`).
 9. Cek pemetaan di katalog supplier. Sync yang tidak menemukan varian kita membuat Produk + Varian baru. Untuk menggabungkan ke varian yang sudah ada: petakan manual (hanya varian `sumber = sendiri`). Pemetaan manual tidak ditimpa sync berikutnya.
 
