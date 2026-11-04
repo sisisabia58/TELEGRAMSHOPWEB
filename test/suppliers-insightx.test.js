@@ -401,7 +401,9 @@ test('registry mendaftarkan insightx', () => {
   assert.equal(baris.defaultBaseUrl, 'https://insightxpro.com/api/v1')
   assert.match(baris.authHint, /Bearer/)
   assert.match(baris.authHint, /USD/)
-  assert.match(baris.keyPlaceholder, /sk_live_/)
+  assert.match(baris.authHint, /isk_live_/)
+  assert.match(baris.authHint, /isk_test_/)
+  assert.equal(baris.keyPlaceholder, 'isk_live_…')
 })
 
 test('tempelan Bearer, Authorization, kutip, dan spasi tidak dibungkus dua kali', async () => {
@@ -441,6 +443,46 @@ test('hanya kata Bearer tidak mengirim request', async () => {
     /api_key kosong/,
   )
   assert.equal(terkirim, false)
+})
+
+test('isk_live_ panjang 41 dikenali dan Bearer tidak digandakan', async () => {
+  // Prod Test setelah #63: panjang 41, bentuk tidak dikenal. isk_live_ = 9
+  // karakter, sisa 32 adalah rahasia. sk_live_ tidak cocok dengan awalan itu.
+  const badan = 'x'.repeat(32)
+  const kunci = `isk_live_${badan}`
+  assert.equal(kunci.length, 41)
+  let auth = null
+  insightx.__setHttp({
+    get: async (_url, cfg) => {
+      auth = cfg.headers.Authorization
+      throw httpErr(401, { ok: false, error: { code: 'unauthorized', message: 'Invalid or missing API key.' } })
+    },
+  })
+  await assert.rejects(
+    () => insightx.getBalance({ baseUrl: insightx.defaultBaseUrl, apiKey: `Bearer ${kunci}` }),
+    (e) => {
+      assert.equal(auth, `Bearer ${kunci}`)
+      assert.match(e.message, /HTTP 401: unauthorized: Invalid or missing API key\./)
+      assert.match(e.message, /kunci terkirim panjang 41, bentuk isk_live_/)
+      assert.equal(e.message.includes('xxx'), false)
+      assert.equal(e.message.includes('tidak dikenal'), false)
+      return true
+    },
+  )
+
+  await assert.rejects(
+    () => insightx.getBalance({ baseUrl: insightx.defaultBaseUrl, apiKey: 'Authorization: Bearer ISK_TEST_palsu' }),
+    (e) => {
+      assert.match(e.message, /bentuk isk_test_/)
+      assert.equal(e.message.includes('ISK_TEST_palsu'), false)
+      return true
+    },
+  )
+  assert.equal(auth, 'Bearer ISK_TEST_palsu')
+  assert.equal(
+    registry.normalizeStoredApiKey('insightx', '  Bearer isk_live_dari_baris_palsu  '),
+    'isk_live_dari_baris_palsu',
+  )
 })
 
 test('401 InsightX menampilkan code dan message tanpa rahasia', async () => {

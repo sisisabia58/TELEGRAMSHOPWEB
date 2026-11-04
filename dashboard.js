@@ -7546,7 +7546,7 @@ app.post('/supplier/simpan', isAuthenticated, async (req, res) => {
 
     // API key kosong saat edit berarti "biarkan seperti semula" — supaya admin
     // tidak perlu mengetik ulang kunci rahasia setiap kali mengubah nama.
-    // InsightX menormalisasi tempelan "Bearer sk_live_…" sebelum disimpan.
+    // InsightX menormalisasi tempelan "Bearer isk_live_…" sebelum disimpan.
     const kunciMasuk = supplierAdapters.normalizeStoredApiKey(adapter, api_key)
     if (kunciMasuk) row.api_key = kunciMasuk
     else if (!id) row.api_key = ''
