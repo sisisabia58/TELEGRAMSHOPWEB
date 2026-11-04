@@ -445,6 +445,14 @@ test('hanya kata Bearer tidak mengirim request', async () => {
   assert.equal(terkirim, false)
 })
 
+test('isk_live_ tidak dipotong pada sk_live_ yang ada di dalamnya', () => {
+  assert.equal(insightx.normalizeApiKey('isk_live_abc123'), 'isk_live_abc123')
+  assert.equal(insightx.normalizeApiKey('Bearer isk_live_abc123'), 'isk_live_abc123')
+  assert.equal(insightx.normalizeApiKey('isk_live_FOO'), 'isk_live_FOO')
+  assert.equal(registry.normalizeStoredApiKey('insightx', 'isk_live_abc123'), 'isk_live_abc123')
+  assert.equal(registry.normalizeStoredApiKey('insightx', 'Bearer isk_live_abc123'), 'isk_live_abc123')
+})
+
 test('isk_live_ panjang 41 dikenali dan Bearer tidak digandakan', async () => {
   // Prod Test setelah #63: panjang 41, bentuk tidak dikenal. isk_live_ = 9
   // karakter, sisa 32 adalah rahasia. sk_live_ tidak cocok dengan awalan itu.
