@@ -137,6 +137,9 @@
                                                 <% } else { %>
                                                     <span class="badge badge-secondary"><%= st.terpetakan %>/<%= st.total %></span>
                                                 <% } %>
+                                                <% if ((st.unmapped || 0) > 0) { %>
+                                                    <span class="badge badge-warning" title="Belum dipetakan, tidak tayang di bot">unmapped <%= st.unmapped %></span>
+                                                <% } %>
                                             </td>
                                             <td><%= s.prioritas %></td>
                                             <td>

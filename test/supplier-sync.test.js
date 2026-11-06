@@ -266,3 +266,52 @@ test('sync InsightX tidak menandai baris yang baru diambil sebagai hilang walau 
   assert.equal(byId.p78.varian_id, 'v78')
   assert.equal(byId.p78.mapping_mode, 'auto')
 })
+
+test('penawaran baru tidak dibuatkan produk tayang', async () => {
+  const supplierId = '877fc125-4de2-429d-9189-76b7accd2828'
+  const tabel = {
+    SupplierProduct: [],
+    Varian: [{
+      id: 'v-own',
+      harga: 12500,
+      sumber: 'sendiri',
+      label: '1 Tahun (NW)',
+      kode: 'ed-google-ai-plus-1-tahun-nw',
+      produk_id: 'prod-gap',
+      produk: { nama: 'Google AI Plus' },
+    }],
+    Produk: [],
+    Supplier: [{ id: supplierId }],
+  }
+  const katalog = [
+    { externalId: 'baru-manual', nama: 'n8n Starter 12m FW', deskripsi: 'slug:n8n fulfillment:manual', hargaAsal: 20, currency: 'USDT', stok: 3, inStock: true },
+    { externalId: 'baru-cocok', nama: 'Google AI Plus 1 Tahun NW', deskripsi: 'slug:gap fulfillment:instant', hargaAsal: 1, currency: 'USDT', stok: 4, inStock: true },
+    { externalId: 'baru-asing', nama: 'Widget yang belum ada', deskripsi: 'fulfillment:instant', hargaAsal: 2, currency: 'USDT', stok: 5, inStock: true },
+  ]
+  const sync = muatSyncDengan(klienTumpangTindih(tabel), katalog)
+  const laporan = await sync.syncSupplier({
+    id: supplierId,
+    nama: 'HubX',
+    slug: 'hubx',
+    adapter: 'hubx',
+    base_url: 'https://hubx.example',
+    api_key: 'rsk_test_bukan_kunci',
+  })
+
+  assert.equal(laporan.created, 0)
+  assert.equal(laporan.errors.length, 0)
+  assert.equal(tabel.Produk.length, 0)
+  assert.equal(tabel.Varian.length, 1)
+  assert.equal(tabel.Varian[0].sumber, 'sendiri')
+
+  const byExt = Object.fromEntries(tabel.SupplierProduct.map((row) => [row.external_id, row]))
+  assert.equal(byExt['baru-manual'].varian_id, null)
+  assert.equal(byExt['baru-manual'].mapping_mode, 'unmapped')
+  assert.equal(byExt['baru-cocok'].varian_id, 'v-own')
+  assert.equal(byExt['baru-cocok'].mapping_mode, 'auto')
+  assert.equal(byExt['baru-asing'].varian_id, null)
+  assert.equal(byExt['baru-asing'].mapping_mode, 'unmapped')
+  assert.equal(byExt['baru-asing'].is_available, true)
+  assert.equal(laporan.unmapped, 2)
+  assert.equal(laporan.matched, 1)
+})
