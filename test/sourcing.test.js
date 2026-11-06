@@ -76,6 +76,7 @@ function supplierRow(over = {}) {
     stok: over.stok ?? 10,
     in_stock: over.in_stock ?? true,
     is_available: over.is_available ?? true,
+    deskripsi: over.deskripsi || '',
     supplier: { id: over.supplier_id || 's1', nama: over.nama || 'Seller A', prioritas: over.prioritas ?? 0, is_active: over.aktif ?? true },
   }
 }
@@ -288,14 +289,26 @@ test('penawaran dengan harga TIDAK DIKETAHUI tidak pernah masuk daftar', () => {
   assert.equal(s.pickBestOffer(offers, 1).harga_satuan, 50000, 'bukan 0')
 })
 
-test('harga nol yang memang disengaja tetap boleh ditawarkan', () => {
+test('harga nol dan pengiriman manual tidak ditawarkan', () => {
   const s = muatSourcing()
-  const offers = s.buildOffers({
+  const nol = s.buildOffers({
     varian: VARIAN, ownStokCount: 0, pricing: PRICING,
     supplierRows: [supplierRow({ harga_asal: 0, stok: 5 })],
   })
-  assert.equal(offers.length, 1)
-  assert.equal(offers[0].harga_satuan, 0)
+  assert.equal(nol.length, 0)
+  assert.equal(s.saleBlockReason(supplierRow({ harga_asal: 0 })), 'price0')
+
+  const manual = s.buildOffers({
+    varian: VARIAN, ownStokCount: 2, pricing: PRICING,
+    supplierRows: [supplierRow({
+      harga_asal: 3,
+      stok: 9,
+      deskripsi: 'slug:n8n fulfillment:manual',
+    })],
+  })
+  assert.equal(manual.length, 1)
+  assert.equal(manual[0].sumber, 'sendiri')
+  assert.equal(s.saleBlockReason({ deskripsi: 'fulfillment:manual', harga_asal: 3 }), 'manual')
 })
 
 test('pickBestOffer menormalkan qty yang aneh', () => {

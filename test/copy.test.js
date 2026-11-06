@@ -37,6 +37,14 @@ test('render replaces {{vars}} and missing becomes empty', () => {
   assert.equal(copy.render('X{{missing}}Y', {}), 'XY')
 })
 
+test('detail qty default carries warranty and delivery lines', () => {
+  const copy = muatCopy()
+  assert.match(copy.DEFAULTS['screen.qty'], /\{\{detail_lines\}\}/)
+  assert.match(copy.DEFAULTS['screen.brand_menu'], /brand/)
+  assert.equal(copy.get('btn.buy_now', { harga: 'Rp1.000' }), '✅ Buy now — Rp1.000')
+  assert.equal(copy.get('err.stock_habis'), 'Stok habis')
+})
+
 test('get uses DEFAULTS when cache empty', () => {
   const copy = muatCopy()
   const body = copy.get('msg.reply_nav_enabled')

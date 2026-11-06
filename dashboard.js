@@ -6052,6 +6052,25 @@ app.post('/api/bot-flow/preview-step', isAuthenticated, async (req, res) => {
         const produk = await catalog.getProductBySlug(preview.slug)
         return res.json({ success: true, ...flowPreview.buildProductCardView(produk, copyByKey) })
       }
+      if (preview.type === 'brand_menu' || (preview.type === 'product_list' && !preview.kategori && preview.filterKey !== 'bestseller')) {
+        const products = await catalog.listProducts({ activeOnly: true, withStock: true })
+        return res.json({
+          success: true,
+          ...flowPreview.buildBrandMenuView(products, copyByKey, {
+            page: Number(preview.page) || 0,
+            namaBot: NamaBot,
+          }),
+        })
+      }
+      if (preview.type === 'brand_items' || preview.type === 'kategori') {
+        const products = await catalog.listProducts({ activeOnly: true, withStock: true })
+        return res.json({
+          success: true,
+          ...flowPreview.buildBrandItemsView(products, preview.brand || preview.kategori, copyByKey, {
+            page: Number(preview.page) || 0,
+          }),
+        })
+      }
       if (preview.type === 'product_list') {
         const products = await catalog.listProducts({ activeOnly: true, withStock: true })
         return res.json({
@@ -6069,18 +6088,6 @@ app.post('/api/bot-flow/preview-step', isAuthenticated, async (req, res) => {
       }
       if (preview.type === 'deposit_menu') {
         return res.json({ success: true, ...flowPreview.buildDepositMenuView() })
-      }
-      if (preview.type === 'kategori') {
-        const products = await catalog.listProducts({ activeOnly: true, withStock: true })
-        return res.json({
-          success: true,
-          ...flowPreview.buildProductListView(products, {
-            page: 0,
-            filterKey: 'all',
-            kategori: preview.kategori,
-            copyByKey,
-          }),
-        })
       }
       if (preview.type === 'go' && preview.key) {
         // fall through to nodeKey handling below
@@ -6106,21 +6113,15 @@ app.post('/api/bot-flow/preview-step', isAuthenticated, async (req, res) => {
 
     if (node.kind === 'action') {
       const action = node.action
-      if (action === 'product_list') {
+      if (action === 'product_list' || action === 'kategori_menu') {
         const products = await catalog.listProducts({ activeOnly: true, withStock: true })
         return res.json({
           success: true,
-          ...flowPreview.buildProductListView(products, {
+          ...flowPreview.buildBrandMenuView(products, copyByKey, {
             page: Number(req.body.page) || 0,
-            filterKey: req.body.filterKey || 'all',
-            kategori: req.body.kategori || null,
-            copyByKey,
+            namaBot: NamaBot,
           }),
         })
-      }
-      if (action === 'kategori_menu') {
-        const products = await catalog.listProducts({ activeOnly: true, withStock: true })
-        return res.json({ success: true, ...flowPreview.buildKategoriMenuView(products, copyByKey) })
       }
       if (action === 'stok') {
         const products = await catalog.listProducts({ activeOnly: true, withStock: true })
@@ -7420,13 +7421,14 @@ app.get('/supplier', isAuthenticated, async (req, res) => {
       .select('supplier_id, varian_id, is_available')
 
     const statistik = {}
-    for (const s of suppliers) statistik[s.id] = { total: 0, terpetakan: 0 }
+    for (const s of suppliers) statistik[s.id] = { total: 0, terpetakan: 0, unmapped: 0 }
     for (const row of produkRows || []) {
       if (!row.is_available) continue
       const st = statistik[row.supplier_id]
       if (!st) continue
       st.total++
       if (row.varian_id) st.terpetakan++
+      else st.unmapped++
     }
 
     res.render('supplier', {
