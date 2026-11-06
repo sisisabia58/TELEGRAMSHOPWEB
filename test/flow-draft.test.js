@@ -142,6 +142,13 @@ test('validateDraft rejects duplicate screen_key across screen nodes', () => {
   assert.ok(errorTexts(r).some((e) => /duplicate screen_key: screen\.welcome/.test(e)))
 })
 
+test('validateDraft still accepts product_card so existing drafts remain valid', () => {
+  const d = structuredClone(baseDraft)
+  d.nodes[1].action = 'product_card'
+  const r = validateDraft(d, { allowedActions: DEFAULT_FLOW_ACTIONS })
+  assert.equal(r.ok, true, r.errors.join('; '))
+})
+
 test('validateDraft accepts distinct screen_key values', () => {
   const d = structuredClone(baseDraft)
   d.nodes.push({
