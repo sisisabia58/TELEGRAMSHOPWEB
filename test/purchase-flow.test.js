@@ -71,17 +71,41 @@ test('satu penjual tetap menampilkan harga dan stok seperti sebelumnya', () => {
   assert.equal(flow.needsSellerPicker(variant.offers), false)
 })
 
-test('setelah durasi dipilih, tiap penjual yang punya stok tampil dengan harganya sendiri', () => {
+test('opsi pembeli diurutkan dari harga termurah tanpa nama supplier', () => {
   const options = flow.sellerOptions(netflixOffers())
   assert.equal(options.length, 3)
-  assert.deepEqual(options.map((o) => o.label), ['Stok sendiri', 'Seller A', 'Seller B'])
-  assert.deepEqual(options.map((o) => o.harga_satuan), [45000, 40000, 52000])
-  assert.deepEqual(options.map((o) => o.stok), [2, 4, 6])
+  assert.deepEqual(options.map((o) => o.label), ['Opsi 1', 'Opsi 2', 'Opsi 3'])
+  assert.deepEqual(options.map((o) => o.harga_satuan), [40000, 45000, 52000])
+  assert.deepEqual(options.map((o) => o.stok), [4, 2, 6])
+  assert.equal(options[0].sumber, 'supplier')
+  assert.equal(options[1].sumber, 'sendiri')
   assert.equal(flow.needsSellerPicker(netflixOffers()), true)
-  assert.equal(flow.sellerCallbackData(options[0]), 'src:own')
-  assert.equal(flow.sellerCallbackData(options[1]), 'src:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-  const prices = new Set(options.map((o) => o.harga_satuan))
-  assert.equal(prices.size, 3)
+  assert.equal(flow.sellerCallbackData(options[0]), 'src:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+  assert.equal(flow.sellerCallbackData(options[1]), 'src:own')
+  const teks = JSON.stringify(options)
+  assert.equal(/hubx|insightx|seller a|seller b|stok sendiri/i.test(teks), false)
+  assert.equal(Object.hasOwn(options[0], 'supplier_nama'), false)
+  const termurah = flow.optionForPin(netflixOffers(), flow.pinFromOption(options[0]))
+  assert.equal(termurah.label, 'Opsi 1')
+  assert.equal(
+    flow.buyerProductName('Google AI Plus — 1 Tahun (NW)', termurah.label),
+    'Google AI Plus — 1 Tahun (NW) (Opsi 1)'
+  )
+  assert.equal(flow.optionForPin(netflixOffers(), null), null)
+})
+
+test('harga sama tidak mengurutkan opsi dari nama supplier', () => {
+  const offers = [
+    { sumber: 'supplier', supplier_product_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', supplier_nama: 'InsightX', harga_satuan: 100, stok: 1 },
+    { sumber: 'supplier', supplier_product_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', supplier_nama: 'HubX', harga_satuan: 100, stok: 5 },
+    { sumber: 'sendiri', supplier_nama: null, harga_satuan: 100, stok: 5 },
+  ]
+  const options = flow.sellerOptions(offers)
+  assert.deepEqual(options.map((o) => o.label), ['Opsi 1', 'Opsi 2', 'Opsi 3'])
+  assert.equal(options[0].sumber, 'sendiri')
+  assert.equal(options[1].supplier_product_id, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+  assert.equal(options[2].stok, 1)
+  assert.equal(options.some((o) => /hubx|insightx/i.test(o.label)), false)
 })
 
 test('pin penjual membatasi stok dan harga ke sumber yang dipilih', () => {
@@ -92,7 +116,8 @@ test('pin penjual membatasi stok dan harga ke sumber yang dipilih', () => {
   assert.equal(sellerA.stok_sendiri, 0)
   assert.equal(sellerA.offers.length, 1)
 
-  const own = flow.applyPin(variant, flow.pinFromOption(flow.sellerOptions(netflixOffers())[0]))
+  const ownOption = flow.sellerOptions(netflixOffers()).find((o) => o.sumber === 'sendiri')
+  const own = flow.applyPin(variant, flow.pinFromOption(ownOption))
   assert.equal(own.stok_count, 2)
   assert.equal(own.harga_efektif, 45000)
   assert.equal(own.stok_sendiri, 2)

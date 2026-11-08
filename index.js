@@ -390,12 +390,22 @@ async function getVarianForCart(kode, pin = null) {
     kategori: v.produk?.kategori || '',
     produk_id: v.produk_id,
   }
-  // Pembeli yang sudah memilih penjual ditagih dan dipenuhi dari penjual itu,
+  // "Opsi N" dihitung dari daftar lengkap sebelum pin memotong penawaran.
+  // Nama supplier tidak pernah masuk ke nama yang dilihat pembeli.
+  const opsi = purchaseFlow.optionForPin(dasar.offers, pin)
+  const buyerOpsi = purchaseFlow.needsSellerPicker(dasar.offers) && opsi ? opsi.label : ''
+  const denganNama = {
+    ...dasar,
+    buyer_opsi: buyerOpsi,
+    nama: purchaseFlow.buyerProductName(dasar.nama, buyerOpsi),
+  }
+  // Pembeli yang sudah memilih opsi ditagih dan dipenuhi dari opsi itu,
   // bukan dari penawaran termurah yang lain.
   if (pin && (pin.sumber === purchaseFlow.SENDIRI || pin.sumber === purchaseFlow.SUPPLIER)) {
-    return purchaseFlow.applyPin(dasar, pin)
+    const pinned = purchaseFlow.applyPin(denganNama, pin)
+    return { ...pinned, buyer_opsi: buyerOpsi, nama: denganNama.nama }
   }
-  return dasar
+  return denganNama
 }
 
 // Harga untuk JUMLAH tertentu.
@@ -648,19 +658,19 @@ function applyVoucherPotongan(subtotal, userId, voucherKode, voucherList) {
 }
 
 function sellerButtonLabel(option) {
-  const raw = `${purchaseFlow.plainLabel(option.label, purchaseFlow.OWN_LABEL)} · ${formatrupiah(option.harga_satuan)} (${option.stok})`
+  const raw = `${option.label} · ${formatrupiah(option.harga_satuan)} (${option.stok})`
   return raw.length > 64 ? `${raw.slice(0, 61)}…` : raw
 }
 
 async function showSellerPicker(userId, msgId, item) {
   const options = purchaseFlow.sellerOptions(item.offers)
-  const lines = options.map((o, i) => (
-    `${i + 1}. *${purchaseFlow.plainLabel(o.label, purchaseFlow.OWN_LABEL)}* — ${formatrupiah(o.harga_satuan)} (Stok ${o.stok})`
+  const lines = options.map((o) => (
+    `*${o.label}* — ${formatrupiah(o.harga_satuan)} (Stok ${o.stok})`
   )).join('\n')
   const text = `🛒 *${item.namaProduk}* — *${item.namaLabel}*
 Stok total: *${purchaseFlow.combinedStock(item.offers)}*
 
-Pilih penjual:
+Pilih opsi:
 ${lines}`
   const buttons = options.map((o) => [{
     text: sellerButtonLabel(o),
@@ -722,14 +732,8 @@ async function showVariantQtyScreen(userId, msgId, varian, pin = null) {
   const formatDetected = detectProductFormat(sampleData, chosen.format || (varian && varian.format))
   const momentTz = require('moment-timezone')
   const formattedTime = momentTz().tz('Asia/Jakarta').format('hh:mm:ss A')
-  const offer = (chosen.offers && chosen.offers[0]) || null
-  const sellerName = offer
-    ? (offer.sumber === purchaseFlow.SUPPLIER
-      ? purchaseFlow.plainLabel(offer.supplier_nama, 'Seller')
-      : purchaseFlow.OWN_LABEL)
-    : ''
-  const produkLabel = pin && sellerName
-    ? `${chosen.namaProduk.toUpperCase()} — ${chosen.namaLabel.toUpperCase()} (${sellerName})`
+  const produkLabel = chosen.buyer_opsi
+    ? `${chosen.namaProduk.toUpperCase()} — ${chosen.namaLabel.toUpperCase()} (${chosen.buyer_opsi})`
     : `${chosen.namaProduk.toUpperCase()} — ${chosen.namaLabel.toUpperCase()}`
   const hargaTeks = formatrupiah(hargaVarian(chosen))
   const garansi = brandMenu.warrantyFromLabel(chosen.namaLabel)
