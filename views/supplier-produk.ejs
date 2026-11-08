@@ -151,12 +151,14 @@
                                                 </select>
                                             </td>
                                             <td>
-                                                <% if (p.mapping_mode === 'manual') { %>
+                                                <% if (!p.varian_id) { %>
+                                                    <span class="badge badge-warning" title="Belum dipetakan, tidak tayang di bot">unmapped</span>
+                                                <% } else if (p.mapping_mode === 'manual') { %>
                                                     <span class="badge badge-success" title="Sync tidak akan menimpa pemetaan ini">manual</span>
                                                 <% } else if (p.mapping_mode === 'auto') { %>
                                                     <span class="badge badge-secondary">auto</span>
                                                 <% } else { %>
-                                                    <span class="badge badge-warning">belum</span>
+                                                    <span class="badge badge-warning">unmapped</span>
                                                 <% } %>
                                             </td>
                                         </tr>

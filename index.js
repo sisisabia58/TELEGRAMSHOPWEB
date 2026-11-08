@@ -53,6 +53,7 @@ const { getAdapter, assertSafeOutbound } = require('./lib/suppliers')
 // cadangan sementara harga sebenarnya dihitung dari kurs + margin yang berlaku.
 const hargaVarian = catalog.hargaVarian
 const purchaseFlow = require('./lib/purchase-flow')
+const brandMenu = require('./lib/brand-menu')
 
 const stock = require('./lib/stock')
 const getStokCount = stock.getStokCountByKode
@@ -386,14 +387,25 @@ async function getVarianForCart(kode, pin = null) {
     deskripsi: v.produk?.deskripsi || '',
     snk: v.produk?.snk || '',
     slug: v.produk?.slug || '',
+    kategori: v.produk?.kategori || '',
     produk_id: v.produk_id,
   }
-  // Pembeli yang sudah memilih penjual ditagih dan dipenuhi dari penjual itu,
+  // "Opsi N" dihitung dari daftar lengkap sebelum pin memotong penawaran.
+  // Nama supplier tidak pernah masuk ke nama yang dilihat pembeli.
+  const opsi = purchaseFlow.optionForPin(dasar.offers, pin)
+  const buyerOpsi = purchaseFlow.needsSellerPicker(dasar.offers) && opsi ? opsi.label : ''
+  const denganNama = {
+    ...dasar,
+    buyer_opsi: buyerOpsi,
+    nama: purchaseFlow.buyerProductName(dasar.nama, buyerOpsi),
+  }
+  // Pembeli yang sudah memilih opsi ditagih dan dipenuhi dari opsi itu,
   // bukan dari penawaran termurah yang lain.
   if (pin && (pin.sumber === purchaseFlow.SENDIRI || pin.sumber === purchaseFlow.SUPPLIER)) {
-    return purchaseFlow.applyPin(dasar, pin)
+    const pinned = purchaseFlow.applyPin(denganNama, pin)
+    return { ...pinned, buyer_opsi: buyerOpsi, nama: denganNama.nama }
   }
-  return dasar
+  return denganNama
 }
 
 // Harga untuk JUMLAH tertentu.
@@ -646,26 +658,26 @@ function applyVoucherPotongan(subtotal, userId, voucherKode, voucherList) {
 }
 
 function sellerButtonLabel(option) {
-  const raw = `${purchaseFlow.plainLabel(option.label, purchaseFlow.OWN_LABEL)} · ${formatrupiah(option.harga_satuan)} (${option.stok})`
+  const raw = `${option.label} · ${formatrupiah(option.harga_satuan)} (${option.stok})`
   return raw.length > 64 ? `${raw.slice(0, 61)}…` : raw
 }
 
 async function showSellerPicker(userId, msgId, item) {
   const options = purchaseFlow.sellerOptions(item.offers)
-  const lines = options.map((o, i) => (
-    `${i + 1}. *${purchaseFlow.plainLabel(o.label, purchaseFlow.OWN_LABEL)}* — ${formatrupiah(o.harga_satuan)} (Stok ${o.stok})`
+  const lines = options.map((o) => (
+    `*${o.label}* — ${formatrupiah(o.harga_satuan)} (Stok ${o.stok})`
   )).join('\n')
   const text = `🛒 *${item.namaProduk}* — *${item.namaLabel}*
 Stok total: *${purchaseFlow.combinedStock(item.offers)}*
 
-Pilih penjual:
+Pilih opsi:
 ${lines}`
   const buttons = options.map((o) => [{
     text: sellerButtonLabel(o),
     callback_data: purchaseFlow.sellerCallbackData(o),
   }])
-  const back = item.slug && Buffer.byteLength(`p:${item.slug}`, 'utf8') <= 64
-    ? `p:${item.slug}`
+  const back = item.kategori && brandMenu.callbackFits(`kategori_${item.kategori}`)
+    ? `kategori_${item.kategori}`
     : 'daftarproduk'
   buttons.push([{ text: copy.get('msg.btn_kembali'), callback_data: back }])
   await cart.save(userId, {
@@ -720,31 +732,43 @@ async function showVariantQtyScreen(userId, msgId, varian, pin = null) {
   const formatDetected = detectProductFormat(sampleData, chosen.format || (varian && varian.format))
   const momentTz = require('moment-timezone')
   const formattedTime = momentTz().tz('Asia/Jakarta').format('hh:mm:ss A')
-  const offer = (chosen.offers && chosen.offers[0]) || null
-  const sellerName = offer
-    ? (offer.sumber === purchaseFlow.SUPPLIER
-      ? purchaseFlow.plainLabel(offer.supplier_nama, 'Seller')
-      : purchaseFlow.OWN_LABEL)
-    : ''
-  const produkLabel = pin && sellerName
-    ? `${chosen.namaProduk.toUpperCase()} — ${chosen.namaLabel.toUpperCase()} (${sellerName})`
+  const produkLabel = chosen.buyer_opsi
+    ? `${chosen.namaProduk.toUpperCase()} — ${chosen.namaLabel.toUpperCase()} (${chosen.buyer_opsi})`
     : `${chosen.namaProduk.toUpperCase()} — ${chosen.namaLabel.toUpperCase()}`
-  const caption = copy.get('screen.qty', {
+  const hargaTeks = formatrupiah(hargaVarian(chosen))
+  const garansi = brandMenu.warrantyFromLabel(chosen.namaLabel)
+  const pengiriman = brandMenu.DELIVERY_DEFAULT
+  const detail = brandMenu.detailLines({
+    garansi,
+    stok: stokCount,
+    harga: hargaTeks,
+    pengiriman,
+  })
+  const caption = brandMenu.appendDetailLines(copy.get('screen.qty', {
     produk_label: produkLabel,
     terjual: chosen.terjual || (varian && varian.terjual) || 0,
     deskripsi: chosen.deskripsi,
-    harga: formatrupiah(hargaVarian(chosen)),
+    harga: hargaTeks,
     stok: stokCount,
     waktu: formattedTime,
-  })
-  const lanjutLabel = pin && sellerName
-    ? `${sellerName} · ${chosen.namaLabel} (${stokCount})`
-    : `${chosen.namaLabel} (${stokCount})`
+    garansi,
+    pengiriman,
+    detail_lines: detail,
+  }), detail)
+  const buyLabel = copy.get('btn.buy_now', { harga: hargaTeks })
+  const backCb = pin
+    ? `v:${chosen.kode}`
+    : (chosen.kategori && brandMenu.callbackFits(`kategori_${chosen.kategori}`)
+      ? `kategori_${chosen.kategori}`
+      : 'daftarproduk')
   await editOrSendBannerMessage(userId, msgId, caption, {
     reply_markup: {
       inline_keyboard: [
-        [{ text: lanjutLabel.length > 64 ? lanjutLabel.slice(0, 61) + '…' : lanjutLabel, callback_data: 'lanjut' }],
-        [{ text: copy.get('btn.kembali'), callback_data: pin ? `v:${chosen.kode}` : 'daftarproduk' }],
+        [{ text: buyLabel.length > 64 ? `${buyLabel.slice(0, 63)}…` : buyLabel, callback_data: 'lanjut' }],
+        [
+          { text: copy.get('btn.kembali'), callback_data: backCb },
+          { text: copy.get('btn.kembali_menu'), callback_data: 'kembaliawal' },
+        ],
       ],
     },
   })
@@ -768,41 +792,11 @@ function chunkArray(array, size) {
   return result;
 }
 
-// Helper function untuk mendapatkan emoji kategori
-function getKategoriEmoji(kategori) {
-  const kategoriLower = (kategori || 'umum').toLowerCase()
-  const kategoriMap = {
-    'game': '🎮',
-    'streaming': '📺',
-    'software': '💻',
-    'social media': '📱',
-    'voucher': '🎟️',
-    'education': '📚',
-    'umum': '📦'
-  }
-  return kategoriMap[kategoriLower] || '📦'
-}
-
 // Helper function untuk cek apakah produk baru (dibuat < 7 hari)
 function isNewProduct(createdAt) {
   if (!createdAt) return false
   const daysSinceCreated = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24)
   return daysSinceCreated <= 7
-}
-
-// Helper function untuk mendapatkan nama kategori yang lebih user-friendly
-function getKategoriName(kategori) {
-  const kategoriLower = (kategori || 'umum').toLowerCase()
-  const nameMap = {
-    'game': 'Game',
-    'streaming': 'Streaming',
-    'software': 'Software',
-    'social media': 'Social Media',
-    'voucher': 'Voucher',
-    'education': 'Education',
-    'umum': 'Umum'
-  }
-  return nameMap[kategoriLower] || 'Umum'
 }
 
 let ITEMS_PER_PAGE = 4
@@ -2468,98 +2462,51 @@ async function collectWelcomeVars(userId, firstName) {
   }
 }
 
+async function openBrandMenu(query, page = 0) {
+  const products = await getProdukWithStok()
+  const momentTz = require('moment-timezone')
+  const waktu = momentTz().tz('Asia/Jakarta').format('hh:mm A')
+  const caption = copy.get('screen.brand_menu', { nama_bot: NamaBot, waktu })
+  const view = brandMenu.buildBrandMenu({ products, page, caption })
+  if (!view.brands.length) view.caption = copy.get('err.no_products')
+  await bot.answerCallbackQuery(query.id).catch(() => {})
+  await editOrSendBannerMessage(query.from.id, query.message && query.message.message_id, view.caption, {
+    reply_markup: { inline_keyboard: sanitizeInlineKeyboard(brandMenu.telegramKeyboard(view.buttons)) },
+  })
+}
+
+async function sendBrandItems(query, brand, page = 0) {
+  const products = await getProdukWithStok()
+  const items = brandMenu.itemsForBrand(products, brand, formatrupiah)
+  if (!items.length) {
+    await bot.answerCallbackQuery(query.id, {
+      text: `Tidak ada item di ${brand}`,
+      show_alert: true,
+    }).catch(() => {})
+    return
+  }
+  const momentTz = require('moment-timezone')
+  const waktu = momentTz().tz('Asia/Jakarta').format('hh:mm A')
+  const caption = copy.get('screen.brand_items', { brand, count: items.length, waktu })
+  const view = brandMenu.buildBrandItems({
+    products,
+    brand,
+    page,
+    formatPrice: formatrupiah,
+    caption,
+  })
+  await bot.answerCallbackQuery(query.id).catch(() => {})
+  await editOrSendBannerMessage(query.from.id, query.message && query.message.message_id, view.caption, {
+    reply_markup: { inline_keyboard: sanitizeInlineKeyboard(brandMenu.telegramKeyboard(view.buttons)) },
+  })
+}
+
 async function openProductList(query) {
-  const { data: Produk } = await supabase.from('Produk').select('*')
-
-  try {
-    await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-  } catch (e) {
-    // Ignore if message already deleted
-  }
-
-  if (!Produk || Produk.length === 0) {
-    return bot.sendMessage(query.from.id, copy.get('err.no_products'), {
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: copy.get('btn.kembali'), callback_data: 'kembaliawal' }],
-        ],
-      },
-    })
-  }
-
-  const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
-
-  const isOwnerUser = isOwner(query)
-  await sendProductPage(ProdukWithStok, query.from.id, 0, query.message.message_id, query.id, {}, isOwnerUser)
+  return openBrandMenu(query, 0)
 }
 
 async function openKategoriMenu(query) {
-  const { data: Produk } = await supabase.from('Produk').select('*')
-
-  if (!Produk || Produk.length === 0) {
-    await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_products'), show_alert: true })
-    return
-  }
-
-  const kategoriCount = {}
-  const kategoriList = ['game', 'streaming', 'software', 'social media', 'voucher', 'education', 'umum']
-
-  Produk.forEach((p) => {
-    const kat = (p.kategori || 'umum').toLowerCase()
-    kategoriCount[kat] = (kategoriCount[kat] || 0) + 1
-  })
-
-  let text = `📂 *PILIH KATEGORI*
-━━━━━━━━━━━━━━━━━━━━
-Pilih kategori produk yang ingin dilihat:
-
-━━━━━━━━━━━━━━━━━━━━
-`
-
-  kategoriList.forEach((kat) => {
-    const count = kategoriCount[kat] || 0
-    if (count > 0) {
-      const emoji = getKategoriEmoji(kat)
-      const name = getKategoriName(kat)
-      text += `${emoji} *${name}* (${count} produk)\n`
-    }
-  })
-
-  text += `\n━━━━━━━━━━━━━━━━━━━━
-💡 Pilih kategori untuk melihat produk`
-
-  const buttons = []
-  const kategoriButtons = []
-
-  kategoriList.forEach((kat) => {
-    const count = kategoriCount[kat] || 0
-    if (count > 0) {
-      const emoji = getKategoriEmoji(kat)
-      const name = getKategoriName(kat)
-
-      if (kategoriButtons.length === 0 || kategoriButtons[kategoriButtons.length - 1].length === 2) {
-        kategoriButtons.push([{
-          text: `${emoji} ${name}`,
-          callback_data: `kategori_${kat}`,
-        }])
-      } else {
-        kategoriButtons[kategoriButtons.length - 1].push({
-          text: `${emoji} ${name}`,
-          callback_data: `kategori_${kat}`,
-        })
-      }
-    }
-  })
-
-  buttons.push(...kategoriButtons)
-  buttons.push([{ text: copy.get('btn.semua_produk'), callback_data: 'daftarproduk' }])
-  buttons.push([{ text: copy.get('btn.kembali'), callback_data: 'kembaliawal' }])
-
-  await bot.answerCallbackQuery(query.id)
-  await editOrSendBannerMessage(query.from.id, query.message.message_id, text, {
-    reply_markup: { inline_keyboard: buttons },
-  })
+  return openBrandMenu(query, 0)
 }
 
 async function openStokBuyer(query) {
@@ -2726,9 +2673,17 @@ try {
   // Handler: user picks a variant from product card
   if (cmd.startsWith('v:') || cmd.startsWith('pilih_variasi:')) {
     const kode = cmd.includes(':') ? cmd.split(':').slice(1).join(':') : ''
-    await bot.answerCallbackQuery(query.id)
     const varian = await catalog.getVariantByKode(kode)
-    if (!varian) return bot.sendMessage(query.from.id, copy.get('err.product_not_found'))
+    if (!varian) {
+      await bot.answerCallbackQuery(query.id, { text: copy.get('err.product_not_found'), show_alert: true }).catch(() => {})
+      return
+    }
+    const [withStock] = await catalog.attachStock([varian])
+    if (purchaseFlow.variantDisplayedStock(withStock) <= 0) {
+      await bot.answerCallbackQuery(query.id, { text: copy.get('err.stock_habis'), show_alert: true }).catch(() => {})
+      return
+    }
+    await bot.answerCallbackQuery(query.id).catch(() => {})
     await showVariantQtyScreen(query.from.id, query.message.message_id, varian)
     return
   }
@@ -6582,55 +6537,27 @@ if (cmd.startsWith("bataldeposit_")) {
      await bot.answerCallbackQuery(query.id, { text: "⚠️ Terjadi kesalahan. Silakan coba lagi.", show_alert: true })
    }
  }
-  if (cmd === "daftarproduk") {
-    await openProductList(query)
+  if (cmd === "daftarproduk" || cmd === "kategori_menu") {
+    await openBrandMenu(query, 0)
+    return
   }
-  
-  // Handler untuk menu kategori
-  if (cmd === "kategori_menu") {
-    await openKategoriMenu(query)
+
+  if (cmd.startsWith("brandpg:")) {
+    await openBrandMenu(query, brandMenu.parseBrandPage(cmd) || 0)
+    return
   }
-  
-  // Handler untuk filter produk berdasarkan kategori
+
+  if (cmd.startsWith("bip:")) {
+    const parsed = brandMenu.parseBrandItemPage(cmd)
+    if (parsed) {
+      await sendBrandItems(query, parsed.brand, parsed.page)
+      return
+    }
+  }
+
   if (cmd.startsWith("kategori_")) {
-    const kategori = cmd.replace("kategori_", "")
-    let { data: Produk } = await supabase
-      .from("Produk")
-      .select("*")
-    
-    if (!Produk || Produk.length === 0) {
-      await bot.answerCallbackQuery(query.id, { text: copy.get('err.no_products'), show_alert: true })
-      return
-    }
-    
-    // Hitung stok untuk setiap produk
-    const ProdukWithStok = decorateShopProducts(await getProdukWithStok())
-    
-    // Filter produk berdasarkan kategori
-    const kategoriProduk = ProdukWithStok.filter(p => 
-      (p.kategori || 'umum').toLowerCase() === kategori.toLowerCase()
-    )
-    
-    if (kategoriProduk.length === 0) {
-      await bot.answerCallbackQuery(query.id, { 
-        text: `⚠️ Tidak ada produk di kategori ${getKategoriName(kategori)}!`, 
-        show_alert: true 
-      })
-      return
-    }
-    
-    try {
-      await bot.deleteMessage(query.message.chat.id, query.message.message_id)
-    } catch (e) {
-      // Ignore if message already deleted
-    }
-    
-    const isOwnerUser = isOwner(query)
-    const kategoriLabel = `${getKategoriEmoji(kategori)} ${getKategoriName(kategori)}`
-    await sendProductPage(kategoriProduk, query.from.id, 0, query.message.message_id, query.id, {
-      kategori: kategori,
-      kategoriLabel: kategoriLabel
-    }, isOwnerUser)
+    await sendBrandItems(query, cmd.slice("kategori_".length), 0)
+    return
   }
   
   if (cmd === "riwayattransaksi") {

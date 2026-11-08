@@ -73,16 +73,29 @@ test('buildProductListView lists products and product buttons', () => {
   assert.ok(!flat.some((b) => b.preview && b.preview.slug === 'spotify'))
 })
 
-test('buildKategoriMenuView only shows non-empty categories', () => {
+test('buildKategoriMenuView shows brand buttons with variant counts', () => {
   const products = [
-    { nama: 'A', slug: 'a', kategori: 'game', stok_count: 1 },
-    { nama: 'B', slug: 'b', kategori: 'game', stok_count: 1 },
+    {
+      nama: 'Adobe Express',
+      slug: 'adobe',
+      kategori: 'Adobe',
+      is_active: true,
+      variants: [{ label: '1 Tahun (NW)', kode: 'a1', is_active: true, stok_count: 2, harga: 10000 }],
+    },
+    {
+      nama: 'Canva Edu',
+      slug: 'canva-edu',
+      kategori: 'Canva',
+      is_active: true,
+      variants: [{ label: '1 Bulan', kode: 'c1', is_active: true, stok_count: 0, harga: 55000 }],
+    },
   ]
   const view = buildKategoriMenuView(products, {})
-  assert.match(view.caption, /Game/)
-  assert.ok(!view.caption.includes('Streaming'))
+  assert.match(view.caption, /Pilih produk atau brand/)
   const flat = view.buttons.flat()
-  assert.ok(flat.some((b) => b.preview && b.preview.kategori === 'game'))
+  assert.ok(flat.some((b) => b.text === 'Adobe (1)' && b.preview.brand === 'Adobe'))
+  assert.ok(flat.some((b) => b.text === 'Canva (1)'))
+  assert.equal(flat.some((b) => b.preview && b.preview.kategori === 'game'), false)
 })
 
 test('buildProductCardView shows variants and qty previews', () => {
